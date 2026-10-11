@@ -3,24 +3,7 @@ import { LocationStatus } from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { MockInventoryRepository } from "@/infrastructure/mock/repositories/MockInventoryRepository";
-import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
-
-class MemoryStorageAdapter extends LocalStorageAdapter {
-  private readonly values = new Map<string, string>();
-
-  override get<T>(key: string): T | null {
-    const value = this.values.get(key);
-    return value === undefined ? null : (JSON.parse(value) as T);
-  }
-
-  override set<T>(key: string, value: T): void {
-    this.values.set(key, JSON.stringify(value));
-  }
-
-  override remove(key: string): void {
-    this.values.delete(key);
-  }
-}
+import { MemoryStorageAdapter } from "./mockInventoryFixtures";
 
 function createRepository() {
   const store = new MockDatabaseStore(new MemoryStorageAdapter());
