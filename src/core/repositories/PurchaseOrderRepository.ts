@@ -6,6 +6,8 @@ export interface PurchaseOrderPageParams {
   branchId?: string;
   supplierId?: string;
   status?: PurchaseOrderStatus;
+  /** Texto libre aplicado por el backend sobre las referencias históricas de la orden. */
+  search?: string;
   page: number;
   pageSize: number;
 }
@@ -52,7 +54,11 @@ export interface PurchaseOrderRepository {
    * futuro en el orden de las validaciones lo hubiera vuelto inseguro sin que el repository lo
    * impidiera. `updateScoped` hace la garantia estructural, no solo convencional.
    */
-  updateScoped(tenantId: string, id: string, input: UpdatePurchaseOrderInput): Promise<PurchaseOrder>;
+  updateScoped(
+    tenantId: string,
+    id: string,
+    input: UpdatePurchaseOrderInput,
+  ): Promise<PurchaseOrder>;
   updateStatus(id: string, status: PurchaseOrderStatus): Promise<PurchaseOrder>;
   /**
    * Compatibilidad legacy para consumidores mock. Los flujos API de lifecycle usan las

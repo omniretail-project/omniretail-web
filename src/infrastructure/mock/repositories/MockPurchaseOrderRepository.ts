@@ -33,6 +33,7 @@ export class MockPurchaseOrderRepository
       .filter((order) => !params.branchId || order.branchId === params.branchId)
       .filter((order) => !params.supplierId || order.supplierId === params.supplierId)
       .filter((order) => !params.status || order.status === params.status)
+      .filter((order) => matchesSearch(order, params.search))
       .sort((left, right) => {
         const byDate = right.createdAt.localeCompare(left.createdAt);
         return byDate || right.id.localeCompare(left.id);
@@ -48,9 +49,7 @@ export class MockPurchaseOrderRepository
   }
   async getByIdScoped(tenantId: string, id: string) {
     return this.read((db) => {
-      const order = db.purchaseOrders.find(
-        (item) => item.id === id && item.tenantId === tenantId,
-      );
+      const order = db.purchaseOrders.find((item) => item.id === id && item.tenantId === tenantId);
       return order ? hydratePurchaseOrder(order, db) : null;
     });
   }
@@ -236,4 +235,23 @@ function nextPurchaseOrderNumber(db: MockDatabase) {
       return match ? Math.max(max, Number(match[1])) : max;
     }, 0) + 1;
   return `OC-${String(next).padStart(3, "0")}`;
+}
+
+function matchesSearch(order: PurchaseOrder, search?: string) {
+  const normalizedSearch = normalizeSearch(search);
+  if (!normalizedSearch) return true;
+  const searchableValues = [
+    order.number,
+    order.supplierNameSnapshot,
+    ...(order.items ?? []).flatMap((item) => [
+      item.productNameSnapshot,
+      item.productSkuSnapshot,
+      item.supplierSkuSnapshot,
+    ]),
+  ];
+  return searchableValues.some((value) => normalizeSearch(value).includes(normalizedSearch));
+}
+
+function normalizeSearch(value?: string) {
+  return value?.trim().toLocaleLowerCase() ?? "";
 }
