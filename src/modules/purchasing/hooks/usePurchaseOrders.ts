@@ -191,10 +191,7 @@ export function usePurchaseOrders() {
     suggestionsLoader.setContext(suggestionsKey, activeBranchId);
   }, [activeBranchId, suggestionsKey, suggestionsLoader]);
 
-  const invalidateSuggestions = useCallback(
-    () => suggestionsLoader.invalidate(),
-    [suggestionsLoader],
-  );
+  const invalidateSuggestions = useCallback(() => suggestionsLoader.invalidate(), [suggestionsLoader]);
   useDataEvent("purchase-order.changed", invalidateSuggestions);
   useDataEvent("receipt.changed", invalidateSuggestions);
   useDataEvent("inventory.changed", invalidateSuggestions);
@@ -209,7 +206,8 @@ export function usePurchaseOrders() {
     suggestionsLoader.setExpanded(next);
   }, [suggestionsExpanded, suggestionsLoader]);
 
-  const currentSuggestions = suggestionsState?.key === suggestionsKey ? suggestionsState : null;
+  const currentSuggestions =
+    suggestionsState?.key === suggestionsKey ? suggestionsState : null;
   const suggestionsPanel = {
     expanded: suggestionsExpanded,
     loaded: currentSuggestions?.loaded ?? false,
@@ -221,7 +219,8 @@ export function usePurchaseOrders() {
   };
 
   const canUsePurchasing = hasCapability(SaasCapabilityKey.purchasing);
-  const canCreatePurchaseOrders = canUsePurchasing && hasPermission("purchasing.orders.create");
+  const canCreatePurchaseOrders =
+    canUsePurchasing && hasPermission("purchasing.orders.create");
   const gatedData = useMemo<PurchaseOrdersReadModel>(
     () => ({ ...data, orders: applyCapabilityGating(data.orders, canUsePurchasing) }),
     [data, canUsePurchasing],
@@ -238,11 +237,16 @@ export function usePurchaseOrders() {
     [apiMode, gatedData.orders, filters],
   );
   const paginatedOrders = useMemo(
-    () => (apiMode ? filteredOrders : filteredOrders.slice((page - 1) * pageSize, page * pageSize)),
+    () =>
+      apiMode
+        ? filteredOrders
+        : filteredOrders.slice((page - 1) * pageSize, page * pageSize),
     [apiMode, filteredOrders, page, pageSize],
   );
   const totalItems = apiMode ? gatedData.totalItems : filteredOrders.length;
-  const totalPages = apiMode ? gatedData.totalPages : Math.ceil(filteredOrders.length / pageSize);
+  const totalPages = apiMode
+    ? gatedData.totalPages
+    : Math.ceil(filteredOrders.length / pageSize);
 
   const updateFilters = useCallback(
     (patch: Partial<PurchaseOrderFilters>) => {

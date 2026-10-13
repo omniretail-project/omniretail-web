@@ -139,7 +139,6 @@ export default defineConfig({
         "src/infrastructure/api/withApiInventoryTransfers.ts",
         // Búsqueda paginada de órdenes de compra (PR #172).
         "src/infrastructure/api/repositories/ApiPurchaseOrderRepository.ts",
-        "src/infrastructure/mock/repositories/MockPurchaseOrderRepository.ts",
         "src/modules/purchasing/application/services/GetPurchaseOrdersReadModelService.ts",
         "src/modules/purchasing/hooks/usePurchaseOrders.ts",
         "src/modules/purchasing/pages/PurchaseOrdersPage.tsx",

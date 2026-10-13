@@ -365,7 +365,12 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
       {error ? <InlineAlert title={error} tone="danger" /> : null}
 
       <section className="rounded-lg border border-[var(--color-border)] bg-white p-2.5 shadow-sm">
-        <div className={cn("grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_220px_220px]")}>
+        <div
+          className={cn(
+            "grid gap-3 md:grid-cols-2",
+            "xl:grid-cols-[minmax(0,1fr)_220px_220px]",
+          )}
+        >
           <Input
             aria-label="Buscar ordenes"
             maxLength={TEXT_LIMITS.search}

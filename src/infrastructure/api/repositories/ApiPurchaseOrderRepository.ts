@@ -232,6 +232,10 @@ function assertPage(page: number, pageSize: number) {
     throw new BackendRequestError("page debe comenzar en 1.", 400, "INVALID_PAGE");
   }
   if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100) {
-    throw new BackendRequestError("pageSize debe estar entre 1 y 100.", 400, "INVALID_PAGE_SIZE");
+    throw new BackendRequestError(
+      "pageSize debe estar entre 1 y 100.",
+      400,
+      "INVALID_PAGE_SIZE",
+    );
   }
 }
