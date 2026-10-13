@@ -132,6 +132,11 @@ export default defineConfig({
         "src/modules/customer/pages/MetodosPagoPage.tsx",
         "src/modules/customer/validation/paymentMethod.validation.ts",
         "src/modules/storefront/pages/CheckoutPage.tsx",
+        // Solicitudes, traslados y recepcion de traslados (PR #171).
+        "src/infrastructure/api/repositories/ApiInventoryTransferRepository.ts",
+        "src/infrastructure/api/repositories/ApiInventoryTransferRequestRepository.ts",
+        "src/infrastructure/api/repositories/inventoryTransfersApi.schema.ts",
+        "src/infrastructure/api/withApiInventoryTransfers.ts",
       ],
     },
   },

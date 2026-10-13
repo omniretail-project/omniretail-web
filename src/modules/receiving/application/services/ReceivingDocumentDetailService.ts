@@ -375,7 +375,6 @@ export class ReceivingDocumentDetailService {
     );
     ensureCanConfirmReceiving(permissions);
     await ensureTenantCanUseReceiving(this.repositories, tenantId);
-    this.ensureApiConfirmationIsUnavailable();
     const transfer = await this.repositories.inventoryTransfers.getById(input.documentId);
     if (!transfer || transfer.transfer.tenantId !== tenantId) {
       throw new ReceivingServiceError("Traslado no encontrado.");
@@ -460,11 +459,32 @@ export class ReceivingDocumentDetailService {
     if (items.length === 0) {
       throw new ReceivingServiceError("Selecciona al menos una cantidad para recibir.");
     }
-    await this.repositories.inventoryTransfers.markReceived(transfer.transfer.id, {
-      receivedByUserId: actorUserId,
-      confirmationId: input.confirmationId,
-      items,
-    });
+    const confirmedTransfer = await this.repositories.inventoryTransfers.markReceived(
+      transfer.transfer.id,
+      {
+        receivedByUserId: actorUserId,
+        confirmationId: input.confirmationId,
+        items,
+      },
+    );
+    if (this.repositories.inventoryTransfersDataSource === "api") {
+      // El endpoint de traslados responde su propio comprobante, no un GoodsReceipt de Compras.
+      // La UI solo necesita una confirmación para recargar; no se persiste este objeto localmente.
+      const confirmedAt = confirmedTransfer.transfer.receivedAt ?? new Date().toISOString();
+      return {
+        id: `transfer-receipt:${confirmedTransfer.transfer.id}:${input.confirmationId}`,
+        tenantId,
+        branchId: confirmedTransfer.transfer.destinationBranchId,
+        number: `REC-${confirmedTransfer.transfer.number}`,
+        inventoryTransferId: confirmedTransfer.transfer.id,
+        confirmationId: input.confirmationId,
+        receivedByUserId: actorUserId,
+        receivedAt: confirmedAt,
+        status: ReceiptStatus.received,
+        createdAt: confirmedAt,
+        updatedAt: confirmedAt,
+      };
+    }
     const receipt = await this.repositories.receipts.getByConfirmationId(
       tenantId,
       input.confirmationId,
@@ -913,11 +933,6 @@ export class ReceivingDocumentDetailService {
       throw new ReceivingServiceError("No se encontró el borrador de recepción solicitado.");
     }
     return record;
-  }
-
-  private ensureApiConfirmationIsUnavailable() {
-    if (this.repositories.receivingDataSource !== "api") return;
-    throw new ReceivingServiceError("La recepción de traslados por API no está disponible.");
   }
 
   private async getTransferDocument(

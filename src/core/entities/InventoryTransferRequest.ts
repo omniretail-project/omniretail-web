@@ -23,6 +23,8 @@ export interface InventoryTransferRequest {
   cancelledAt?: ISODateString;
   requestedByUserId?: string;
   reviewedByUserId?: string;
+  /** Transfer generado por la aprobación cuando la solicitud ya entró al ciclo logístico. */
+  transferId?: string;
   createdAt: ISODateString;
   updatedAt: ISODateString;
 }
