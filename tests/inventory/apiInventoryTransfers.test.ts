@@ -296,6 +296,47 @@ describe("API repositories for inventory transfers", () => {
     expect(() => parseApiInventoryTransferRequest({ invalid: true })).toThrow(/invalido/i);
   });
 
+  it("returns null when a transfer or request no longer exists", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes(`/inventory/transfers/${ids.transfer}`)) {
+        return Response.json({ message: "No existe" }, { status: 404 });
+      }
+      return Response.json(page([]));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const transfers = new ApiInventoryTransferRepository(
+      new DataEventBus(),
+      async () => ids.tenant,
+    );
+    const requests = new ApiInventoryTransferRequestRepository(
+      new DataEventBus(),
+      async () => ids.tenant,
+    );
+
+    await expect(transfers.getById(ids.transfer)).resolves.toBeNull();
+    await expect(requests.getById(ids.request)).resolves.toBeNull();
+  });
+
+  it("rejects an approval response that loses its source request line", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        transferResponse({
+          items: [{ ...transferResponse().items[0], sourceRequestId: id(9) }],
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const repository = new ApiInventoryTransferRequestRepository(
+      new DataEventBus(),
+      async () => ids.tenant,
+    );
+
+    await expect(repository.approveRequest(ids.request)).rejects.toMatchObject({
+      code: "INVALID_BACKEND_RESPONSE",
+    });
+  });
+
   it("installs API adapters while preserving unsupported operations and delegates", async () => {
     const legacyTransfers = {
       create: vi.fn(),
@@ -323,5 +364,27 @@ describe("API repositories for inventory transfers", () => {
       code: "NOT_SUPPORTED",
     });
     expect(configured.inventoryTransfers.getByNumber).toBeTypeOf("function");
+  });
+
+  it("resolves the current tenant through the registry when an API adapter is used", async () => {
+    const fetchMock = vi.fn(async () => Response.json(page([])));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = {
+      auth: {
+        getCurrentSessionId: vi.fn(async () => "session-1"),
+        getSession: vi.fn(async () => ({ userId: id(10) })),
+      },
+      users: { getById: vi.fn(async () => ({ tenantId: ids.tenant })) },
+      inventoryTransfers: {},
+      inventoryTransferRequests: {},
+    } as unknown as RepositoryRegistry;
+
+    const configured = withApiInventoryTransfers(repositories, new DataEventBus());
+    const request = await configured.inventoryTransferRequests.getById(ids.request);
+
+    expect(request).toBeNull();
+    expect(repositories.auth.getCurrentSessionId).toHaveBeenCalledOnce();
+    expect(repositories.auth.getSession).toHaveBeenCalledWith("session-1");
+    expect(repositories.users.getById).toHaveBeenCalledWith(id(10));
   });
 });

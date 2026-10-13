@@ -4,8 +4,9 @@ import { isApiUuid } from "@/infrastructure/api/uuid";
 
 const uuid = z.string().refine(isApiUuid, { message: "UUID de backend invalido." });
 const instant = z.iso.datetime({ offset: true });
-const quantity = z.number().finite().min(0);
-const positiveQuantity = z.number().finite().gt(0);
+// En Zod v4 los esquemas numéricos ya rechazan Infinity; `.finite()` es un no-op obsoleto.
+const quantity = z.number().min(0);
+const positiveQuantity = z.number().gt(0);
 const transferStatus = z.enum(["preparing", "inTransit", "received", "cancelled"]);
 const requestStatus = z.enum(["requested", "approved", "rejected", "cancelled"]);
 const reason = z.enum([
