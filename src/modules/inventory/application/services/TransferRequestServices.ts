@@ -43,7 +43,11 @@ export class CreateTransferRequestService {
     }
     assertValidTransferQuantity(dto.quantity, baseUnit.allowsDecimals);
     await ensureProviderAvailability(
-      this.repositories, tenantId, dto.providerBranchId, product.id, dto.quantity,
+      this.repositories,
+      tenantId,
+      dto.providerBranchId,
+      product.id,
+      dto.quantity,
     );
     const reason = dto.reason.trim();
     if (!reason) throw new InventoryServiceError("Ingresa el motivo del traslado.");
@@ -102,35 +106,68 @@ export class ApproveTransferRequestService {
       ? (await this.repositories.auth.getSession(session.sessionId))?.activeBranchId
       : undefined;
     if (!activeBranchId || activeBranchId !== request.sourceBranchId) {
-      throw new InventoryServiceError("La sucursal proveedora debe estar activa para aceptar la solicitud.");
+      throw new InventoryServiceError(
+        "La sucursal proveedora debe estar activa para aceptar la solicitud.",
+      );
     }
     const source = await ensureUserCanOperateInventoryBranch(
-      this.repositories, user, request.sourceBranchId,
+      this.repositories,
+      user,
+      request.sourceBranchId,
     );
     const destination = await ensureInventoryBranchBelongsToTenant(
       this.repositories,
       tenantId,
       request.requestingBranchId,
     );
-    if (source.id === destination.id || source.status !== BranchStatus.active ||
-      destination.status !== BranchStatus.active) {
-      throw new InventoryServiceError("Las sucursales del traslado deben estar activas y ser distintas.");
+    if (
+      source.id === destination.id ||
+      source.status !== BranchStatus.active ||
+      destination.status !== BranchStatus.active
+    ) {
+      throw new InventoryServiceError(
+        "Las sucursales del traslado deben estar activas y ser distintas.",
+      );
     }
     const product = ensureProductBelongsToTenant(
-      await this.repositories.products.getById(request.productId), tenantId,
+      await this.repositories.products.getById(request.productId),
+      tenantId,
     );
     const capabilities = await this.repositories.businessConfig.getCapabilities(tenantId);
-    if (!capabilities) throw new InventoryServiceError("Configuración de inventario no disponible.");
+    if (!capabilities)
+      throw new InventoryServiceError("Configuración de inventario no disponible.");
     ensureTenantCanUseTracking(entitlements, capabilities, product);
     const unit = await this.repositories.units.getByIdScoped(tenantId, product.baseUnitId);
     if (!unit) throw new InventoryServiceError("La unidad base del producto no está disponible.");
     assertValidTransferQuantity(request.requestedQuantity, unit.allowsDecimals);
     if (request.status === InventoryTransferRequestStatus.requested) {
       await ensureProviderAvailability(
-        this.repositories, tenantId, request.sourceBranchId, product.id, request.requestedQuantity,
+        this.repositories,
+        tenantId,
+        request.sourceBranchId,
+        product.id,
+        request.requestedQuantity,
       );
     }
-    if (!operationId.trim()) throw new InventoryServiceError("La operación requiere una identidad.");
+    if (!operationId.trim())
+      throw new InventoryServiceError("La operación requiere una identidad.");
+
+    if (this.repositories.inventoryTransfersDataSource === "api") {
+      const approved = await this.repositories.inventoryTransferRequests.approveRequest(request.id, {
+        reviewedByUserId: actorUserId,
+        operationId: operationId.trim(),
+      });
+      if (!approved.transferId) {
+        throw new InventoryServiceError(
+          "La API aprobó la solicitud pero no devolvió el traslado generado.",
+        );
+      }
+      const transfer = await this.repositories.inventoryTransfers.getById(approved.transferId);
+      if (!transfer) {
+        throw new InventoryServiceError("No se pudo recuperar el traslado generado por la API.");
+      }
+      return transfer.transfer;
+    }
 
     const result = await this.repositories.inventoryTransfers.create({
       tenantId,
@@ -142,8 +179,13 @@ export class ApproveTransferRequestService {
       approveSourceRequest: { requestId: request.id, reviewedByUserId: actorUserId },
       reason: request.reason,
       notes: request.notes,
-      items: [{ productId: product.id, sourceRequestId: request.id,
-        requestedQuantity: request.requestedQuantity }],
+      items: [
+        {
+          productId: product.id,
+          sourceRequestId: request.id,
+          requestedQuantity: request.requestedQuantity,
+        },
+      ],
     });
     return result.transfer;
   }
@@ -156,15 +198,24 @@ async function ensureProviderAvailability(
   productId: string,
   quantity: number,
 ) {
+  // En modo API el backend es la fuente autoritativa y reserva de forma transaccional al aprobar.
+  // No se consulta el store mock, pues podría rechazar una solicitud válida con saldos obsoletos.
+  if (repositories.inventoryStockDataSource === "api") return;
   const [balances, locations] = await Promise.all([
     repositories.inventory.getBalances(),
     repositories.inventory.getLocations(),
   ]);
   const available = getBranchAvailableQuantity({
-    tenantId, branchId, productId, balances, locations,
+    tenantId,
+    branchId,
+    productId,
+    balances,
+    locations,
   });
   if (quantity > available) {
-    throw new InventoryServiceError("La cantidad solicitada supera el stock disponible de la sucursal proveedora.");
+    throw new InventoryServiceError(
+      "La cantidad solicitada supera el stock disponible de la sucursal proveedora.",
+    );
   }
 }
 
@@ -214,7 +265,9 @@ export class CancelTransferRequestService {
       ? (await this.repositories.auth.getSession(session.sessionId))?.activeBranchId
       : undefined;
     if (!activeBranchId || activeBranchId !== request.requestingBranchId) {
-      throw new InventoryServiceError("La sucursal solicitante debe estar activa para cancelar la solicitud.");
+      throw new InventoryServiceError(
+        "La sucursal solicitante debe estar activa para cancelar la solicitud.",
+      );
     }
     await ensureUserCanOperateInventoryBranch(this.repositories, user, request.requestingBranchId);
     await ensureInventoryBranchBelongsToTenant(this.repositories, tenantId, request.sourceBranchId);

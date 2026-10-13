@@ -66,6 +66,7 @@ import { withApiProducts } from "@/infrastructure/api/withApiProducts";
 import { withApiProductRelations } from "@/infrastructure/api/withApiProductRelations";
 import { withApiInventoryMovements } from "@/infrastructure/api/withApiInventoryMovements";
 import { withApiInventoryStock } from "@/infrastructure/api/withApiInventoryStock";
+import { withApiInventoryTransfers } from "@/infrastructure/api/withApiInventoryTransfers";
 import { withApiPurchaseOrders } from "@/infrastructure/api/withApiPurchaseOrders";
 import { withApiReceiving } from "@/infrastructure/api/withApiReceiving";
 import { withApiLogisticsPickingRead } from "@/infrastructure/api/withApiLogisticsPickingRead";
@@ -137,6 +138,7 @@ export interface RepositoryRegistry {
   productMediaDataSource: "mock" | "api";
   inventoryMovementsDataSource: "mock" | "api";
   inventoryStockDataSource: "mock" | "api";
+  inventoryTransfersDataSource: "mock" | "api";
   purchaseOrdersDataSource: "mock" | "api";
   receivingDataSource: "mock" | "api";
   pickingReadDataSource?: "mock" | "api";
@@ -223,6 +225,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       productMediaDataSource: "mock",
       inventoryMovementsDataSource: "mock",
       inventoryStockDataSource: "mock",
+      inventoryTransfersDataSource: "mock",
       purchaseOrdersDataSource: "mock",
       receivingDataSource: "mock",
       pickingReadDataSource: "mock",
@@ -291,18 +294,21 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
               withApiLogisticsPickingRead(
                 withApiReceiving(
                   withApiPurchaseOrders(
-                    withApiInventoryStock(
-                      withApiInventoryMovements(
-                        withApiProductRelations(
-                          withApiProducts(
-                            withApiCatalogMasterData(
-                              withApiLogisticsHistory(withApiSession(mockRepositories, eventBus)),
+                    withApiInventoryTransfers(
+                      withApiInventoryStock(
+                        withApiInventoryMovements(
+                          withApiProductRelations(
+                            withApiProducts(
+                              withApiCatalogMasterData(
+                                withApiLogisticsHistory(withApiSession(mockRepositories, eventBus)),
+                                eventBus,
+                              ),
                               eventBus,
                             ),
                             eventBus,
                           ),
-                          eventBus,
                         ),
+                        eventBus,
                       ),
                       eventBus,
                     ),

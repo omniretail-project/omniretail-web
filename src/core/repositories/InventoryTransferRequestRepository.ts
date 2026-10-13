@@ -21,6 +21,8 @@ export interface CreateInventoryTransferRequestInput {
 
 export interface ReviewInventoryTransferRequestInput {
   reviewedByUserId?: string;
+  /** Identidad idempotente para aprobar la solicitud y crear su traslado. */
+  operationId?: string;
 }
 
 export interface ReceiveInventoryTransferRequestInput {
