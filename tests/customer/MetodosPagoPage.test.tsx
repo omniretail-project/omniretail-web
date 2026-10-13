@@ -156,6 +156,25 @@ describe("MetodosPagoPage", () => {
     expect(screen.getByLabelText("Código de seguridad (CVV)")).toHaveValue("");
   });
 
+  it("al cancelar y reabrir no quedan mensajes de error", async () => {
+    render(<MetodosPagoPage />);
+    await openNewCard();
+    fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+    expect(await screen.findByText("Ingrese el número de tarjeta.")).toBeInTheDocument();
+    expect(screen.getByText("Ingrese el nombre del titular.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    // Se comprueba en el mismo tick de la reapertura, antes del reinicio
+    // diferido del formulario: los errores ya deben haberse limpiado al cerrar.
+    fireEvent.click(screen.getAllByRole("button", { name: "Nueva tarjeta" })[0]);
+
+    expect(screen.getByLabelText("Número de tarjeta")).toBeInTheDocument();
+    expect(screen.queryByText("Ingrese el número de tarjeta.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ingrese el nombre del titular.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ingresa una fecha válida en formato MM/AA.")).not.toBeInTheDocument();
+    expect(state.create).not.toHaveBeenCalled();
+  });
+
   it("una tarjeta Discover guardada se muestra, se edita y se elimina", async () => {
     state.paymentMethods = [DISCOVER_CARD];
     render(<MetodosPagoPage />);

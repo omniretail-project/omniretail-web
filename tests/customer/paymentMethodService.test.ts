@@ -112,6 +112,18 @@ describe("paymentMethodService", () => {
     expect(createSpy).not.toHaveBeenCalled();
   });
 
+  it("una tarjeta vencida o con fecha inválida no llega al repositorio", async () => {
+    const { repositories, createSpy } = createScenario();
+
+    await expect(createPaymentMethod(repositories, form({ expiration: "09/26" }))).rejects.toThrow(
+      "La tarjeta está vencida.",
+    );
+    await expect(createPaymentMethod(repositories, form({ expiration: "13/30" }))).rejects.toThrow(
+      "Ingresa una fecha válida en formato MM/AA.",
+    );
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
   it("una tarjeta Discover ya guardada se lista, se edita y se elimina sin error", async () => {
     const { repositories, store } = createScenario();
     store.mutate((db) => {

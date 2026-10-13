@@ -75,7 +75,13 @@ describe("validatePaymentMethodForm", () => {
 
   it("exige el titular al crear y lo deja opcional al editar", () => {
     expect(validatePaymentMethodForm({ ...VALID_FORM, cardholderName: "" }, "create").cardholderName)
-      .toBeDefined();
+      .toBe("Ingrese el nombre del titular.");
+    expect(
+      validatePaymentMethodForm({ ...VALID_FORM, cardholderName: "   " }, "create").cardholderName,
+    ).toBe("Ingrese el nombre del titular.");
+    expect(
+      validatePaymentMethodForm({ ...VALID_FORM, cardholderName: "Ana 123" }, "create").cardholderName,
+    ).toBe("El nombre del titular solo permite letras, espacios, guiones y apóstrofes.");
     expect(validatePaymentMethodForm({ ...VALID_FORM, cardholderName: "" }, "edit")).toEqual({});
     expect(
       validatePaymentMethodForm({ ...VALID_FORM, cardholderName: "Ana 123" }, "edit").cardholderName,

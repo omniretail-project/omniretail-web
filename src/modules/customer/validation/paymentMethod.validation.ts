@@ -3,8 +3,11 @@ import {
   getStorefrontCardSecurityCodeLength,
   validateStorefrontCardNumber,
 } from "@/config/card-brands";
-import { getCardExpirationError, isCardNumberComplete } from "@/config/card-input-policy";
-import { isValidRecipientName } from "@/config/delivery-address-policy";
+import {
+  getCardExpirationError,
+  getCardholderNameError,
+  isCardNumberComplete,
+} from "@/config/card-input-policy";
 import { GUATEMALA_BANKS } from "@/config/guatemala-banks";
 import type { PaymentMethodFormDto } from "@/modules/customer/application/dto/PaymentMethodFormDto";
 
@@ -13,8 +16,6 @@ export type PaymentMethodFormMode = "create" | "edit";
 export type PaymentMethodValidationErrors = Partial<
   Record<"cardNumber" | "cardholderName" | "expiration" | "cvv" | "issuingBank", string>
 >;
-
-const CARDHOLDER_NAME_ERROR = "El nombre del titular solo permite letras, espacios, guiones y apóstrofes.";
 
 /**
  * Mismas reglas que el checkout (card-brands + card-input-policy): numero de
@@ -29,7 +30,6 @@ export function validatePaymentMethodForm(
   mode: PaymentMethodFormMode,
 ): PaymentMethodValidationErrors {
   const errors: PaymentMethodValidationErrors = {};
-  const cardholderName = dto.cardholderName.trim();
 
   if (mode === "create") {
     const digits = dto.cardNumber.replace(/\D/g, "");
@@ -42,7 +42,7 @@ export function validatePaymentMethodForm(
     }
 
     const securityCodeLength = getStorefrontCardSecurityCodeLength(detectStorefrontCardBrand(digits));
-    if (!new RegExp(`^\\d{${securityCodeLength}}$`).test(dto.cvv)) {
+    if (!new RegExp(String.raw`^\d{${securityCodeLength}}$`).test(dto.cvv)) {
       errors.cvv = `Ingresa un código de seguridad de ${securityCodeLength} dígitos.`;
     }
 
@@ -51,13 +51,10 @@ export function validatePaymentMethodForm(
     } else if (!GUATEMALA_BANKS.includes(dto.issuingBank as (typeof GUATEMALA_BANKS)[number])) {
       errors.issuingBank = "Selecciona un banco emisor válido.";
     }
-
-    if (!cardholderName || !isValidRecipientName(dto.cardholderName)) {
-      errors.cardholderName = CARDHOLDER_NAME_ERROR;
-    }
-  } else if (cardholderName && !isValidRecipientName(dto.cardholderName)) {
-    errors.cardholderName = CARDHOLDER_NAME_ERROR;
   }
+
+  const cardholderNameError = getCardholderNameError(dto.cardholderName, mode === "create");
+  if (cardholderNameError) errors.cardholderName = cardholderNameError;
 
   const expirationError = getCardExpirationError(dto.expiration);
   if (expirationError) errors.expiration = expirationError;

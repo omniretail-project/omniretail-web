@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CARDHOLDER_NAME_MAX_LENGTH } from "@/config/card-brands";
 import {
   formatCardExpiration,
   formatCardNumber,
   getCardExpirationError,
+  getCardholderNameError,
   isCardNumberComplete,
   parseCardExpiration,
+  sanitizeCardholderName,
 } from "@/config/card-input-policy";
 import { mockTokenizeCard } from "@/infrastructure/payments/mockTokenizeCard";
 
@@ -35,6 +38,24 @@ describe("card-input-policy", () => {
     expect(getCardExpirationError("10/26")).toBeNull();
     expect(getCardExpirationError("1/26")).toBe("Ingresa una fecha válida en formato MM/AA.");
     expect(getCardExpirationError("12/99")).toBe("Ingresa una fecha de vencimiento válida.");
+  });
+
+  it("valida el nombre del titular con CARDHOLDER_NAME_MAX_LENGTH", () => {
+    expect(getCardholderNameError("", true)).toBe("Ingrese el nombre del titular.");
+    expect(getCardholderNameError("", false)).toBeNull();
+    expect(getCardholderNameError("María José O'Neil-Pérez", true)).toBeNull();
+    expect(getCardholderNameError("Ana 123", false)).toBe(
+      "El nombre del titular solo permite letras, espacios, guiones y apóstrofes.",
+    );
+    expect(getCardholderNameError("A".repeat(CARDHOLDER_NAME_MAX_LENGTH + 1), true)).toBe(
+      `El nombre del titular no puede superar ${CARDHOLDER_NAME_MAX_LENGTH} caracteres.`,
+    );
+  });
+
+  it("limpia el nombre del titular mientras se escribe", () => {
+    expect(sanitizeCardholderName("Ana  López 123")).toBe("Ana López ");
+    expect(sanitizeCardholderName("O’Neil – Pérez")).toBe("O'Neil - Pérez");
+    expect(sanitizeCardholderName("A".repeat(80))).toHaveLength(CARDHOLDER_NAME_MAX_LENGTH);
   });
 
   it("solo da por completo un número de marca aceptada, del largo correcto y que pasa Luhn", () => {

@@ -11,6 +11,7 @@ import {
   type PaymentMethodValidationErrors,
 } from "@/modules/customer/validation/paymentMethod.validation";
 import {
+  CARDHOLDER_NAME_MAX_LENGTH,
   detectStorefrontCardBrand,
   getStorefrontCardSecurityCodeLength,
   validateStorefrontCardNumber,
@@ -19,8 +20,8 @@ import {
   formatCardExpiration,
   formatCardNumber,
   getCardExpirationError,
+  sanitizeCardholderName,
 } from "@/config/card-input-policy";
-import { DELIVERY_ADDRESS_LIMITS, sanitizeRecipientName } from "@/config/delivery-address-policy";
 import { GUATEMALA_BANKS } from "@/config/guatemala-banks";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
@@ -79,6 +80,7 @@ export function MetodosPagoPage() {
   /** El numero completo y el CVV nunca quedan en el estado al cerrar el formulario. */
   function closeEditor() {
     setForm(EMPTY_FORM);
+    setFieldErrors({});
     setEditor(null);
   }
 
@@ -322,9 +324,9 @@ export function MetodosPagoPage() {
               autoComplete="cc-name"
               disabled={busy}
               id="payment-cardholder"
-              maxLength={DELIVERY_ADDRESS_LIMITS.recipientName}
+              maxLength={CARDHOLDER_NAME_MAX_LENGTH}
               onChange={(event) =>
-                updatePaymentMethod({ cardholderName: sanitizeRecipientName(event.target.value) })
+                updatePaymentMethod({ cardholderName: sanitizeCardholderName(event.target.value) })
               }
               value={form.cardholderName}
             />

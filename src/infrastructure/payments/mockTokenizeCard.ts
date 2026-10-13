@@ -38,7 +38,7 @@ export function mockTokenizeCard(input: MockCardTokenizationInput): MockCardToke
     throw new Error("El número de tarjeta no es válido.");
   }
   const securityCodeLength = getStorefrontCardSecurityCodeLength(brand);
-  if (!new RegExp(`^\\d{${securityCodeLength}}$`).test(input.cvv)) {
+  if (!new RegExp(String.raw`^\d{${securityCodeLength}}$`).test(input.cvv)) {
     throw new Error(`Ingresa un código de seguridad de ${securityCodeLength} dígitos.`);
   }
 

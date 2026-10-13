@@ -1,4 +1,4 @@
-import { parseCardExpiration } from "@/config/card-input-policy";
+import { getCardExpirationError, parseCardExpiration } from "@/config/card-input-policy";
 import type { CustomerPaymentMethod } from "@/core/entities";
 import { mockTokenizeCard } from "@/infrastructure/payments/mockTokenizeCard";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -25,7 +25,10 @@ export async function listPaymentMethods(
   return repositories.customerPaymentMethods.getByCustomer(context.tenantId, context.customerId);
 }
 
+/** Misma regla que el formulario: una llamada directa al servicio tampoco registra una tarjeta vencida. */
 function parseExpiration(value: string): { month: number; year: number } {
+  const expirationError = getCardExpirationError(value);
+  if (expirationError) throw new Error(expirationError);
   const expiration = parseCardExpiration(value);
   if (!expiration) throw new Error("Ingresa una fecha válida en formato MM/AA.");
   return expiration;

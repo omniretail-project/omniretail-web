@@ -1,9 +1,14 @@
 import {
+  CARDHOLDER_NAME_MAX_LENGTH,
   detectStorefrontCardBrand,
   getStorefrontCardNumberLengths,
   MAX_EXPIRATION_YEARS_AHEAD,
   validateStorefrontCardNumber,
 } from "@/config/card-brands";
+import { validateMaxLength } from "@/config/text-field-policy";
+
+const CARDHOLDER_NAME_DISALLOWED_CHARACTERS = /[^\p{L}\p{M} '-]/gu;
+const CARDHOLDER_NAME_PATTERN = /^\p{L}[\p{L}\p{M}]*(?:[ '-][\p{L}\p{M}]+)*$/u;
 
 /**
  * Formato y validacion de los campos de una tarjeta nueva, compartidos por el
@@ -50,6 +55,33 @@ export function getCardExpirationError(value: string): string | null {
   }
   if (expiration.year > currentYear + MAX_EXPIRATION_YEARS_AHEAD) {
     return "Ingresa una fecha de vencimiento válida.";
+  }
+  return null;
+}
+
+/**
+ * Nombre del titular: solo letras, espacios, guiones y apostrofes (lo que
+ * imprime una tarjeta), hasta CARDHOLDER_NAME_MAX_LENGTH -- el mismo limite
+ * que aplica el backend.
+ */
+export function sanitizeCardholderName(value: string): string {
+  return value
+    .normalize("NFC")
+    .replace(/[’‘´`]/gu, "'")
+    .replace(/[‐‑‒–—]/gu, "-")
+    .replace(CARDHOLDER_NAME_DISALLOWED_CHARACTERS, "")
+    .replace(/\s{2,}/g, " ")
+    .slice(0, CARDHOLDER_NAME_MAX_LENGTH);
+}
+
+/** `required`: al registrar una tarjeta nueva el titular es obligatorio, como en el checkout. */
+export function getCardholderNameError(value: string, required: boolean): string | null {
+  const name = value.trim();
+  if (!name) return required ? "Ingrese el nombre del titular." : null;
+  const lengthError = validateMaxLength(value, CARDHOLDER_NAME_MAX_LENGTH, "El nombre del titular");
+  if (lengthError) return lengthError;
+  if (!CARDHOLDER_NAME_PATTERN.test(name)) {
+    return "El nombre del titular solo permite letras, espacios, guiones y apóstrofes.";
   }
   return null;
 }
