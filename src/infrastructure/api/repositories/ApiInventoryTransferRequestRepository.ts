@@ -10,8 +10,10 @@ import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendC
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { assertApiUuid, assertOptionalApiUuid } from "@/infrastructure/api/uuid";
 import {
+  parseApiInventoryTransfer,
   parseApiInventoryTransferRequest,
   parseApiInventoryTransferRequestPage,
+  type ApiInventoryTransfer,
   type ApiInventoryTransferRequest,
 } from "@/infrastructure/api/repositories/inventoryTransfersApi.schema";
 
@@ -50,38 +52,25 @@ export class ApiInventoryTransferRequestRepository {
 
   async getById(id: string) {
     assertApiUuid(id, "transferRequestId");
-    const request = (await this.getRequests()).find((item) => item.id === id);
-    return request ?? null;
+    const tenantId = await this.resolveTenantId();
+    let page = 1;
+    while (true) {
+      const response = await this.fetchPage({}, page);
+      const match = response.items.find((item) => item.id === id);
+      if (match) return toRequest(match, tenantId);
+      if (page >= response.totalPages) return null;
+      page += 1;
+    }
   }
 
   async getRequests(filters: InventoryTransferRequestFilters = {}) {
     assertOptionalApiUuid(filters.requestingBranchId, "requestingBranchId");
     assertOptionalApiUuid(filters.sourceBranchId, "sourceBranchId");
     const tenantId = filters.tenantId ?? (await this.resolveTenantId());
-    const first = parseApiInventoryTransferRequestPage(
-      await backendFetch<unknown>("/inventory/transfer-requests", {
-        query: {
-          requestingBranchId: filters.requestingBranchId,
-          sourceBranchId: filters.sourceBranchId,
-          // effectiveStatus puede ser inTransit/received, valores que el filtro del backend no
-          // admite. Se lee el conjunto autorizado y se filtra después de mapearlo.
-          status: undefined,
-          page: 1,
-          size: PAGE_SIZE,
-        },
-      }),
-    );
+    const first = await this.fetchPage(filters, 1);
     const remaining = await Promise.all(
       Array.from({ length: Math.max(0, first.totalPages - 1) }, (_, index) =>
-        backendFetch<unknown>("/inventory/transfer-requests", {
-          query: {
-            requestingBranchId: filters.requestingBranchId,
-            sourceBranchId: filters.sourceBranchId,
-            status: undefined,
-            page: index + 2,
-            size: PAGE_SIZE,
-          },
-        }).then(parseApiInventoryTransferRequestPage),
+        this.fetchPage(filters, index + 2),
       ),
     );
     return [first, ...remaining]
@@ -114,15 +103,32 @@ export class ApiInventoryTransferRequestRepository {
   async approveRequest(id: string, input: ReviewInventoryTransferRequestInput = {}) {
     assertApiUuid(id, "transferRequestId");
     const operationId = input.operationId?.trim() || `transfer-request:${id}`;
-    await backendFetch<unknown>(`/inventory/transfer-requests/${id}/approve`, {
-      method: "POST",
-      body: { operationId, reviewNotes: null },
-      headers: { "Idempotency-Key": operationId },
-    });
-    const request = await this.getById(id);
-    if (!request) throw new BackendRequestError("No se pudo recuperar la solicitud aprobada.", 502);
+    const transfer = parseApiInventoryTransfer(
+      await backendFetch<unknown>(`/inventory/transfer-requests/${id}/approve`, {
+        method: "POST",
+        body: { operationId, reviewNotes: null },
+        headers: { "Idempotency-Key": operationId },
+      }),
+    );
+    const request = toApprovedRequest(transfer, id, await this.resolveTenantId());
     this.emit(request, "status_changed");
     return request;
+  }
+
+  private async fetchPage(filters: InventoryTransferRequestFilters, page: number) {
+    return parseApiInventoryTransferRequestPage(
+      await backendFetch<unknown>("/inventory/transfer-requests", {
+        query: {
+          requestingBranchId: filters.requestingBranchId,
+          sourceBranchId: filters.sourceBranchId,
+          // effectiveStatus puede ser inTransit/received, valores que el filtro del backend no
+          // admite. Se lee el conjunto autorizado y se filtra después de mapearlo.
+          status: undefined,
+          page,
+          size: PAGE_SIZE,
+        },
+      }),
+    );
   }
 
   async rejectRequest(id: string, rejectionReason: string) {
@@ -185,13 +191,45 @@ export function toRequest(
       api.effectiveStatus === "rejected" ? (api.reviewNotes ?? undefined) : undefined,
     requestedAt: api.requestedAt ?? api.createdAt,
     reviewedAt: api.reviewedAt ?? undefined,
-    approvedAt: api.effectiveStatus === "approved" ? (api.reviewedAt ?? undefined) : undefined,
+    approvedAt: ["approved", "inTransit", "received"].includes(api.effectiveStatus)
+      ? (api.reviewedAt ?? undefined)
+      : undefined,
     rejectedAt: api.effectiveStatus === "rejected" ? (api.reviewedAt ?? undefined) : undefined,
     requestedByUserId: api.requestedByUserId ?? undefined,
     reviewedByUserId: api.reviewedByUserId ?? undefined,
     transferId: api.transferId ?? undefined,
     createdAt: api.createdAt,
     updatedAt: api.updatedAt,
+  };
+}
+
+function toApprovedRequest(
+  transfer: ApiInventoryTransfer,
+  requestId: string,
+  tenantId: string,
+): InventoryTransferRequest {
+  const item = transfer.items.find((candidate) => candidate.sourceRequestId === requestId);
+  if (!item) {
+    throw new BackendRequestError(
+      "La API aprobó la solicitud pero el traslado no conserva su línea de origen.",
+      502,
+      "INVALID_BACKEND_RESPONSE",
+    );
+  }
+  return {
+    id: requestId,
+    tenantId,
+    requestingBranchId: transfer.destinationBranchId,
+    sourceBranchId: transfer.sourceBranchId,
+    productId: item.productId,
+    requestedQuantity: item.requestedQuantity,
+    reason: InventoryTransferReason[transfer.reason],
+    notes: transfer.notes ?? undefined,
+    status: InventoryTransferRequestStatus.approved,
+    approvedAt: transfer.preparedAt ?? transfer.createdAt,
+    transferId: transfer.id,
+    createdAt: transfer.createdAt,
+    updatedAt: transfer.updatedAt,
   };
 }
 

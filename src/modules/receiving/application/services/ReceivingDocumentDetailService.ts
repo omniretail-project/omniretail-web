@@ -157,7 +157,7 @@ export class ReceivingDocumentDetailService {
         ? validateApiDraftLines(input.lines, detail)
         : validateIncidentQuantities(input.lines, input.incidents, detail);
     if (validationErrors.length > 0) throw new ReceivingServiceError(validationErrors[0]);
-    if (this.repositories.receivingDataSource === "api") {
+    if (this.repositories.inventoryTransfersDataSource === "api") {
       if (detail.draftEditingLocked) {
         throw new ReceivingServiceError(
           "No es seguro reemplazar los productos del borrador porque tiene incidencias por línea o la lista de incidencias está incompleta.",
