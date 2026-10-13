@@ -1,3 +1,10 @@
+import {
+  detectStorefrontCardBrand,
+  getStorefrontCardSecurityCodeLength,
+  type StorefrontCardBrand,
+} from "@/config/card-brands";
+import { isCardNumberComplete } from "@/config/card-input-policy";
+
 export interface MockCardTokenizationInput {
   cardNumber: string;
   cardholderName?: string;
@@ -8,31 +15,36 @@ export interface MockCardTokenizationInput {
 
 export interface MockCardTokenizationResult {
   providerPaymentMethodId: string;
-  brand: string;
+  brand: StorefrontCardBrand;
   last4: string;
   expirationMonth: number;
   expirationYear: number;
   cardholderName?: string;
 }
 
-function detectCardBrand(digits: string): string {
-  if (digits.startsWith("4")) return "visa";
-  if (/^5[1-5]/.test(digits) || /^2[2-7]/.test(digits)) return "mastercard";
-  return "unknown";
-}
-
+/**
+ * Simula la tokenizacion de una pasarela: recibe el numero completo y el CVV y
+ * devuelve solo datos no sensibles. La marca usa los mismos nombres que
+ * CARD_BRANDS ("Visa", "Mastercard", "American Express"); cualquier otra se
+ * rechaza. Los errores nunca incluyen el numero ni el CVV.
+ */
 export function mockTokenizeCard(input: MockCardTokenizationInput): MockCardTokenizationResult {
   const digits = input.cardNumber.replace(/\D/g, "");
-  if (digits.length < 12 || digits.length > 19) {
-    throw new Error("Card number must contain between 12 and 19 digits");
+  const brand = detectStorefrontCardBrand(digits);
+  if (!brand) {
+    throw new Error("Solo se aceptan tarjetas Visa, Mastercard o American Express.");
   }
-  if (!/^\d{3,4}$/.test(input.cvv)) {
-    throw new Error("Security code must contain 3 or 4 digits");
+  if (!isCardNumberComplete(digits)) {
+    throw new Error("El número de tarjeta no es válido.");
+  }
+  const securityCodeLength = getStorefrontCardSecurityCodeLength(brand);
+  if (!new RegExp(String.raw`^\d{${securityCodeLength}}$`).test(input.cvv)) {
+    throw new Error(`Ingresa un código de seguridad de ${securityCodeLength} dígitos.`);
   }
 
   return {
     providerPaymentMethodId: `pm_demo_${crypto.randomUUID()}`,
-    brand: detectCardBrand(digits),
+    brand,
     last4: digits.slice(-4),
     expirationMonth: input.expirationMonth,
     expirationYear: input.expirationYear,

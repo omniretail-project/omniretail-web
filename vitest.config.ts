@@ -125,6 +125,13 @@ export default defineConfig({
         "src/modules/purchasing/hooks/usePurchaseOrderEditor.ts",
         "src/modules/receiving/application/services/ReceivingDocumentDetailService.ts",
         "src/modules/receiving/hooks/useReceivingDocumentDetail.ts",
+        // Metodos de pago de clientes (PR #170).
+        "src/config/card-input-policy.ts",
+        "src/infrastructure/payments/mockTokenizeCard.ts",
+        "src/modules/customer/application/services/paymentMethodService.ts",
+        "src/modules/customer/pages/MetodosPagoPage.tsx",
+        "src/modules/customer/validation/paymentMethod.validation.ts",
+        "src/modules/storefront/pages/CheckoutPage.tsx",
       ],
     },
   },

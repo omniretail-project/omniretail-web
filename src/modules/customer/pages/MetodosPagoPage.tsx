@@ -7,9 +7,21 @@ import type { PaymentMethodFormDto } from "@/modules/customer/application/dto/Pa
 import {
   hasPaymentMethodValidationErrors,
   validatePaymentMethodForm,
+  type PaymentMethodFormMode,
   type PaymentMethodValidationErrors,
 } from "@/modules/customer/validation/paymentMethod.validation";
-import { CARD_BRANDS, CARDHOLDER_NAME_MAX_LENGTH } from "@/config/card-brands";
+import {
+  CARDHOLDER_NAME_MAX_LENGTH,
+  detectStorefrontCardBrand,
+  getStorefrontCardSecurityCodeLength,
+  validateStorefrontCardNumber,
+} from "@/config/card-brands";
+import {
+  formatCardExpiration,
+  formatCardNumber,
+  getCardExpirationError,
+  sanitizeCardholderName,
+} from "@/config/card-input-policy";
 import { GUATEMALA_BANKS } from "@/config/guatemala-banks";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
@@ -22,38 +34,19 @@ import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 
 const EMPTY_FORM: PaymentMethodFormDto = {
-  brand: "",
-  issuingBank: "",
-  last4: "",
-  expirationMonth: "",
-  expirationYear: "",
+  cardNumber: "",
   cardholderName: "",
+  expiration: "",
+  cvv: "",
+  issuingBank: "",
 };
-
-function sanitizeExpirationMonth(value: string, currentValue: string): string {
-  const digits = value.replace(/\D/g, "").slice(0, 2);
-  if (digits.length === 2 && Number(digits) > 12) return currentValue;
-  return digits;
-}
-
-function sanitizeExpirationYear(value: string, currentValue: string): string {
-  const digits = value.replace(/\D/g, "").slice(0, 4);
-  if (digits.length === 4) {
-    const currentYear = new Date().getFullYear();
-    const year = Number(digits);
-    if (year < currentYear || year > currentYear + 20) return currentValue;
-  }
-  return digits;
-}
 
 function toFormDto(method: CustomerPaymentMethod): PaymentMethodFormDto {
   return {
-    brand: method.brand,
-    issuingBank: method.issuingBank,
-    last4: method.last4,
-    expirationMonth: String(method.expirationMonth),
-    expirationYear: String(method.expirationYear),
+    ...EMPTY_FORM,
     cardholderName: method.cardholderName ?? "",
+    expiration: `${String(method.expirationMonth).padStart(2, "0")}/${String(method.expirationYear % 100).padStart(2, "0")}`,
+    issuingBank: method.issuingBank,
   };
 }
 
@@ -76,20 +69,39 @@ export function MetodosPagoPage() {
     });
   }, [editor]);
 
+  const mode: PaymentMethodFormMode = editor?.mode === "edit" ? "edit" : "create";
+  const cardDigits = form.cardNumber.replace(/\D/g, "");
+  const cardBrand = detectStorefrontCardBrand(cardDigits);
+  const expectedSecurityCodeLength = getStorefrontCardSecurityCodeLength(cardBrand);
+  const liveCardNumberError = validateStorefrontCardNumber(cardDigits) ?? undefined;
+  const liveExpirationError =
+    form.expiration.length === 5 ? (getCardExpirationError(form.expiration) ?? undefined) : undefined;
+
+  /** El numero completo y el CVV nunca quedan en el estado al cerrar el formulario. */
+  function closeEditor() {
+    setForm(EMPTY_FORM);
+    setFieldErrors({});
+    setEditor(null);
+  }
+
   async function handleSubmit() {
-    const errors = validatePaymentMethodForm(form);
+    const errors = validatePaymentMethodForm(form, mode);
     setFieldErrors(errors);
     if (hasPaymentMethodValidationErrors(errors)) return;
 
+    const submitted = form;
+    // Igual que el checkout: el numero y el CVV salen del estado en cuanto se
+    // envian, se guarde o no la tarjeta.
+    setForm((current) => ({ ...current, cardNumber: "", cvv: "" }));
     try {
       if (editor?.mode === "edit") {
-        await update(editor.method.id, form);
+        await update(editor.method.id, submitted);
         showToast({ title: "Método de pago actualizado", tone: "success" });
       } else {
-        await create(form);
+        await create(submitted);
         showToast({ title: "Método de pago agregado", tone: "success" });
       }
-      setEditor(null);
+      closeEditor();
     } catch (caughtError) {
       showToast({
         title: "No se pudo guardar el método de pago",
@@ -104,10 +116,10 @@ export function MetodosPagoPage() {
     setForm(nextForm);
     setFieldErrors((current) => {
       const affectedFields = Object.keys(patch) as Array<keyof PaymentMethodValidationErrors>;
-      if (patch.expirationMonth !== undefined) affectedFields.push("expirationYear");
-      if (patch.expirationYear !== undefined) affectedFields.push("expirationMonth");
+      // El largo del CVV depende de la marca del numero.
+      if (patch.cardNumber !== undefined) affectedFields.push("cvv");
       if (!affectedFields.some((field) => current[field])) return current;
-      const validation = validatePaymentMethodForm(nextForm);
+      const validation = validatePaymentMethodForm(nextForm, mode);
       const nextErrors = { ...current };
       for (const field of affectedFields) {
         if (!current[field]) continue;
@@ -256,7 +268,7 @@ export function MetodosPagoPage() {
       )}
 
       <Modal
-        onClose={() => setEditor(null)}
+        onClose={closeEditor}
         open={Boolean(editor)}
         title={editor?.mode === "edit" ? "Editar tarjeta" : "Nueva tarjeta"}
       >
@@ -268,21 +280,98 @@ export function MetodosPagoPage() {
             void handleSubmit();
           }}
         >
-          <FormField error={fieldErrors.brand} id="payment-brand" label="Marca">
-            <Select
-              disabled={busy || editor?.mode === "edit"}
-              id="payment-brand"
-              onChange={(event) => updatePaymentMethod({ brand: event.target.value })}
-              value={form.brand}
+          {editor?.mode === "edit" ? (
+            <div className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2">
+              <CreditCardIcon className="h-4 w-4 text-[var(--color-structure)]" />
+              <span className="text-sm font-semibold text-[var(--color-text)]">
+                {editor.method.brand} •••• {editor.method.last4}
+              </span>
+            </div>
+          ) : (
+            <FormField
+              error={fieldErrors.cardNumber ?? liveCardNumberError}
+              hint={cardBrand ?? undefined}
+              id="payment-card-number"
+              label="Número de tarjeta"
             >
-              <option value="">Selecciona una marca</option>
-              {CARD_BRANDS.map((brand) => (
-                <option key={brand} value={brand}>
-                  {brand}
-                </option>
-              ))}
-            </Select>
+              <Input
+                autoComplete="cc-number"
+                disabled={busy}
+                id="payment-card-number"
+                inputMode="numeric"
+                maxLength={23}
+                onChange={(event) => {
+                  const cardNumber = formatCardNumber(event.target.value);
+                  const nextBrand = detectStorefrontCardBrand(cardNumber.replace(/\D/g, ""));
+                  updatePaymentMethod({
+                    cardNumber,
+                    cvv: form.cvv.slice(0, getStorefrontCardSecurityCodeLength(nextBrand)),
+                  });
+                }}
+                placeholder="4242 4242 4242 4242"
+                value={form.cardNumber}
+              />
+            </FormField>
+          )}
+
+          <FormField
+            error={fieldErrors.cardholderName}
+            hint={editor?.mode === "edit" ? "Opcional" : undefined}
+            id="payment-cardholder"
+            label="Nombre del titular"
+          >
+            <Input
+              autoComplete="cc-name"
+              disabled={busy}
+              id="payment-cardholder"
+              maxLength={CARDHOLDER_NAME_MAX_LENGTH}
+              onChange={(event) =>
+                updatePaymentMethod({ cardholderName: sanitizeCardholderName(event.target.value) })
+              }
+              value={form.cardholderName}
+            />
           </FormField>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField
+              error={fieldErrors.expiration ?? liveExpirationError}
+              id="payment-expiration"
+              label="Fecha de vencimiento"
+            >
+              <Input
+                autoComplete="cc-exp"
+                disabled={busy}
+                id="payment-expiration"
+                inputMode="numeric"
+                maxLength={5}
+                onChange={(event) =>
+                  updatePaymentMethod({ expiration: formatCardExpiration(event.target.value) })
+                }
+                placeholder="MM/AA"
+                value={form.expiration}
+              />
+            </FormField>
+
+            {editor?.mode === "edit" ? null : (
+              <FormField error={fieldErrors.cvv} id="payment-cvv" label="Código de seguridad (CVV)">
+                <Input
+                  autoComplete="cc-csc"
+                  disabled={busy}
+                  id="payment-cvv"
+                  inputMode="numeric"
+                  maxLength={expectedSecurityCodeLength}
+                  onChange={(event) =>
+                    updatePaymentMethod({
+                      cvv: event.target.value.replace(/\D/g, "").slice(0, expectedSecurityCodeLength),
+                    })
+                  }
+                  placeholder={expectedSecurityCodeLength === 4 ? "••••" : "•••"}
+                  type="password"
+                  value={form.cvv}
+                />
+              </FormField>
+            )}
+          </div>
 
           <FormField error={fieldErrors.issuingBank} id="payment-bank" label="Banco emisor">
             <Select
@@ -300,78 +389,8 @@ export function MetodosPagoPage() {
             </Select>
           </FormField>
 
-          <FormField error={fieldErrors.last4} id="payment-last4" label="Últimos 4 dígitos">
-            <Input
-              disabled={busy || editor?.mode === "edit"}
-              id="payment-last4"
-              inputMode="numeric"
-              maxLength={4}
-              onChange={(event) =>
-                updatePaymentMethod({ last4: event.target.value.replace(/\D/g, "").slice(0, 4) })
-              }
-              value={form.last4}
-            />
-          </FormField>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField
-              error={fieldErrors.expirationMonth}
-              id="payment-month"
-              label="Mes de expiración"
-            >
-              <Input
-                disabled={busy}
-                id="payment-month"
-                inputMode="numeric"
-                maxLength={2}
-                onChange={(event) =>
-                  updatePaymentMethod({
-                    expirationMonth: sanitizeExpirationMonth(event.target.value, form.expirationMonth),
-                  })
-                }
-                placeholder="MM"
-                value={form.expirationMonth}
-              />
-            </FormField>
-
-            <FormField
-              error={fieldErrors.expirationYear}
-              id="payment-year"
-              label="Año de expiración"
-            >
-              <Input
-                disabled={busy}
-                id="payment-year"
-                inputMode="numeric"
-                maxLength={4}
-                onChange={(event) =>
-                  updatePaymentMethod({
-                    expirationYear: sanitizeExpirationYear(event.target.value, form.expirationYear),
-                  })
-                }
-                placeholder="AAAA"
-                value={form.expirationYear}
-              />
-            </FormField>
-          </div>
-
-          <FormField
-            error={fieldErrors.cardholderName}
-            hint="Opcional"
-            id="payment-cardholder"
-            label="Nombre en la tarjeta"
-          >
-            <Input
-              disabled={busy}
-              id="payment-cardholder"
-              maxLength={CARDHOLDER_NAME_MAX_LENGTH}
-              onChange={(event) => updatePaymentMethod({ cardholderName: event.target.value })}
-              value={form.cardholderName}
-            />
-          </FormField>
-
           <div className="flex justify-end gap-2">
-            <Button onClick={() => setEditor(null)} type="button" variant="secondary">
+            <Button onClick={closeEditor} type="button" variant="secondary">
               Cancelar
             </Button>
             <Button disabled={busy} type="submit">
