@@ -4,8 +4,8 @@ import { isApiUuid } from "@/infrastructure/api/uuid";
 
 const uuid = z.string().refine(isApiUuid, { message: "UUID de backend invalido." });
 const instant = z.iso.datetime({ offset: true });
-const quantity = z.number().finite().nonnegative();
-const positiveQuantity = z.number().finite().positive();
+const quantity = z.number().finite().min(0);
+const positiveQuantity = z.number().finite().gt(0);
 const transferStatus = z.enum(["preparing", "inTransit", "received", "cancelled"]);
 const requestStatus = z.enum(["requested", "approved", "rejected", "cancelled"]);
 const reason = z.enum([

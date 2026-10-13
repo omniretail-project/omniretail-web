@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { InventoryTransferReason, InventoryTransferRequestStatus } from "@/core/enums";
 import { ApiInventoryTransferRepository } from "@/infrastructure/api/repositories/ApiInventoryTransferRepository";
 import { ApiInventoryTransferRequestRepository } from "@/infrastructure/api/repositories/ApiInventoryTransferRequestRepository";
+import {
+  parseApiInventoryTransfer,
+  parseApiInventoryTransferRequest,
+} from "@/infrastructure/api/repositories/inventoryTransfersApi.schema";
+import { withApiInventoryTransfers } from "@/infrastructure/api/withApiInventoryTransfers";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
+import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 
 const id = (suffix: number) => `30000000-0000-4000-8000-${String(suffix).padStart(12, "0")}`;
 const ids = {
@@ -130,6 +136,65 @@ describe("API repositories for inventory transfers", () => {
     expect(found).toMatchObject({ id: ids.request, approvedAt: timestamp });
   });
 
+  it("lists, creates and updates requests through their API commands", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "POST" && url.endsWith("/reject")) {
+        return Response.json(
+          requestResponse({ effectiveStatus: "rejected", reviewNotes: "Sin stock" }),
+        );
+      }
+      if (init?.method === "POST" && url.endsWith("/cancel")) {
+        return Response.json(requestResponse({ effectiveStatus: "cancelled" }));
+      }
+      if (init?.method === "POST")
+        return Response.json(requestResponse({ effectiveStatus: "requested" }));
+      if (url.includes("page=2")) return Response.json(page([requestResponse()], 2, 2));
+      return Response.json(
+        page([requestResponse({ id: id(9), effectiveStatus: "requested" })], 1, 2),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const repository = new ApiInventoryTransferRequestRepository(
+      new DataEventBus(),
+      async () => ids.tenant,
+    );
+
+    const requests = await repository.getRequests({
+      status: InventoryTransferRequestStatus.inTransit,
+    });
+    const created = await repository.createRequest({
+      tenantId: ids.tenant,
+      requestingBranchId: ids.destinationBranch,
+      sourceBranchId: ids.sourceBranch,
+      productId: ids.product,
+      requestedQuantity: 3,
+      reason: InventoryTransferReason.replenishment,
+      notes: "  Reposición  ",
+    });
+    const rejected = await repository.rejectRequest(ids.request, "Sin stock");
+    const cancelled = await repository.cancelRequest(ids.request, "Ya no se necesita");
+
+    expect(requests).toHaveLength(1);
+    expect(created.status).toBe(InventoryTransferRequestStatus.requested);
+    expect(rejected.rejectionReason).toBe("Sin stock");
+    expect(cancelled.status).toBe(InventoryTransferRequestStatus.cancelled);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/backend/inventory/transfer-requests",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          requestingBranchId: ids.destinationBranch,
+          sourceBranchId: ids.sourceBranch,
+          productId: ids.product,
+          requestedQuantity: 3,
+          reason: InventoryTransferReason.replenishment,
+          notes: "Reposición",
+        }),
+      }),
+    );
+  });
+
   it("creates transfer commands and reloads the authoritative transfer", async () => {
     const fetchMock = vi.fn(async () => Response.json(transferResponse()));
     vi.stubGlobal("fetch", fetchMock);
@@ -199,5 +264,64 @@ describe("API repositories for inventory transfers", () => {
       }),
     ).rejects.toMatchObject({ code: "TRANSFER_TRACEABILITY_NOT_SUPPORTED" });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("reads, lists and cancels transfers while rejecting malformed payloads", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "POST") return Response.json(transferResponse({ status: "cancelled" }));
+      if (url.includes("page=2")) return Response.json(page([transferResponse()], 2, 2));
+      if (url.includes("/inventory/transfers?"))
+        return Response.json(page([transferResponse()], 1, 2));
+      return Response.json(transferResponse());
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const repository = new ApiInventoryTransferRepository(
+      new DataEventBus(),
+      async () => ids.tenant,
+    );
+
+    const detail = await repository.getById(ids.transfer);
+    const transfers = await repository.query({ sourceBranchId: ids.sourceBranch });
+    const cancelled = await repository.cancel(ids.transfer, {
+      reason: "Cancelado",
+      actorUserId: id(10),
+      operationId: "cancel-1",
+    });
+
+    expect(detail?.transfer.id).toBe(ids.transfer);
+    expect(transfers).toHaveLength(2);
+    expect(cancelled.transfer.status).toBe("cancelled");
+    expect(() => parseApiInventoryTransfer({ invalid: true })).toThrow(/invalido/i);
+    expect(() => parseApiInventoryTransferRequest({ invalid: true })).toThrow(/invalido/i);
+  });
+
+  it("installs API adapters while preserving unsupported operations and delegates", async () => {
+    const legacyTransfers = {
+      create: vi.fn(),
+      getByNumber: vi.fn(),
+    };
+    const legacyRequests = {
+      markInTransit: vi.fn(),
+      markReceived: vi.fn(),
+    };
+    const repositories = {
+      inventoryTransfersDataSource: "mock",
+      inventoryTransfers: legacyTransfers,
+      inventoryTransferRequests: legacyRequests,
+    } as unknown as RepositoryRegistry;
+
+    const configured = withApiInventoryTransfers(repositories, new DataEventBus());
+
+    expect(configured.inventoryTransfersDataSource).toBe("api");
+    await expect(configured.inventoryTransfers.create({} as never)).rejects.toMatchObject({
+      code: "NOT_SUPPORTED",
+    });
+    await expect(
+      configured.inventoryTransferRequests.markInTransit(ids.request),
+    ).rejects.toMatchObject({
+      code: "NOT_SUPPORTED",
+    });
+    expect(configured.inventoryTransfers.getByNumber).toBeTypeOf("function");
   });
 });
