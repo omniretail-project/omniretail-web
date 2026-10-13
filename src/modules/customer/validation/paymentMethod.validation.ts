@@ -1,82 +1,66 @@
 import {
-  CARD_BRANDS,
-  CARDHOLDER_NAME_MAX_LENGTH,
-  MAX_EXPIRATION_YEARS_AHEAD,
+  detectStorefrontCardBrand,
+  getStorefrontCardSecurityCodeLength,
+  validateStorefrontCardNumber,
 } from "@/config/card-brands";
+import { getCardExpirationError, isCardNumberComplete } from "@/config/card-input-policy";
+import { isValidRecipientName } from "@/config/delivery-address-policy";
 import { GUATEMALA_BANKS } from "@/config/guatemala-banks";
-import { validateMaxLength } from "@/config/text-field-policy";
 import type { PaymentMethodFormDto } from "@/modules/customer/application/dto/PaymentMethodFormDto";
 
+export type PaymentMethodFormMode = "create" | "edit";
+
 export type PaymentMethodValidationErrors = Partial<
-  Record<
-    "brand" | "issuingBank" | "last4" | "expirationMonth" | "expirationYear" | "cardholderName",
-    string
-  >
+  Record<"cardNumber" | "cardholderName" | "expiration" | "cvv" | "issuingBank", string>
 >;
 
+const CARDHOLDER_NAME_ERROR = "El nombre del titular solo permite letras, espacios, guiones y apóstrofes.";
+
 /**
- * Mismas reglas que ya aplica MockCustomerPaymentMethodRepository.
- * assertValidPaymentMethod, replicadas aca para dar feedback antes de la
- * llamada al repo (mismo patrón usado en PR9/PR10 con
- * validatePasswordAgainstPolicy): brand e issuingBank deben ser uno de
- * los valores reales de CARD_BRANDS/GUATEMALA_BANKS (no texto libre --
- * antes "casa" pasaba como marca válida), last4 exactamente 4 dígitos,
- * y la fecha de expiracion (mes + año, no solo el año) no puede ser
- * anterior al mes/año actual -- una tarjeta que vence en un mes ya
- * pasado del año en curso tambien es invalida.
+ * Mismas reglas que el checkout (card-brands + card-input-policy): numero de
+ * una marca aceptada que pasa Luhn, tarjeta no vencida en formato MM/AA y CVV
+ * del largo de la marca (4 para American Express). El titular es obligatorio
+ * al crear, igual que en el checkout; al editar sigue opcional para no
+ * bloquear tarjetas antiguas sin titular, pero si se escribe se valida.
+ * Al editar no se validan numero, CVV ni banco: no son editables.
  */
 export function validatePaymentMethodForm(
   dto: PaymentMethodFormDto,
+  mode: PaymentMethodFormMode,
 ): PaymentMethodValidationErrors {
   const errors: PaymentMethodValidationErrors = {};
+  const cardholderName = dto.cardholderName.trim();
 
-  if (!dto.brand.trim()) {
-    errors.brand = "La marca de la tarjeta es obligatoria.";
-  } else if (!CARD_BRANDS.includes(dto.brand as (typeof CARD_BRANDS)[number])) {
-    errors.brand = "Selecciona una marca de tarjeta válida.";
+  if (mode === "create") {
+    const digits = dto.cardNumber.replace(/\D/g, "");
+    if (!digits) {
+      errors.cardNumber = "Ingrese el número de tarjeta.";
+    } else if (!isCardNumberComplete(digits)) {
+      errors.cardNumber =
+        validateStorefrontCardNumber(digits) ??
+        "Completa un número de tarjeta Visa, Mastercard o American Express.";
+    }
+
+    const securityCodeLength = getStorefrontCardSecurityCodeLength(detectStorefrontCardBrand(digits));
+    if (!new RegExp(`^\\d{${securityCodeLength}}$`).test(dto.cvv)) {
+      errors.cvv = `Ingresa un código de seguridad de ${securityCodeLength} dígitos.`;
+    }
+
+    if (!dto.issuingBank.trim()) {
+      errors.issuingBank = "El banco emisor es obligatorio.";
+    } else if (!GUATEMALA_BANKS.includes(dto.issuingBank as (typeof GUATEMALA_BANKS)[number])) {
+      errors.issuingBank = "Selecciona un banco emisor válido.";
+    }
+
+    if (!cardholderName || !isValidRecipientName(dto.cardholderName)) {
+      errors.cardholderName = CARDHOLDER_NAME_ERROR;
+    }
+  } else if (cardholderName && !isValidRecipientName(dto.cardholderName)) {
+    errors.cardholderName = CARDHOLDER_NAME_ERROR;
   }
 
-  if (!dto.issuingBank.trim()) {
-    errors.issuingBank = "El banco emisor es obligatorio.";
-  } else if (!GUATEMALA_BANKS.includes(dto.issuingBank as (typeof GUATEMALA_BANKS)[number])) {
-    errors.issuingBank = "Selecciona un banco emisor válido.";
-  }
-
-  if (!/^\d{4}$/.test(dto.last4.trim())) {
-    errors.last4 = "Ingresa exactamente los últimos 4 dígitos.";
-  }
-
-  const month = Number(dto.expirationMonth);
-  if (!Number.isInteger(month) || month < 1 || month > 12) {
-    errors.expirationMonth = "El mes debe estar entre 1 y 12.";
-  }
-
-  const year = Number(dto.expirationYear);
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
-  const isPast =
-    Number.isInteger(month) &&
-    Number.isInteger(year) &&
-    (year < currentYear || (year === currentYear && month < currentMonth));
-
-  const maxYear = currentYear + MAX_EXPIRATION_YEARS_AHEAD;
-  if (!Number.isInteger(year)) {
-    errors.expirationYear = "El año debe ser el actual o uno posterior.";
-  } else if (isPast) {
-    errors.expirationYear = "La tarjeta está vencida.";
-  } else if (year > maxYear) {
-    errors.expirationYear = `El año de expiración no puede ser mayor a ${maxYear}.`;
-  }
-
-  if (dto.cardholderName.trim()) {
-    const lengthError = validateMaxLength(
-      dto.cardholderName,
-      CARDHOLDER_NAME_MAX_LENGTH,
-      "El nombre en la tarjeta",
-    );
-    if (lengthError) errors.cardholderName = lengthError;
-  }
+  const expirationError = getCardExpirationError(dto.expiration);
+  if (expirationError) errors.expiration = expirationError;
 
   return errors;
 }

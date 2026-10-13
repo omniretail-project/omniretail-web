@@ -1,4 +1,6 @@
+import { parseCardExpiration } from "@/config/card-input-policy";
 import type { CustomerPaymentMethod } from "@/core/entities";
+import { mockTokenizeCard } from "@/infrastructure/payments/mockTokenizeCard";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { PaymentMethodFormDto } from "@/modules/customer/application/dto/PaymentMethodFormDto";
 import { resolveCustomerAuthorizationContext } from "@/modules/customer/application/services/CustomerAuthorizationContext";
@@ -23,23 +25,36 @@ export async function listPaymentMethods(
   return repositories.customerPaymentMethods.getByCustomer(context.tenantId, context.customerId);
 }
 
+function parseExpiration(value: string): { month: number; year: number } {
+  const expiration = parseCardExpiration(value);
+  if (!expiration) throw new Error("Ingresa una fecha válida en formato MM/AA.");
+  return expiration;
+}
+
 export async function createPaymentMethod(
   repositories: PaymentMethodRepositories,
   dto: PaymentMethodFormDto,
 ): Promise<CustomerPaymentMethod> {
   const context = await resolveCustomerAuthorizationContext(repositories);
-  // brand/issuingBank/last4/expiracion/titular son los unicos campos que
-  // vienen del formulario -- tenantId/customerId salen del contexto
-  // resuelto, y type/providerPaymentMethodId/isDefault los fija el
-  // repositorio.
+  const expiration = parseExpiration(dto.expiration);
+  // El numero completo y el CVV solo llegan hasta la tokenizacion: de ella
+  // se toman brand y last4. providerPaymentMethodId se descarta (lo genera
+  // el repositorio/backend), y tenantId/customerId salen del contexto
+  // resuelto, nunca del formulario.
+  const card = mockTokenizeCard({
+    cardNumber: dto.cardNumber,
+    cvv: dto.cvv,
+    expirationMonth: expiration.month,
+    expirationYear: expiration.year,
+  });
   return repositories.customerPaymentMethods.create({
     tenantId: context.tenantId,
     customerId: context.customerId,
-    brand: dto.brand.trim(),
+    brand: card.brand,
     issuingBank: dto.issuingBank.trim(),
-    last4: dto.last4.trim(),
-    expirationMonth: Number(dto.expirationMonth),
-    expirationYear: Number(dto.expirationYear),
+    last4: card.last4,
+    expirationMonth: card.expirationMonth,
+    expirationYear: card.expirationYear,
     cardholderName: dto.cardholderName.trim() || undefined,
   });
 }
@@ -50,17 +65,17 @@ export async function updatePaymentMethod(
   dto: PaymentMethodFormDto,
 ): Promise<CustomerPaymentMethod> {
   const context = await resolveCustomerAuthorizationContext(repositories);
-  // brand y last4 no son editables (la "tarjeta" en si no cambia; para
-  // eso se agrega una nueva) -- ni se envian aunque el formulario los
-  // muestre de nuevo.
+  const expiration = parseExpiration(dto.expiration);
+  // Numero, CVV, marca, last4 y banco no son editables (la "tarjeta" en si
+  // no cambia; para eso se agrega una nueva) -- ni se envian.
   return repositories.customerPaymentMethods.update(
     context.tenantId,
     context.customerId,
     paymentMethodId,
     {
       cardholderName: dto.cardholderName.trim() || undefined,
-      expirationMonth: Number(dto.expirationMonth),
-      expirationYear: Number(dto.expirationYear),
+      expirationMonth: expiration.month,
+      expirationYear: expiration.year,
     },
   );
 }

@@ -29,10 +29,15 @@ import {
 import { EMAIL_MAX_LENGTH, validateEmail } from "@/config/email-policy";
 import {
   detectStorefrontCardBrand,
-  getStorefrontCardNumberLengths,
   getStorefrontCardSecurityCodeLength,
   validateStorefrontCardNumber,
 } from "@/config/card-brands";
+import {
+  formatCardExpiration,
+  formatCardNumber,
+  getCardExpirationError,
+  isCardNumberComplete,
+} from "@/config/card-input-policy";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import {
   calculateStorefrontShipping,
@@ -44,34 +49,6 @@ const departments = Object.keys(municipalitiesByDepartment);
 function formatGuatemalaPhone(value: string) {
   const digits = value.replace(/\D/g, "").replace(/^502/, "").slice(0, 8);
   return digits ? `+502 ${digits}` : "+502 ";
-}
-
-function formatCardNumber(value: string) {
-  return value.replace(/\D/g, "").slice(0, 19).replace(/(.{4})/g, "$1 ").trim();
-}
-
-function formatCardExpiration(value: string) {
-  const digits = value.replace(/\D/g, "").slice(0, 4);
-  return digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
-}
-
-function getCardExpirationError(value: string): string | null {
-  const match = /^(0[1-9]|1[0-2])\/\d{2}$/.exec(value);
-  if (!match) return "Ingresa una fecha válida en formato MM/AA.";
-
-  const month = Number(match[1]);
-  const year = 2000 + Number(match[0].slice(-2));
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
-
-  if (year < currentYear || (year === currentYear && month < currentMonth)) {
-    return "La tarjeta está vencida.";
-  }
-  if (year > currentYear + 20) {
-    return "Ingresa una fecha de vencimiento válida.";
-  }
-  return null;
 }
 
 const initialForm: StorefrontCheckoutFormDto = {
@@ -284,10 +261,7 @@ export function CheckoutPage() {
   const cardDigits = cardNumber.replace(/\D/g, "");
   const cardBrand = detectStorefrontCardBrand(cardDigits);
   const cardNumberError = validateStorefrontCardNumber(cardDigits);
-  const cardNumberComplete =
-    cardBrand !== null &&
-    getStorefrontCardNumberLengths(cardBrand).includes(cardDigits.length) &&
-    !cardNumberError;
+  const cardNumberComplete = isCardNumberComplete(cardDigits);
   const expectedSecurityCodeLength = getStorefrontCardSecurityCodeLength(cardBrand);
   const cardExpirationError = cardExpiration ? getCardExpirationError(cardExpiration) : null;
   const paymentReady =
