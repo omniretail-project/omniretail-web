@@ -138,7 +138,11 @@ describe("API repositories for inventory transfers", () => {
       async () => ids.tenant,
     );
 
-    await repository.markInTransit(ids.transfer, { operationId: "dispatch-1" });
+    await repository.markInTransit(ids.transfer, {
+      dispatchedByUserId: id(10),
+      operationId: "dispatch-1",
+      items: [{ itemId: ids.item, dispatchedQuantity: 3 }],
+    });
     await repository.markReceived(ids.transfer, {
       confirmationId: "receipt-1",
       receivedByUserId: id(10),

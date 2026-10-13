@@ -226,6 +226,7 @@ function toApprovedRequest(
     reason: InventoryTransferReason[transfer.reason],
     notes: transfer.notes ?? undefined,
     status: InventoryTransferRequestStatus.approved,
+    requestedAt: transfer.createdAt,
     approvedAt: transfer.preparedAt ?? transfer.createdAt,
     transferId: transfer.id,
     createdAt: transfer.createdAt,
