@@ -157,7 +157,7 @@ export class ReceivingDocumentDetailService {
         ? validateApiDraftLines(input.lines, detail)
         : validateIncidentQuantities(input.lines, input.incidents, detail);
     if (validationErrors.length > 0) throw new ReceivingServiceError(validationErrors[0]);
-    if (this.repositories.inventoryTransfersDataSource === "api") {
+    if (this.repositories.receivingDataSource === "api") {
       if (detail.draftEditingLocked) {
         throw new ReceivingServiceError(
           "No es seguro reemplazar los productos del borrador porque tiene incidencias por línea o la lista de incidencias está incompleta.",
@@ -467,7 +467,7 @@ export class ReceivingDocumentDetailService {
         items,
       },
     );
-    if (this.repositories.receivingDataSource === "api") {
+    if (this.repositories.inventoryTransfersDataSource === "api") {
       // El endpoint de traslados responde su propio comprobante, no un GoodsReceipt de Compras.
       // La UI solo necesita una confirmación para recargar; no se persiste este objeto localmente.
       const confirmedAt = confirmedTransfer.transfer.receivedAt ?? new Date().toISOString();
