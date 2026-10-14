@@ -111,6 +111,7 @@ export default defineConfig({
         "src/modules/catalog/application/services/SaveLocationService.ts",
         "src/modules/catalog/validation/location.validation.ts",
         "src/modules/inventory/application/services/GetInventoryAlertsService.ts",
+        "src/modules/inventory/hooks/useInventoryAlerts.ts",
         "src/modules/inventory/application/services/InventoryCountService.ts",
         "src/modules/inventory/application/services/InventoryRegularizationService.ts",
         "src/modules/inventory/application/services/RegisterInventoryAdjustmentService.ts",
