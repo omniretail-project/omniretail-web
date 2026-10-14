@@ -116,6 +116,26 @@ describe("useInventoryAlerts transfer integration", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("rejects an API request whose requester branch is not the active branch", async () => {
+    mocks.execute.mockResolvedValue(dataFor("branch-a"));
+    const { result } = renderHook(() => useInventoryAlerts());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await expect(result.current.requestTransfer(transferDto("branch-b"))).rejects.toThrow(
+        "sucursal solicitante debe estar activa",
+      );
+    });
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(result.current.error).toBe(
+        "La sucursal solicitante debe estar activa para crear la solicitud.",
+      ),
+    );
+    expect(result.current.busy).toBe(false);
+  });
+
   it("allows only one transfer mutation at a time and reloads after completion", async () => {
     mocks.execute.mockResolvedValue(dataFor("branch-a"));
     const approval = deferred<{ id: string; number: string }>();
@@ -138,6 +158,54 @@ describe("useInventoryAlerts transfer integration", () => {
       await firstApproval;
     });
     await waitFor(() => expect(mocks.execute).toHaveBeenCalledTimes(2));
+    expect(result.current.busy).toBe(false);
+  });
+
+  it("surfaces approval errors and releases the transfer mutation for a retry", async () => {
+    mocks.execute.mockResolvedValue(dataFor("branch-a"));
+    mocks.approve
+      .mockRejectedValueOnce(new Error("No fue posible aprobar la solicitud."))
+      .mockResolvedValueOnce({ id: "transfer-1", number: "TR-1" });
+    const { result } = renderHook(() => useInventoryAlerts());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await expect(result.current.approveTransferRequest("request-1")).rejects.toThrow(
+        "No fue posible aprobar la solicitud.",
+      );
+    });
+    await waitFor(() =>
+      expect(result.current.error).toBe("No fue posible aprobar la solicitud."),
+    );
+    expect(result.current.busy).toBe(false);
+
+    await act(async () => result.current.approveTransferRequest("request-1"));
+    expect(mocks.approve).toHaveBeenCalledTimes(2);
+    expect(result.current.busy).toBe(false);
+  });
+
+  it("surfaces rejection errors and releases the transfer mutation for a retry", async () => {
+    mocks.execute.mockResolvedValue(dataFor("branch-a"));
+    mocks.reject
+      .mockRejectedValueOnce(new Error("No fue posible rechazar la solicitud."))
+      .mockResolvedValueOnce({ id: "request-1" });
+    const { result } = renderHook(() => useInventoryAlerts());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await expect(
+        result.current.rejectTransferRequest("request-1", "Sin existencias disponibles."),
+      ).rejects.toThrow("No fue posible rechazar la solicitud.");
+    });
+    await waitFor(() =>
+      expect(result.current.error).toBe("No fue posible rechazar la solicitud."),
+    );
+    expect(result.current.busy).toBe(false);
+
+    await act(async () =>
+      result.current.rejectTransferRequest("request-1", "Sin existencias disponibles."),
+    );
+    expect(mocks.reject).toHaveBeenCalledTimes(2);
     expect(result.current.busy).toBe(false);
   });
 

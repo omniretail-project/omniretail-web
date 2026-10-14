@@ -109,15 +109,92 @@ describe("GetInventoryAlertsService API transfer requests", () => {
     ).resolves.toEqual([]);
     expect(getRequests).not.toHaveBeenCalled();
   });
+
+  it("includes API transfer requests when execute loads the active branch page", async () => {
+    const incoming = request({
+      id: "request-through-execute",
+      status: InventoryTransferRequestStatus.requested,
+    });
+    const getRequests = vi.fn(async ({ sourceBranchId }) =>
+      sourceBranchId ? [incoming] : [],
+    );
+    const getStockBatch = vi.fn(async () => ({
+      branchId: SOURCE_BRANCH_ID,
+      items: [
+        {
+          productId: PRODUCT_ID,
+          quantity: 12,
+          reservedQuantity: 4,
+          availableQuantity: 8,
+          minStock: 2,
+          reorderPoint: 4,
+          status: "normal" as const,
+          suggestedReorder: 0,
+        },
+      ],
+    }));
+    const getStockPage = vi.fn(async () => ({
+      items: [],
+      page: 1,
+      pageSize: 20,
+      totalItems: 0,
+      totalPages: 0,
+      summary: { activeProducts: 0, lowStock: 0, outOfStock: 0 },
+    }));
+    const service = new GetInventoryAlertsService(
+      repositories({ getRequests, getStockBatch, getStockPage }) as unknown as RepositoryRegistry,
+    );
+
+    const result = await service.execute({
+      branchId: SOURCE_BRANCH_ID,
+      branchName: "Bodega Central",
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(result.transferRequests).toEqual([
+      expect.objectContaining({
+        id: incoming.id,
+        context: "received",
+        sourceBranchId: SOURCE_BRANCH_ID,
+        availableQuantity: 8,
+      }),
+    ]);
+    expect(getStockPage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branchId: SOURCE_BRANCH_ID,
+        page: 1,
+        pageSize: 20,
+        productTypes: ["physical", "service", "kit"],
+      }),
+    );
+    expect(getRequests).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      sourceBranchId: SOURCE_BRANCH_ID,
+    });
+    expect(getRequests).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      requestingBranchId: SOURCE_BRANCH_ID,
+    });
+  });
 });
 
 function repositories({
   getRequests,
   getStockBatch = vi.fn(),
+  getStockPage = vi.fn(async () => ({
+    items: [],
+    page: 1,
+    pageSize: 20,
+    totalItems: 0,
+    totalPages: 0,
+    summary: { activeProducts: 0, lowStock: 0, outOfStock: 0 },
+  })),
   inventoryTransfersDataSource = "api",
 }: {
   getRequests: ReturnType<typeof vi.fn>;
   getStockBatch?: ReturnType<typeof vi.fn>;
+  getStockPage?: ReturnType<typeof vi.fn>;
   inventoryTransfersDataSource?: "api" | "mock";
 }) {
   const user: User = {
@@ -163,6 +240,7 @@ function repositories({
     updatedAt: NOW,
   };
   return {
+    inventoryStockDataSource: "api",
     inventoryTransfersDataSource,
     auth: {
       getCurrentSessionId: vi.fn(async () => "session-1"),
@@ -177,9 +255,14 @@ function repositories({
       getById: vi.fn(async (id: string) => branches.find((item) => item.id === id) ?? null),
       getAll: vi.fn(async () => branches),
     },
+    businessConfig: {
+      getCapabilities: vi.fn(async () => ({ supportsMultipleLocations: false })),
+    },
+    categories: { getByTenant: vi.fn(async () => []) },
+    units: { getByTenant: vi.fn(async () => []) },
     products: { getById: vi.fn(async (id: string) => (id === product.id ? product : null)) },
     inventoryTransferRequests: { getRequests },
-    inventory: { getStockBatch },
+    inventory: { getStockBatch, getStockPage },
   };
 }
 
