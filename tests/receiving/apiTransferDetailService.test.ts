@@ -289,4 +289,75 @@ describe("ReceivingDocumentDetailService transfer API", () => {
       blockingReason: expect.stringMatching(/debe estar en tránsito/i),
     });
   });
+
+  it("rejects a transfer that does not exist and one opened from a different active branch", async () => {
+    const missing = createHarness();
+    missing.inventoryTransfers.getById.mockResolvedValueOnce(null);
+
+    await expect(
+      missing.service.getDocument("transfer", transferId, destinationBranchId),
+    ).rejects.toThrow("Traslado no encontrado.");
+
+    const wrongBranch = createHarness();
+    await expect(
+      wrongBranch.service.getDocument(
+        "transfer",
+        transferId,
+        "10000000-0000-4000-8000-000000000099",
+      ),
+    ).rejects.toThrow("El traslado no pertenece a la sucursal activa.");
+  });
+
+  it("blocks confirmation when the product lacks an active operational location", async () => {
+    const { service, repositories } = createHarness();
+    repositories.inventory.getProductInventorySettings.mockResolvedValueOnce(null);
+
+    const detail = await service.getDocument("transfer", transferId, destinationBranchId);
+
+    expect(detail.transferReception).toMatchObject({
+      canConfirmTransfer: false,
+      blockedLineIds: [transferItemId],
+      blockingReason: expect.stringMatching(/ubicación operativa activa/i),
+    });
+  });
+
+  it("rejects quantities above the canonical pending amount", async () => {
+    const { service } = createHarness();
+    const detail = await service.getDocument("transfer", transferId, destinationBranchId);
+
+    await expect(
+      service.confirm({
+        documentType: "transfer",
+        documentId: transferId,
+        confirmationId: "transfer-confirmation-too-many",
+        lines: [{ ...detail.lines[0], receivedNow: 5 }],
+        incidents: [],
+      }),
+    ).rejects.toThrow(/excede lo pendiente/i);
+  });
+
+  it("requires an idempotency key and at least one received quantity", async () => {
+    const { service } = createHarness();
+    const detail = await service.getDocument("transfer", transferId, destinationBranchId);
+
+    await expect(
+      service.confirm({
+        documentType: "transfer",
+        documentId: transferId,
+        confirmationId: " ",
+        lines: [{ ...detail.lines[0], receivedNow: 1 }],
+        incidents: [],
+      }),
+    ).rejects.toThrow(/requiere una identidad/i);
+
+    await expect(
+      service.confirm({
+        documentType: "transfer",
+        documentId: transferId,
+        confirmationId: "transfer-confirmation-empty",
+        lines: [{ ...detail.lines[0], receivedNow: 0 }],
+        incidents: [],
+      }),
+    ).rejects.toThrow(/al menos una cantidad/i);
+  });
 });

@@ -152,4 +152,37 @@ describe("API transfer reception rules", () => {
     expect(resolved.blockedLineIds).toEqual(["transfer-item-1"]);
     expect(resolved.blockingReason).toMatch(/ubicación operativa activa/i);
   });
+
+  it("blocks a transfer that is not receivable or has no pending quantities", () => {
+    const notReceivable = buildApiTransferReception({
+      lines: [line()],
+      transferIsReceivable: false,
+      activeLocationById: new Map([[firstLocationId, location(firstLocationId)]]),
+      productById: new Map([[productId, product(productId)]]),
+    });
+    const noPending = buildApiTransferReception({
+      lines: [line({ pendingQuantity: 0 })],
+      transferIsReceivable: true,
+      activeLocationById: new Map([[firstLocationId, location(firstLocationId)]]),
+      productById: new Map([[productId, product(productId)]]),
+    });
+
+    expect(notReceivable.blockingReason).toMatch(/debe estar en tránsito/i);
+    expect(noPending.blockingReason).toMatch(/no tiene productos pendientes/i);
+  });
+
+  it("blocks a line whose product configuration cannot be loaded", () => {
+    const resolved = buildApiTransferReception({
+      lines: [line()],
+      transferIsReceivable: true,
+      activeLocationById: new Map([[firstLocationId, location(firstLocationId)]]),
+      productById: new Map(),
+    });
+
+    expect(resolved).toMatchObject({
+      canConfirmTransfer: false,
+      blockedLineIds: ["transfer-item-1"],
+      blockingReason: expect.stringMatching(/no se pudo consultar/i),
+    });
+  });
 });

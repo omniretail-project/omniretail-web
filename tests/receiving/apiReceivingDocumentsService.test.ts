@@ -75,7 +75,14 @@ function createProduct(): Product {
   };
 }
 
-function createHarness() {
+function createHarness(
+  options: {
+    transfers?: InventoryTransferWithItems[];
+    inventoryTransfersDataSource?: "api" | "mock";
+    product?: Product | null;
+    branches?: Array<{ id: string; tenantId: string; name: string }>;
+  } = {},
+) {
   const user: User = {
     id: userId,
     tenantId,
@@ -88,10 +95,10 @@ function createHarness() {
     createdAt: now,
     updatedAt: now,
   };
-  const inventoryTransfers = { query: vi.fn(async () => [createTransfer()]) };
+  const inventoryTransfers = { query: vi.fn(async () => options.transfers ?? [createTransfer()]) };
   const repositories = {
     receivingDataSource: "api",
-    inventoryTransfersDataSource: "api",
+    inventoryTransfersDataSource: options.inventoryTransfersDataSource ?? "api",
     auth: {
       getCurrentSessionId: vi.fn(async () => "session-1"),
       getSession: vi.fn(async () => ({
@@ -133,13 +140,20 @@ function createHarness() {
         tenantId,
         name: id === sourceBranchId ? "Origen" : "Destino",
       })),
-      getAll: vi.fn(async () => [
-        { id: sourceBranchId, tenantId, name: "Origen" },
-        { id: destinationBranchId, tenantId, name: "Destino" },
-      ]),
+      getAll: vi.fn(
+        async () =>
+          options.branches ?? [
+            { id: sourceBranchId, tenantId, name: "Origen" },
+            { id: destinationBranchId, tenantId, name: "Destino" },
+          ],
+      ),
     },
     purchaseOrders: { getPageScoped: vi.fn(async () => emptyPage()) },
-    products: { getById: vi.fn(async () => createProduct()) },
+    products: {
+      getById: vi.fn(async () =>
+        options.product === undefined ? createProduct() : options.product,
+      ),
+    },
     inventoryTransfers,
   } as unknown as RepositoryRegistry;
   return { service: new ReceivingDocumentsService(repositories), repositories, inventoryTransfers };
@@ -165,5 +179,30 @@ describe("ReceivingDocumentsService transfer API", () => {
       status: InventoryTransferStatus.inTransit,
     });
     expect(repositories.purchaseOrders.getPageScoped).toHaveBeenCalledTimes(4);
+  });
+
+  it("keeps the purchase-order queue available when transfers use the mock datasource", async () => {
+    const { service, inventoryTransfers } = createHarness({
+      inventoryTransfersDataSource: "mock",
+    });
+
+    const result = await service.execute(destinationBranchId);
+
+    expect(result.documents).toEqual([]);
+    expect(inventoryTransfers.query).not.toHaveBeenCalled();
+  });
+
+  it("keeps a transfer visible when its product or source branch is no longer available", async () => {
+    const { service } = createHarness({
+      product: null,
+      branches: [{ id: destinationBranchId, tenantId, name: "Destino" }],
+    });
+
+    const result = await service.execute(destinationBranchId);
+
+    expect(result.documents[0]).toMatchObject({
+      documentId: transferId,
+      supplierOrSource: "Sucursal origen",
+    });
   });
 });
