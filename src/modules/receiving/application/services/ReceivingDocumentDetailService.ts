@@ -50,6 +50,7 @@ import type {
   ReceivingDocumentLine,
   ReceivingTrackingDetail,
   SaveReceivingProgressInput,
+  TransferReceptionReadModel,
 } from "@/modules/receiving/application/dto/ReceivingDocumentDetailDto";
 import { RECEIPT_INCIDENT_TYPE_LABELS } from "@/modules/receiving/application/dto/ReceivingDocumentDetailDto";
 import {
@@ -131,10 +132,19 @@ export class ReceivingDocumentDetailService {
       documentType === "purchase_order"
         ? await this.getPurchaseOrderDocument(tenantId, user, documentId, activeBranchId)
         : await this.getTransferDocument(tenantId, user, documentId, activeBranchId);
+    const canConfirm = permissions.includes("receiving.receipts.confirm");
+    const canManageTransfer = permissions.includes("inventory.transfers.manage");
+    const transferReception = content.transferReception
+      ? applyTransferReceptionPermissions(
+          content.transferReception,
+          canConfirm && canManageTransfer,
+        )
+      : undefined;
     return {
       ...content,
+      ...(transferReception ? { transferReception } : {}),
       dataSource: this.repositories.receivingDataSource,
-      canConfirm: permissions.includes("receiving.receipts.confirm"),
+      canConfirm,
       canManageIncidents: permissions.includes("receiving.incidents.manage"),
     };
   }
@@ -393,6 +403,9 @@ export class ReceivingDocumentDetailService {
         "La sucursal destino debe estar activa para recibir el traslado.",
       );
     }
+    if (this.repositories.inventoryTransfersDataSource === "api") {
+      return this.confirmApiTransfer(input, tenantId, actorUserId, user, permissions, transfer);
+    }
     if (!(await this.hasTransferDispatchEvidence(transfer))) {
       throw new ReceivingServiceError("El traslado no tiene una salida de despacho verificable.");
     }
@@ -459,32 +472,11 @@ export class ReceivingDocumentDetailService {
     if (items.length === 0) {
       throw new ReceivingServiceError("Selecciona al menos una cantidad para recibir.");
     }
-    const confirmedTransfer = await this.repositories.inventoryTransfers.markReceived(
-      transfer.transfer.id,
-      {
-        receivedByUserId: actorUserId,
-        confirmationId: input.confirmationId,
-        items,
-      },
-    );
-    if (this.repositories.inventoryTransfersDataSource === "api") {
-      // El endpoint de traslados responde su propio comprobante, no un GoodsReceipt de Compras.
-      // La UI solo necesita una confirmación para recargar; no se persiste este objeto localmente.
-      const confirmedAt = confirmedTransfer.transfer.receivedAt ?? new Date().toISOString();
-      return {
-        id: `transfer-receipt:${confirmedTransfer.transfer.id}:${input.confirmationId}`,
-        tenantId,
-        branchId: confirmedTransfer.transfer.destinationBranchId,
-        number: `REC-${confirmedTransfer.transfer.number}`,
-        inventoryTransferId: confirmedTransfer.transfer.id,
-        confirmationId: input.confirmationId,
-        receivedByUserId: actorUserId,
-        receivedAt: confirmedAt,
-        status: ReceiptStatus.received,
-        createdAt: confirmedAt,
-        updatedAt: confirmedAt,
-      };
-    }
+    await this.repositories.inventoryTransfers.markReceived(transfer.transfer.id, {
+      receivedByUserId: actorUserId,
+      confirmationId: input.confirmationId,
+      items,
+    });
     const receipt = await this.repositories.receipts.getByConfirmationId(
       tenantId,
       input.confirmationId,
@@ -493,6 +485,97 @@ export class ReceivingDocumentDetailService {
       throw new ReceivingServiceError("No se pudo recuperar la recepción confirmada.");
     }
     return receipt;
+  }
+
+  private async confirmApiTransfer(
+    input: ConfirmReceivingInput,
+    tenantId: string,
+    actorUserId: string,
+    user: User,
+    permissions: readonly string[],
+    transfer: NonNullable<Awaited<ReturnType<RepositoryRegistry["inventoryTransfers"]["getById"]>>>,
+  ): Promise<Receipt> {
+    if (!permissions.includes("inventory.transfers.manage")) {
+      throw new ReceivingServiceError("No dispone de permisos para confirmar traslados.");
+    }
+    const confirmationId = input.confirmationId.trim();
+    if (!confirmationId) {
+      throw new ReceivingServiceError("La confirmación de recepción requiere una identidad.");
+    }
+    if (input.incidents.length > 0) {
+      throw new ReceivingServiceError("La recepción de traslado no admite incidencias parciales.");
+    }
+    const detail = await this.getTransferDocument(
+      tenantId,
+      user,
+      transfer.transfer.id,
+      transfer.transfer.destinationBranchId,
+    );
+    const reception = detail.transferReception;
+    const destinationLocationId = reception?.destinationLocationId;
+    if (!reception?.canConfirmTransfer || !destinationLocationId) {
+      throw new ReceivingServiceError(
+        reception?.blockingReason ?? "El traslado no puede confirmarse en su estado actual.",
+      );
+    }
+    const canonicalLines = new Map(detail.lines.map((line) => [line.sourceLineId, line]));
+    const receivedItemIds = new Set<string>();
+    const items = input.lines.flatMap((line) => {
+      const quantity = toFiniteNumber(line.receivedNow);
+      if (quantity <= 0) return [];
+      const canonical = canonicalLines.get(line.sourceLineId);
+      const item = transfer.items.find(
+        (candidate) => candidate.id === line.sourceLineId && candidate.productId === line.productId,
+      );
+      if (!canonical || !item || receivedItemIds.has(item.id)) {
+        throw new ReceivingServiceError("La línea recibida no pertenece al traslado actual.");
+      }
+      if (!Number.isFinite(quantity) || quantity > canonical.pendingQuantity) {
+        throw new ReceivingServiceError(
+          `${canonical.productName}: la cantidad recibida excede lo pendiente.`,
+        );
+      }
+      if (canonical.tracking.lot || canonical.tracking.serial) {
+        throw new ReceivingServiceError(
+          `${canonical.productName}: el Backend aún no expone las selecciones físicas despachadas requeridas para recibir lotes o series.`,
+        );
+      }
+      receivedItemIds.add(item.id);
+      return [
+        {
+          itemId: item.id,
+          receivedQuantity: quantity,
+          // La ubicación llega del estado canónico recién leído; nunca de una línea manipulable
+          // por la interfaz. La API acepta una única ubicación por confirmación.
+          locationId: destinationLocationId,
+        },
+      ];
+    });
+    if (items.length === 0) {
+      throw new ReceivingServiceError("Selecciona al menos una cantidad para recibir.");
+    }
+    const confirmedTransfer = await this.repositories.inventoryTransfers.markReceived(
+      transfer.transfer.id,
+      {
+        receivedByUserId: actorUserId,
+        confirmationId,
+        items,
+      },
+    );
+    const confirmedAt = confirmedTransfer.transfer.receivedAt ?? new Date().toISOString();
+    return {
+      id: `transfer-receipt:${confirmedTransfer.transfer.id}:${confirmationId}`,
+      tenantId,
+      branchId: confirmedTransfer.transfer.destinationBranchId,
+      number: `REC-${confirmedTransfer.transfer.number}`,
+      inventoryTransferId: confirmedTransfer.transfer.id,
+      confirmationId,
+      receivedByUserId: actorUserId,
+      receivedAt: confirmedAt,
+      status: ReceiptStatus.received,
+      createdAt: confirmedAt,
+      updatedAt: confirmedAt,
+    };
   }
 
   private async persistDraft(
@@ -935,12 +1018,136 @@ export class ReceivingDocumentDetailService {
     return record;
   }
 
+  /**
+   * El detalle API no consulta dispatches, movimientos, lotes ni series mock. El estado y las
+   * cantidades del traslado provienen del Backend; las líneas trazables quedan bloqueadas hasta
+   * que el contrato exponga las selecciones físicas despachadas.
+   */
+  private async getApiTransferDocument(
+    tenantId: string,
+    user: User,
+    documentId: string,
+    activeBranchId?: string,
+  ): Promise<ReceivingDocumentContent> {
+    const transfer = await this.repositories.inventoryTransfers.getById(documentId);
+    if (transfer?.transfer.tenantId !== tenantId) {
+      throw new ReceivingServiceError("Traslado no encontrado.");
+    }
+    await ensureUserCanOperateBranch(
+      this.repositories,
+      user,
+      transfer.transfer.destinationBranchId,
+    );
+    if (activeBranchId && transfer.transfer.destinationBranchId !== activeBranchId) {
+      throw new ReceivingServiceError("El traslado no pertenece a la sucursal activa.");
+    }
+
+    const destinationBranchId = transfer.transfer.destinationBranchId;
+    const [branches, units, locations, capabilities, entitlements, products, settingsEntries] =
+      await Promise.all([
+        this.repositories.branches.getAll(),
+        this.repositories.units.getAll(),
+        this.repositories.inventory.getLocations(destinationBranchId),
+        this.getCapabilities(tenantId),
+        new ResolveTenantEntitlementsService(this.repositories).execute(tenantId),
+        Promise.all(
+          transfer.items.map((item) =>
+            this.repositories.products.getByIdScoped(tenantId, item.productId),
+          ),
+        ),
+        Promise.all(
+          transfer.items.map(
+            async (item) =>
+              [
+                item.productId,
+                await this.repositories.inventory.getProductInventorySettings(
+                  item.productId,
+                  destinationBranchId,
+                ),
+              ] as const,
+          ),
+        ),
+      ]);
+    const branchById = new Map(branches.map((branch) => [branch.id, branch]));
+    const productById = new Map(
+      products
+        .filter((product): product is Product => product !== null)
+        .map((product) => [product.id, product]),
+    );
+    const unitById = new Map(units.map((unit) => [unit.id, unit]));
+    const activeLocationById = new Map(
+      locations
+        .filter(
+          (location) =>
+            location.tenantId === tenantId &&
+            location.branchId === destinationBranchId &&
+            location.status === LocationStatus.active,
+        )
+        .map((location) => [location.id, location]),
+    );
+    const settingsByProductId = new Map(settingsEntries);
+    const lines = transfer.items.map((item) => {
+      const settings = settingsByProductId.get(item.productId);
+      const configuredLocationId =
+        settings?.tenantId === tenantId &&
+        settings.branchId === destinationBranchId &&
+        settings.productId === item.productId &&
+        settings.defaultLocationId &&
+        activeLocationById.has(settings.defaultLocationId)
+          ? settings.defaultLocationId
+          : "";
+      return this.toTransferDetailLine(
+        item,
+        productById.get(item.productId),
+        unitById,
+        configuredLocationId,
+      );
+    });
+    const receivable = await this.hasTransferDispatchEvidence(transfer);
+    const transferReception = buildApiTransferReception({
+      lines,
+      transferIsReceivable: receivable,
+      activeLocationById,
+      productById,
+    });
+
+    return {
+      document: {
+        id: transfer.transfer.id,
+        type: "transfer",
+        number: transfer.transfer.number,
+        typeLabel: "Traslado",
+        originLabel: "Sucursal origen",
+        originName:
+          branchById.get(transfer.transfer.sourceBranchId)?.name ?? "Sucursal origen no disponible",
+        branchId: destinationBranchId,
+        branchName: branchById.get(destinationBranchId)?.name ?? "Sucursal destino",
+        tenantId,
+        statusLabel:
+          transfer.transfer.status === InventoryTransferStatus.received
+            ? "Recibida"
+            : "En tránsito",
+      },
+      lines,
+      locations: toLocationOptions(locations, capabilities, tenantId, destinationBranchId),
+      incidentTypes: [],
+      incidents: [],
+      previousReceipts: [],
+      capabilities: toCapabilityFlags(capabilities, entitlements),
+      readOnly: !transferReception.canConfirmTransfer,
+      transferReception,
+    };
+  }
+
   private async getTransferDocument(
     tenantId: string,
     user: User,
     documentId: string,
     activeBranchId?: string,
   ): Promise<ReceivingDocumentContent> {
+    if (this.repositories.inventoryTransfersDataSource === "api") {
+      return this.getApiTransferDocument(tenantId, user, documentId, activeBranchId);
+    }
     const transfer = await this.repositories.inventoryTransfers.getById(documentId);
     // El id llega desde la URL/estado del cliente: un traslado de otro tenant se trata igual
     // que uno inexistente, mismo criterio que requirePurchaseOrder.
@@ -1071,6 +1278,18 @@ export class ReceivingDocumentDetailService {
   private async hasTransferDispatchEvidence(
     transfer: NonNullable<Awaited<ReturnType<RepositoryRegistry["inventoryTransfers"]["getById"]>>>,
   ): Promise<boolean> {
+    if (this.repositories.inventoryTransfersDataSource === "api") {
+      return (
+        transfer.transfer.status === InventoryTransferStatus.inTransit &&
+        transfer.items.length > 0 &&
+        transfer.items.every(
+          (item) =>
+            item.dispatchedQuantity > 0 &&
+            item.receivedQuantity >= 0 &&
+            item.receivedQuantity <= item.dispatchedQuantity,
+        )
+      );
+    }
     const { tenantId, sourceBranchId, id } = transfer.transfer;
     const [dispatches, movements] = await Promise.all([
       this.repositories.dispatches.getAll({ tenantId, branchId: sourceBranchId }),
@@ -2247,6 +2466,106 @@ export function resolveReceivingLineLocation(input: {
     return input.defaultLocationId;
   }
   return "";
+}
+
+function applyTransferReceptionPermissions(
+  reception: TransferReceptionReadModel,
+  hasPermission: boolean,
+): TransferReceptionReadModel {
+  if (hasPermission || !reception.canConfirmTransfer) return reception;
+  return {
+    ...reception,
+    canConfirmTransfer: false,
+    blockingReason: "No dispone de permisos para confirmar traslados.",
+  };
+}
+
+export function buildApiTransferReception(input: {
+  lines: ReceivingDocumentLine[];
+  transferIsReceivable: boolean;
+  activeLocationById: Map<string, StorageLocation>;
+  productById: Map<string, Product>;
+}): TransferReceptionReadModel {
+  const pendingLines = input.lines.filter((line) => line.pendingQuantity > 0);
+  const allLineIds = pendingLines.map((line) => line.id);
+  if (!input.transferIsReceivable) {
+    return blockedTransferReception(
+      allLineIds,
+      "El traslado debe estar en tránsito y tener cantidades despachadas pendientes para poder recibirse.",
+    );
+  }
+  if (pendingLines.length === 0) {
+    return blockedTransferReception([], "El traslado no tiene productos pendientes por recibir.");
+  }
+
+  const unavailableProductLineIds = pendingLines
+    .filter((line) => !input.productById.has(line.productId))
+    .map((line) => line.id);
+  if (unavailableProductLineIds.length > 0) {
+    return blockedTransferReception(
+      unavailableProductLineIds,
+      "No se pudo consultar la configuración de uno o más productos del traslado.",
+    );
+  }
+
+  const traceabilityBlockedLineIds = pendingLines
+    .filter((line) => line.tracking.lot || line.tracking.serial)
+    .map((line) => line.id);
+  if (traceabilityBlockedLineIds.length > 0) {
+    return {
+      ...blockedTransferReception(
+        traceabilityBlockedLineIds,
+        "La recepción de productos con lotes o series permanece bloqueada hasta que Backend exponga las selecciones físicas despachadas.",
+      ),
+      traceabilityBlockedLineIds,
+    };
+  }
+
+  const missingLocationLineIds = pendingLines
+    .filter((line) => !line.locationId || !input.activeLocationById.has(line.locationId))
+    .map((line) => line.id);
+  if (missingLocationLineIds.length > 0) {
+    return blockedTransferReception(
+      missingLocationLineIds,
+      "Hay productos sin una ubicación operativa activa configurada en la sucursal destino.",
+    );
+  }
+
+  const locationIds = [...new Set(pendingLines.map((line) => line.locationId))];
+  if (locationIds.length !== 1) {
+    return blockedTransferReception(
+      allLineIds,
+      "Los productos pendientes tienen ubicaciones operativas diferentes y el Backend solo admite una ubicación de destino por confirmación.",
+    );
+  }
+  const destinationLocation = input.activeLocationById.get(locationIds[0]);
+  if (!destinationLocation) {
+    return blockedTransferReception(
+      allLineIds,
+      "La ubicación operativa configurada ya no está disponible en la sucursal destino.",
+    );
+  }
+  return {
+    requiresSingleDestinationLocation: true,
+    canConfirmTransfer: true,
+    destinationLocationId: destinationLocation.id,
+    destinationLocationName: `${destinationLocation.code} · ${destinationLocation.name}`,
+    blockedLineIds: [],
+    traceabilityBlockedLineIds: [],
+  };
+}
+
+function blockedTransferReception(
+  blockedLineIds: string[],
+  blockingReason: string,
+): TransferReceptionReadModel {
+  return {
+    requiresSingleDestinationLocation: true,
+    canConfirmTransfer: false,
+    blockedLineIds,
+    traceabilityBlockedLineIds: [],
+    blockingReason,
+  };
 }
 
 function toLocationOptions(

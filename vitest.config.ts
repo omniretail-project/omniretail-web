@@ -125,6 +125,7 @@ export default defineConfig({
         "src/modules/purchasing/application/services/PurchaseOrderEditorService.ts",
         "src/modules/purchasing/hooks/usePurchaseOrderEditor.ts",
         "src/modules/receiving/application/services/ReceivingDocumentDetailService.ts",
+        "src/modules/receiving/application/services/ReceivingDocumentsService.ts",
         "src/modules/receiving/hooks/useReceivingDocumentDetail.ts",
         // Metodos de pago de clientes (PR #170).
         "src/config/card-input-policy.ts",
@@ -138,6 +139,7 @@ export default defineConfig({
         "src/infrastructure/api/repositories/ApiInventoryTransferRequestRepository.ts",
         "src/infrastructure/api/repositories/inventoryTransfersApi.schema.ts",
         "src/infrastructure/api/withApiInventoryTransfers.ts",
+        "src/infrastructure/api/withApiInventoryStock.ts",
         // Búsqueda paginada de órdenes de compra (PR #172).
         "src/infrastructure/api/repositories/ApiPurchaseOrderRepository.ts",
         "src/modules/purchasing/application/services/GetPurchaseOrdersReadModelService.ts",
