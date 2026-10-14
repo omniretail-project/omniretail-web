@@ -292,7 +292,10 @@ describe("ReceivingDocumentDetailService transfer API", () => {
 
   it("rejects a transfer that does not exist and one opened from a different active branch", async () => {
     const missing = createHarness();
-    missing.inventoryTransfers.getById.mockResolvedValueOnce(null);
+    const getTransferById = missing.inventoryTransfers.getById as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    getTransferById.mockResolvedValueOnce(null);
 
     await expect(
       missing.service.getDocument("transfer", transferId, destinationBranchId),
@@ -310,7 +313,9 @@ describe("ReceivingDocumentDetailService transfer API", () => {
 
   it("blocks confirmation when the product lacks an active operational location", async () => {
     const { service, repositories } = createHarness();
-    repositories.inventory.getProductInventorySettings.mockResolvedValueOnce(null);
+    const getProductInventorySettings = repositories.inventory
+      .getProductInventorySettings as unknown as ReturnType<typeof vi.fn>;
+    getProductInventorySettings.mockResolvedValueOnce(null);
 
     const detail = await service.getDocument("transfer", transferId, destinationBranchId);
 
