@@ -368,20 +368,18 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         <div
           className={cn(
             "grid gap-3 md:grid-cols-2",
-            apiMode ? "xl:grid-cols-[220px_220px]" : "xl:grid-cols-[minmax(0,1fr)_220px_220px]",
+            "xl:grid-cols-[minmax(0,1fr)_220px_220px]",
           )}
         >
-          {!apiMode ? (
-            <Input
-              aria-label="Buscar ordenes"
-              maxLength={TEXT_LIMITS.search}
-              className="h-10"
-              onChange={(event) => handleSearchChange(event.target.value)}
-              placeholder="Buscar por numero, proveedor o producto..."
-              type="search"
-              value={filters.search}
-            />
-          ) : null}
+          <Input
+            aria-label="Buscar ordenes"
+            maxLength={TEXT_LIMITS.search}
+            className="h-10"
+            onChange={(event) => handleSearchChange(event.target.value)}
+            placeholder="Buscar por numero, proveedor o producto..."
+            type="search"
+            value={filters.search}
+          />
           <Select
             aria-label="Estado"
             className="h-10 rounded-md"

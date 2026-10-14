@@ -6,6 +6,8 @@ export interface PurchaseOrderPageParams {
   branchId?: string;
   supplierId?: string;
   status?: PurchaseOrderStatus;
+  /** Texto libre aplicado por el backend sobre las referencias históricas de la orden. */
+  search?: string;
   page: number;
   pageSize: number;
 }

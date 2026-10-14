@@ -91,6 +91,7 @@ export function usePurchaseOrders() {
 
   const statusFilter = filters.status;
   const supplierFilter = filters.supplierId;
+  const searchFilter = filters.search;
   const requestInput = useMemo<string | GetPurchaseOrdersParams>(
     () =>
       apiMode
@@ -99,6 +100,7 @@ export function usePurchaseOrders() {
             branchName: activeBranchName,
             supplierId: supplierFilter === "all" ? undefined : supplierFilter,
             status: statusFilter === "all" ? undefined : statusFilter,
+            search: searchFilter,
             page,
             pageSize,
           }
@@ -109,6 +111,7 @@ export function usePurchaseOrders() {
       apiMode,
       page,
       pageSize,
+      searchFilter,
       statusFilter,
       supplierFilter,
     ],
@@ -254,7 +257,9 @@ export function usePurchaseOrders() {
       setFilters(next);
       if (
         apiMode &&
-        (current.status !== next.status || current.supplierId !== next.supplierId)
+        (current.search !== next.search ||
+          current.status !== next.status ||
+          current.supplierId !== next.supplierId)
       ) {
         setLoading(true);
         setError(null);

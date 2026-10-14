@@ -30,6 +30,7 @@ export interface GetPurchaseOrdersParams {
   branchName?: string;
   supplierId?: string;
   status?: PurchaseOrderStatus;
+  search?: string;
   page: number;
   pageSize: number;
 }
@@ -124,6 +125,7 @@ export class GetPurchaseOrdersReadModelService {
         branchId: params.branchId,
         supplierId: params.supplierId,
         status: params.status,
+        search: params.search,
         page: params.page,
         pageSize: params.pageSize,
       }),

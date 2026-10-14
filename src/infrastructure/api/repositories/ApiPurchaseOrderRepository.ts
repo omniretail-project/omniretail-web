@@ -63,6 +63,7 @@ export class ApiPurchaseOrderRepository {
           branchId: params.branchId,
           supplierId: params.supplierId,
           status: params.status,
+          search: params.search?.trim() || undefined,
           page: params.page,
           size: params.pageSize,
         },
