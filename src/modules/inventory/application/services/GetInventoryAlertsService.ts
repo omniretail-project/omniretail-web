@@ -68,8 +68,9 @@ export class GetInventoryAlertsService {
     if (this.repositories.inventoryStockDataSource !== "api") {
       return { items: [], page: 1, pageSize: API_PAGE_SIZE, totalItems: 0, totalPages: 0 };
     }
-    const { tenantId, permissions } = await resolveInventoryContext(this.repositories);
+    const { tenantId, user, permissions } = await resolveInventoryContext(this.repositories);
     ensureCanReadStock(permissions);
+    await ensureUserCanOperateInventoryBranch(this.repositories, user, params.branchId);
     const [units, { supportsMultipleLocations, locations }, page] = await Promise.all([
       this.getUnits(tenantId),
       this.getLocationsIfSupported(tenantId, params.branchId),
@@ -127,11 +128,95 @@ export class GetInventoryAlertsService {
     );
   }
 
-  private async getApiPage(params: GetInventoryAlertsParams): Promise<InventoryAlertsData> {
-    const { tenantId, permissions } = await resolveInventoryContext(this.repositories);
+  async getApiTransferRequests(
+    params: Pick<GetInventoryAlertsParams, "branchId" | "branchName">,
+  ): Promise<InventoryTransferRequestRow[]> {
+    if (this.repositories.inventoryTransfersDataSource !== "api") return [];
+    const { tenantId, user, permissions } = await resolveInventoryContext(this.repositories);
     ensureCanReadStock(permissions);
-    const [result, categories, units, { supportsMultipleLocations, locations }] = await Promise.all(
-      [
+    await ensureUserCanOperateInventoryBranch(this.repositories, user, params.branchId);
+
+    const [providedRequests, requestedTransfers, branches] = await Promise.all([
+      this.repositories.inventoryTransferRequests.getRequests({
+        tenantId,
+        sourceBranchId: params.branchId,
+      }),
+      this.repositories.inventoryTransferRequests.getRequests({
+        tenantId,
+        requestingBranchId: params.branchId,
+      }),
+      this.repositories.branches.getAll(),
+    ]);
+    const receivedRequests = providedRequests.filter(
+      (request) => request.status === InventoryTransferRequestStatus.requested,
+    );
+    const responseRequests = filterRecentTransferResponses(
+      requestedTransfers.filter(
+        (request) =>
+          request.status === InventoryTransferRequestStatus.approved ||
+          request.status === InventoryTransferRequestStatus.rejected,
+      ),
+    );
+    const productIds = [
+      ...new Set([...receivedRequests, ...responseRequests].map((request) => request.productId)),
+    ];
+    const products = (
+      await Promise.all(
+        productIds.map((productId) => this.repositories.products.getById(productId)),
+      )
+    ).filter((product): product is Product => Boolean(product && product.tenantId === tenantId));
+    const physicalReceivedProductIds = [
+      ...new Set(
+        receivedRequests
+          .filter((request) =>
+            products.some(
+              (product) => product.id === request.productId && isOperationalStockProduct(product),
+            ),
+          )
+          .map((request) => request.productId),
+      ),
+    ];
+    const stock = physicalReceivedProductIds.length
+      ? await this.repositories.inventory.getStockBatch({
+          branchId: params.branchId,
+          productIds: physicalReceivedProductIds,
+        })
+      : { branchId: params.branchId, items: [] };
+    const branchNames = new Map(
+      branches
+        .filter((branch) => branch.tenantId === tenantId)
+        .map((branch) => [branch.id, branch.name]),
+    );
+    if (!branchNames.has(params.branchId)) branchNames.set(params.branchId, params.branchName);
+    const productById = new Map(products.map((product) => [product.id, product]));
+    const availabilityByProduct = new Map(
+      stock.items.map((item) => [item.productId, item.availableQuantity]),
+    );
+
+    return [
+      ...buildApiTransferRequestRows(
+        receivedRequests,
+        "received",
+        productById,
+        branchNames,
+        availabilityByProduct,
+      ),
+      ...buildApiTransferRequestRows(
+        responseRequests,
+        "response",
+        productById,
+        branchNames,
+        availabilityByProduct,
+      ),
+    ];
+  }
+
+  private async getApiPage(params: GetInventoryAlertsParams): Promise<InventoryAlertsData> {
+    const { tenantId, user, permissions } = await resolveInventoryContext(this.repositories);
+    ensureCanReadStock(permissions);
+    await ensureUserCanOperateInventoryBranch(this.repositories, user, params.branchId);
+    const [result, categories, units, { supportsMultipleLocations, locations }, transferRequests] =
+      await Promise.all([
         this.repositories.inventory.getStockPage({
           branchId: params.branchId,
           search: params.search,
@@ -146,15 +231,15 @@ export class GetInventoryAlertsService {
         this.getCategories(tenantId),
         this.getUnits(tenantId),
         this.getLocationsIfSupported(tenantId, params.branchId),
-      ],
-    );
+        this.getApiTransferRequests(params),
+      ]);
     const unitById = new Map(units.map((unit) => [unit.id, unit]));
     return {
       supportsMultipleLocations,
       rows: result.items.map((item) => mapApiStockRow(item, tenantId, params.branchName, unitById)),
       alerts: [],
       alertTotalItems: 0,
-      transferRequests: [],
+      transferRequests,
       kpis: {
         activeProducts: result.summary.activeProducts,
         lowStock: result.summary.lowStock,
@@ -733,6 +818,47 @@ function buildTransferRequestRows(
             branchId: request.sourceBranchId,
             balances,
           }),
+          reason: request.reason,
+          notes: request.notes,
+          status: request.status,
+          rejectionReason: request.rejectionReason,
+          requestedAt: request.requestedAt,
+          approvedAt: request.approvedAt,
+          rejectedAt: request.rejectedAt,
+          reviewedAt: request.reviewedAt,
+        },
+      ];
+    })
+    .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
+}
+
+function buildApiTransferRequestRows(
+  requests: InventoryTransferRequest[],
+  context: InventoryTransferRequestRow["context"],
+  productById: ReadonlyMap<string, Product>,
+  branchNames: ReadonlyMap<string, string>,
+  availabilityByProduct: ReadonlyMap<string, number>,
+): InventoryTransferRequestRow[] {
+  return requests
+    .flatMap<InventoryTransferRequestRow>((request) => {
+      const product = productById.get(request.productId);
+      if (!product) return [];
+      return [
+        {
+          id: request.id,
+          context,
+          productId: request.productId,
+          productName: product.name,
+          sku: product.sku,
+          requestingBranchId: request.requestingBranchId,
+          requestingBranchName:
+            branchNames.get(request.requestingBranchId) ?? "Sucursal solicitante",
+          sourceBranchId: request.sourceBranchId,
+          sourceBranchName: branchNames.get(request.sourceBranchId) ?? "Sucursal proveedora",
+          requestedQuantity: request.requestedQuantity,
+          ...(context === "received"
+            ? { availableQuantity: availabilityByProduct.get(request.productId) ?? 0 }
+            : {}),
           reason: request.reason,
           notes: request.notes,
           status: request.status,

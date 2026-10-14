@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LocationStatus, SaasCapabilityKey } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
@@ -121,6 +121,7 @@ export function useInventoryAlerts() {
   const alertRequestIdRef = useRef(0);
   const detailRequestIdRef = useRef(0);
   const alertsLoadedBranchIdRef = useRef("");
+  const transferMutationPendingRef = useRef(false);
   const [data, setData] = useState<InventoryAlertsData>(EMPTY_DATA);
   const [detailRow, setDetailRow] = useState<InventoryProductRow | null>(null);
   const [branchId, setBranchIdState] = useState("");
@@ -145,6 +146,10 @@ export function useInventoryAlerts() {
   const [loadedBranchId, setLoadedBranchId] = useState("");
   const effectiveBranchId =
     previousCurrentBranchId === currentBranchId ? branchId || currentBranchId : currentBranchId;
+  const effectiveBranchIdRef = useRef(effectiveBranchId);
+  useLayoutEffect(() => {
+    effectiveBranchIdRef.current = effectiveBranchId;
+  }, [effectiveBranchId]);
   const effectiveBranchName =
     headerBranches.find((branch) => branch.id === effectiveBranchId)?.name ??
     currentBranch?.name ??
@@ -154,7 +159,8 @@ export function useInventoryAlerts() {
     hasCapability(SaasCapabilityKey.inventory);
   const canManageTransfers =
     hasPermission(INVENTORY_TRANSFERS_MANAGE_PERMISSION) &&
-    hasCapability(SaasCapabilityKey.inventory);
+    hasCapability(SaasCapabilityKey.inventory) &&
+    (!apiMode || (Boolean(effectiveBranchId) && effectiveBranchId === currentBranchId));
 
   const apiRequestParams = useMemo<GetInventoryAlertsParams>(
     () => ({
@@ -498,83 +504,117 @@ export function useInventoryAlerts() {
   }
 
   async function requestTransfer(dto: TransferRequestDto) {
+    const mutationBranchId = effectiveBranchIdRef.current;
+    beginTransferMutation(mutationBranchId);
     setBusy(true);
     setError(null);
     try {
-      if (!activeBranch) throw new Error("Selecciona una sucursal activa.");
+      if (
+        !activeBranch ||
+        (apiMode && mutationBranchId !== currentBranchId) ||
+        dto.requesterBranchId !== mutationBranchId
+      ) {
+        throw new Error("La sucursal solicitante debe estar activa para crear la solicitud.");
+      }
       await transferServices.create.execute(dto);
-      await reload();
+      await reloadMutationBranch(mutationBranchId);
     } catch (caughtError) {
       const message = cleanInventoryError(caughtError, "No se pudo crear la solicitud.");
-      setError(message);
+      if (effectiveBranchIdRef.current === mutationBranchId) setError(message);
       throw new Error(message);
     } finally {
+      transferMutationPendingRef.current = false;
       setBusy(false);
     }
   }
 
   async function cancelTransfer(transferId: string, reason: string, operationId: string) {
-    if (busy) throw new Error("Hay otra operacion en curso.");
+    const mutationBranchId = effectiveBranchIdRef.current;
+    beginTransferMutation(mutationBranchId);
     setBusy(true);
     setError(null);
     try {
       const result = await cancelInventoryTransferService.execute(transferId, reason, operationId);
-      await reload();
+      await reloadMutationBranch(mutationBranchId);
       return result.transfer;
     } catch (caughtError) {
       const message = cleanInventoryError(caughtError, "No se pudo cancelar el traslado.");
-      setError(message);
+      if (effectiveBranchIdRef.current === mutationBranchId) setError(message);
       throw new Error(message);
     } finally {
+      transferMutationPendingRef.current = false;
       setBusy(false);
     }
   }
 
   async function approveTransferRequest(requestId: string) {
+    const mutationBranchId = effectiveBranchIdRef.current;
+    beginTransferMutation(mutationBranchId);
     setBusy(true);
     setError(null);
     try {
       const transfer = await transferServices.approve.execute(requestId);
-      await reload();
+      await reloadMutationBranch(mutationBranchId);
       return transfer;
     } catch (caughtError) {
       const message = cleanInventoryError(caughtError, "No se pudo aprobar la solicitud.");
-      setError(message);
+      if (effectiveBranchIdRef.current === mutationBranchId) setError(message);
       throw new Error(message);
     } finally {
+      transferMutationPendingRef.current = false;
       setBusy(false);
     }
   }
 
   async function rejectTransferRequest(requestId: string, rejectionReason: string) {
+    const mutationBranchId = effectiveBranchIdRef.current;
+    beginTransferMutation(mutationBranchId);
     setBusy(true);
     setError(null);
     try {
       await transferServices.reject.execute(requestId, rejectionReason);
-      await reload();
+      await reloadMutationBranch(mutationBranchId);
     } catch (caughtError) {
       const message = cleanInventoryError(caughtError, "No se pudo rechazar la solicitud.");
-      setError(message);
+      if (effectiveBranchIdRef.current === mutationBranchId) setError(message);
       throw new Error(message);
     } finally {
+      transferMutationPendingRef.current = false;
       setBusy(false);
     }
   }
 
   async function cancelTransferRequest(requestId: string) {
+    const mutationBranchId = effectiveBranchIdRef.current;
+    beginTransferMutation(mutationBranchId);
     setBusy(true);
     setError(null);
     try {
       const result = await transferServices.cancel.execute(requestId);
-      await reload();
+      await reloadMutationBranch(mutationBranchId);
       return result;
     } catch (caughtError) {
       const message = cleanInventoryError(caughtError, "No se pudo cancelar la solicitud.");
-      setError(message);
+      if (effectiveBranchIdRef.current === mutationBranchId) setError(message);
       throw new Error(message);
     } finally {
+      transferMutationPendingRef.current = false;
       setBusy(false);
     }
+  }
+
+  function beginTransferMutation(branch: string) {
+    if (!branch || (apiMode && branch !== currentBranchId)) {
+      throw new Error("La sucursal seleccionada debe estar activa para gestionar traslados.");
+    }
+    if (transferMutationPendingRef.current) {
+      throw new Error("Hay otra operacion de traslado en curso.");
+    }
+    transferMutationPendingRef.current = true;
+  }
+
+  async function reloadMutationBranch(mutationBranchId: string) {
+    if (effectiveBranchIdRef.current === mutationBranchId) await reload();
   }
 
   return {

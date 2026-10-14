@@ -132,7 +132,6 @@ export function InventoryAlertsPage() {
     totalPages,
     page,
     pageSize,
-    apiMode,
     branchId,
     currentBranchId,
     activeBranch,
@@ -496,7 +495,7 @@ export function InventoryAlertsPage() {
               totalItems={totalItems}
               totalPages={totalPages}
               canAdjustStock={canAdjustStock}
-              canManageTransfers={canManageTransfers && !apiMode}
+              canManageTransfers={canManageTransfers}
               compact={contextPanelExpanded}
               onAdjust={openAdjust}
               onOpen={selectRow}
@@ -3524,7 +3523,14 @@ function TransferRequestDetailModal({
           <ReadonlyField label="Sucursal solicitante" value={request.requestingBranchName} />
           <ReadonlyField label="Sucursal proveedora" value={request.sourceBranchName} />
           <ReadonlyField label="Cantidad solicitada" value={String(request.requestedQuantity)} />
-          <ReadonlyField label="Disponible conocido" value={String(request.availableQuantity)} />
+          <ReadonlyField
+            label="Disponible conocido"
+            value={
+              request.availableQuantity === undefined
+                ? "No disponible"
+                : String(request.availableQuantity)
+            }
+          />
           <ReadonlyField label="Motivo" value={formatTransferReason(request.reason)} />
           <ReadonlyField label="Estado" value={formatTransferRequestStatus(request.status)} />
           <ReadonlyField label="Fecha de solicitud" value={formatDateTime(request.requestedAt)} />
