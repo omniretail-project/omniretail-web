@@ -472,14 +472,11 @@ export class ReceivingDocumentDetailService {
     if (items.length === 0) {
       throw new ReceivingServiceError("Selecciona al menos una cantidad para recibir.");
     }
-    const confirmedTransfer = await this.repositories.inventoryTransfers.markReceived(
-      transfer.transfer.id,
-      {
-        receivedByUserId: actorUserId,
-        confirmationId: input.confirmationId,
-        items,
-      },
-    );
+    await this.repositories.inventoryTransfers.markReceived(transfer.transfer.id, {
+      receivedByUserId: actorUserId,
+      confirmationId: input.confirmationId,
+      items,
+    });
     const receipt = await this.repositories.receipts.getByConfirmationId(
       tenantId,
       input.confirmationId,
@@ -1033,7 +1030,7 @@ export class ReceivingDocumentDetailService {
     activeBranchId?: string,
   ): Promise<ReceivingDocumentContent> {
     const transfer = await this.repositories.inventoryTransfers.getById(documentId);
-    if (!transfer || transfer.transfer.tenantId !== tenantId) {
+    if (transfer?.transfer.tenantId !== tenantId) {
       throw new ReceivingServiceError("Traslado no encontrado.");
     }
     await ensureUserCanOperateBranch(

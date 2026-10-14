@@ -88,7 +88,9 @@ function createLocation(): StorageLocation {
   };
 }
 
-function createHarness(options: { permissions?: string[] } = {}) {
+function createHarness(
+  options: { permissions?: string[]; transferStatus?: InventoryTransferStatus } = {},
+) {
   const user: User = {
     id: userId,
     tenantId,
@@ -101,7 +103,7 @@ function createHarness(options: { permissions?: string[] } = {}) {
     createdAt: now,
     updatedAt: now,
   };
-  const transfer = createTransfer();
+  const transfer = createTransfer(options.transferStatus);
   const inventoryTransfers = {
     getById: vi.fn(async () => transfer),
     markReceived: vi.fn(async () => ({
@@ -274,6 +276,17 @@ describe("ReceivingDocumentDetailService transfer API", () => {
     expect(detail.transferReception).toMatchObject({
       canConfirmTransfer: false,
       blockingReason: "No dispone de permisos para confirmar traslados.",
+    });
+  });
+
+  it("blocks a transfer that is no longer in transit", async () => {
+    const { service } = createHarness({ transferStatus: InventoryTransferStatus.received });
+
+    const detail = await service.getDocument("transfer", transferId, destinationBranchId);
+
+    expect(detail.transferReception).toMatchObject({
+      canConfirmTransfer: false,
+      blockingReason: expect.stringMatching(/debe estar en tránsito/i),
     });
   });
 });
