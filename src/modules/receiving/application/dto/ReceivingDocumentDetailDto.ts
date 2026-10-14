@@ -33,6 +33,24 @@ export interface ReceivingDocumentDetail {
   incidentListIncomplete?: boolean;
   /** La primera página no contiene todo el historial confirmado del backend. */
   receiptHistoryIncomplete?: boolean;
+  /** Reglas resueltas por el servicio para una recepción de traslado en modo API. */
+  transferReception?: TransferReceptionReadModel;
+}
+
+export interface TransferReceptionReadModel {
+  /** El backend actual admite una sola ubicación de destino por confirmación. */
+  requiresSingleDestinationLocation: true;
+  /** La recepción puede enviarse con las cantidades ingresadas por el usuario. */
+  canConfirmTransfer: boolean;
+  /** Ubicación operativa resuelta desde ProductInventorySettings.defaultLocationId. */
+  destinationLocationId?: string;
+  destinationLocationName?: string;
+  /** Líneas que no pueden recibirse con el contrato actual. */
+  blockedLineIds: string[];
+  /** Líneas que requieren selecciones físicas que Backend aún no devuelve al Frontend. */
+  traceabilityBlockedLineIds: string[];
+  /** Explicación visible y estable para la interfaz cuando la operación queda bloqueada. */
+  blockingReason?: string;
 }
 
 export interface ReceivingDocumentHeader {

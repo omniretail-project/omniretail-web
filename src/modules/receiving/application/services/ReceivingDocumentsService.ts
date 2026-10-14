@@ -255,17 +255,29 @@ export class ReceivingDocumentsService {
     const entries = Object.entries(PURCHASE_ORDER_STREAMS) as Array<
       [ReceivingPurchaseOrderStream, PurchaseOrderStatus]
     >;
-    const pages = await Promise.all(
-      entries.map(async ([stream, status]) => [
-        stream,
-        await this.repositories.purchaseOrders.getPageScoped(tenantId, {
-          branchId: activeBranchId,
-          status,
-          page: 1,
-          pageSize: RECEIVING_PAGE_SIZE,
-        }),
-      ] as const),
-    );
+    const [pages, inTransitTransfers] = await Promise.all([
+      Promise.all(
+        entries.map(
+          async ([stream, status]) =>
+            [
+              stream,
+              await this.repositories.purchaseOrders.getPageScoped(tenantId, {
+                branchId: activeBranchId,
+                status,
+                page: 1,
+                pageSize: RECEIVING_PAGE_SIZE,
+              }),
+            ] as const,
+        ),
+      ),
+      this.repositories.inventoryTransfersDataSource === "api"
+        ? this.repositories.inventoryTransfers.query({
+            tenantId,
+            destinationBranchId: activeBranchId,
+            status: InventoryTransferStatus.inTransit,
+          })
+        : Promise.resolve([]),
+    ]);
     const batch = await this.toApiPurchaseOrderRows(
       tenantId,
       activeBranchId,
@@ -277,8 +289,9 @@ export class ReceivingDocumentsService {
         { currentPage: page.page, totalPages: page.totalPages },
       ]),
     ) as ReceivingPaginationState["streams"];
+    const transferRows = await this.toApiTransferRows(inTransitTransfers);
     return {
-      documents: batch.documents.sort(
+      documents: [...batch.documents, ...transferRows].sort(
         (left, right) =>
           new Date(right.lastUpdatedAt).getTime() - new Date(left.lastUpdatedAt).getTime(),
       ),
@@ -292,6 +305,31 @@ export class ReceivingDocumentsService {
         receiptHistoryIncomplete: batch.receiptHistoryIncomplete,
       },
     };
+  }
+
+  private async toApiTransferRows(transfers: InventoryTransferWithItems[]) {
+    if (transfers.length === 0) return [];
+    const [branches, products] = await Promise.all([
+      this.repositories.branches.getAll(),
+      Promise.all(
+        [
+          ...new Set(transfers.flatMap((transfer) => transfer.items.map((item) => item.productId))),
+        ].map((productId) => this.repositories.products.getById(productId)),
+      ),
+    ]);
+    const branchById = new Map(branches.map((branch) => [branch.id, branch]));
+    const productById = new Map(
+      products
+        .filter((product): product is NonNullable<typeof product> => product !== null)
+        .map((product) => [product.id, { name: product.name, sku: product.sku }]),
+    );
+    return transfers.map((transfer) =>
+      toTransferRow(
+        transfer,
+        branchById.get(transfer.transfer.sourceBranchId)?.name ?? "Sucursal origen",
+        productById,
+      ),
+    );
   }
 
   private async toApiPurchaseOrderRows(
@@ -338,14 +376,13 @@ export class ReceivingDocumentsService {
       receiptContexts
         .filter(({ record }) => record.receipt.incidentCount !== 0)
         .map(async ({ order, record }) => ({
-        order,
-        record,
-        page: await this.repositories.receipts.listIncidentsScoped(
-          tenantId,
-          record.receipt.id,
-          { page: 1, pageSize: RECEIPT_HISTORY_PAGE_SIZE },
-        ),
-      })),
+          order,
+          record,
+          page: await this.repositories.receipts.listIncidentsScoped(tenantId, record.receipt.id, {
+            page: 1,
+            pageSize: RECEIPT_HISTORY_PAGE_SIZE,
+          }),
+        })),
     );
     const productById = new Map<string, { name: string; sku: string }>();
     uniqueOrders.forEach((order) =>
@@ -372,19 +409,22 @@ export class ReceivingDocumentsService {
                 (sum, record) =>
                   sum +
                   (record.receipt.totalReceivedQuantity ??
-                    record.items.reduce((lineSum, item) => lineSum + item.line.receivedQuantity, 0)),
+                    record.items.reduce(
+                      (lineSum, item) => lineSum + item.line.receivedQuantity,
+                      0,
+                    )),
                 0,
               ),
         ),
       ),
       incidents: incidentPages
         .flatMap(({ order, record, page }) =>
-          page.items.map((incident) => toApiIncidentListItem(incident, record, order, userNameById)),
+          page.items.map((incident) =>
+            toApiIncidentListItem(incident, record, order, userNameById),
+          ),
         )
         .sort((left, right) => right.date.localeCompare(left.date)),
-      incidentListIncomplete: incidentPages.some(
-        ({ page }) => page.page < page.totalPages,
-      ),
+      incidentListIncomplete: incidentPages.some(({ page }) => page.page < page.totalPages),
       receiptHistoryIncomplete: records.some(
         ({ drafts, confirmed }) =>
           drafts.page < drafts.totalPages || confirmed.page < confirmed.totalPages,
@@ -411,9 +451,7 @@ function toApiIncidentListItem(
     productName: item?.productNameSnapshot ?? "Incidencia general",
     sku: item?.productSkuSnapshot ?? "-",
     supplierId: order.supplierId,
-    ...(order.supplierNameSnapshot
-      ? { supplierName: order.supplierNameSnapshot }
-      : {}),
+    ...(order.supplierNameSnapshot ? { supplierName: order.supplierNameSnapshot } : {}),
     typeName: RECEIPT_INCIDENT_TYPE_LABELS[incident.incidentType],
     ...(incident.quantityAffected !== undefined
       ? { quantityAffected: incident.quantityAffected }
@@ -442,9 +480,11 @@ const PURCHASE_ORDER_STREAMS: Record<ReceivingPurchaseOrderStream, PurchaseOrder
 export function nextReceivingStream(
   pagination: ReceivingPaginationState,
 ): ReceivingPurchaseOrderStream | null {
-  return (Object.keys(PURCHASE_ORDER_STREAMS) as ReceivingPurchaseOrderStream[]).find(
-    (stream) => pagination.streams[stream].currentPage < pagination.streams[stream].totalPages,
-  ) ?? null;
+  return (
+    (Object.keys(PURCHASE_ORDER_STREAMS) as ReceivingPurchaseOrderStream[]).find(
+      (stream) => pagination.streams[stream].currentPage < pagination.streams[stream].totalPages,
+    ) ?? null
+  );
 }
 
 function hasMoreReceivingPages(streams: ReceivingPaginationState["streams"]) {
