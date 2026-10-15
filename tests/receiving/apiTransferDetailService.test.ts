@@ -89,7 +89,11 @@ function createLocation(): StorageLocation {
 }
 
 function createHarness(
-  options: { permissions?: string[]; transferStatus?: InventoryTransferStatus } = {},
+  options: {
+    permissions?: string[];
+    transferStatus?: InventoryTransferStatus;
+    unitAllowsDecimals?: boolean;
+  } = {},
 ) {
   const user: User = {
     id: userId,
@@ -171,7 +175,12 @@ function createHarness(
     },
     products: { getByIdScoped: vi.fn(async () => createProduct()) },
     units: {
-      getAll: vi.fn(async () => [{ id: unitId, tenantId, name: "Unidad", allowsDecimals: false }]),
+      getAll: vi.fn(async () => [{
+        id: unitId,
+        tenantId,
+        name: "Unidad",
+        allowsDecimals: options.unitAllowsDecimals ?? false,
+      }]),
     },
     businessConfig: {
       getCapabilities: vi.fn(async () => ({
@@ -214,10 +223,12 @@ describe("ReceivingDocumentDetailService transfer API", () => {
 
     expect(detail.dataSource).toBe("api");
     expect(detail.transferReception).toMatchObject({
-      canConfirmTransfer: true,
-      destinationLocationId: locationId,
+      canReceiveTransfer: true,
+      canConfirmTransfer: false,
       requiresSingleDestinationLocation: true,
     });
+    expect(detail.transferReception?.blockingReason).toMatch(/selecciona al menos/i);
+    expect(detail.lines[0]?.receivedNow).toBe(0);
     expect(detail.lines[0]).toMatchObject({ sourceLineId: transferItemId, locationId });
     expect(repositories.inventory.getProductInventorySettings).toHaveBeenCalledWith(
       productId,
@@ -264,6 +275,33 @@ describe("ReceivingDocumentDetailService transfer API", () => {
       expect.objectContaining({
         confirmationId: "transfer-confirmation-total",
         items: [{ itemId: transferItemId, receivedQuantity: 4, locationId }],
+      }),
+    );
+  });
+
+  it("allows an exact idempotent replay to reach the backend after the transfer is already received", async () => {
+    const { service, inventoryTransfers } = createHarness({
+      transferStatus: InventoryTransferStatus.received,
+    });
+    const detail = await service.getDocument("transfer", transferId, destinationBranchId);
+
+    await service.confirm({
+      documentType: "transfer",
+      documentId: transferId,
+      confirmationId: "transfer-confirmation-replay",
+      lines: [{ ...detail.lines[0], receivedNow: 2 }],
+      incidents: [],
+      transferOperation: {
+        destinationLocationId: locationId,
+        idempotentReplay: true,
+      },
+    });
+
+    expect(inventoryTransfers.markReceived).toHaveBeenCalledWith(
+      transferId,
+      expect.objectContaining({
+        confirmationId: "transfer-confirmation-replay",
+        items: [{ itemId: transferItemId, receivedQuantity: 2, locationId }],
       }),
     );
   });
@@ -339,6 +377,38 @@ describe("ReceivingDocumentDetailService transfer API", () => {
         incidents: [],
       }),
     ).rejects.toThrow(/excede lo pendiente/i);
+  });
+
+  it("rejects fractional quantities for integer units", async () => {
+    const { service, inventoryTransfers } = createHarness();
+    const detail = await service.getDocument("transfer", transferId, destinationBranchId);
+
+    await expect(
+      service.confirm({
+        documentType: "transfer",
+        documentId: transferId,
+        confirmationId: "transfer-confirmation-fractional",
+        lines: [{ ...detail.lines[0], receivedNow: 1.5 }],
+        incidents: [],
+      }),
+    ).rejects.toThrow(/no admite cantidades fraccionarias/i);
+    expect(inventoryTransfers.markReceived).not.toHaveBeenCalled();
+  });
+
+  it("rejects more than three decimals even when the unit allows decimals", async () => {
+    const { service, inventoryTransfers } = createHarness({ unitAllowsDecimals: true });
+    const detail = await service.getDocument("transfer", transferId, destinationBranchId);
+
+    await expect(
+      service.confirm({
+        documentType: "transfer",
+        documentId: transferId,
+        confirmationId: "transfer-confirmation-precision",
+        lines: [{ ...detail.lines[0], receivedNow: 1.2345 }],
+        incidents: [],
+      }),
+    ).rejects.toThrow(/hasta 3 decimales/i);
+    expect(inventoryTransfers.markReceived).not.toHaveBeenCalled();
   });
 
   it("requires an idempotency key and at least one received quantity", async () => {

@@ -14,7 +14,7 @@ import {
   type SVGProps,
 } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import type { StorageLocation } from "@/core/entities";
+import type { Branch, StorageLocation } from "@/core/entities";
 import type { AdjustmentLotOption, AdjustmentSerialOption } from "@/core/repositories";
 import type { InventoryAdjustmentLookupService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
 import { STOCK_ELSEWHERE_ADJUSTMENT_MESSAGE } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
@@ -31,6 +31,7 @@ import { getLocalCalendarDate } from "@/core/inventory/expirationDate";
 import {
   InventoryTransferReason,
   InventoryTransferRequestStatus,
+  BranchStatus,
   LocationStatus,
   SaasCapabilityKey,
 } from "@/core/enums";
@@ -132,6 +133,7 @@ export function InventoryAlertsPage() {
     totalPages,
     page,
     pageSize,
+    apiMode,
     branchId,
     currentBranchId,
     activeBranch,
@@ -579,9 +581,13 @@ export function InventoryAlertsPage() {
       ) : null}
       {selectedRow && actionMode === "request-transfer" ? (
         <RequestTransferModal
+          apiMode={apiMode}
+          branches={branches}
+          key={`${selectedRow.branchId}:${selectedRow.productId}`}
           open
           providerBranchId={requestProviderBranchId}
           row={selectedRow}
+          service={otherBranchesService}
           onClose={() => setActionMode(null)}
           onSubmit={addTransferRequest}
         />
@@ -3260,27 +3266,62 @@ function ApiOtherBranchesList({
   );
 }
 
-function RequestTransferModal({
+type ApiTransferProvidersState =
+  | { contextKey: string; status: "loading"; items: OtherBranchAvailability[] }
+  | { contextKey: string; status: "error"; items: OtherBranchAvailability[] }
+  | { contextKey: string; status: "success"; items: OtherBranchAvailability[] };
+
+export function RequestTransferModal({
+  apiMode,
+  branches,
   busy = false,
   open,
   providerBranchId,
   row,
+  service,
   onClose,
   onSubmit,
 }: {
+  apiMode: boolean;
+  branches: Branch[];
   busy?: boolean;
   open: boolean;
   providerBranchId: string | null;
   row: InventoryProductRow;
+  service: InventoryOtherBranchesService | null;
   onClose: () => void;
   onSubmit: (dto: TransferRequestDto) => Promise<void>;
 }) {
   const submittingRef = useRef(false);
+  const providerRequestIdRef = useRef(0);
   const [submitError, setSubmitError] = useState("");
-  const availableProviders = row.otherBranchStocks;
+  const providerContextKey = `${row.branchId}:${row.productId}`;
+  const [apiProvidersState, setApiProvidersState] = useState<ApiTransferProvidersState>(() => ({
+    contextKey: providerContextKey,
+    status: "loading",
+    items: [],
+  }));
+  const currentApiProvidersState = useMemo<ApiTransferProvidersState>(() => {
+    if (!service && apiMode) {
+      return { contextKey: providerContextKey, status: "error", items: [] };
+    }
+    return apiProvidersState.contextKey === providerContextKey
+      ? apiProvidersState
+      : { contextKey: providerContextKey, status: "loading", items: [] };
+  }, [apiMode, apiProvidersState, providerContextKey, service]);
+  const availableProviders = useMemo(() => {
+    if (!apiMode) return row.otherBranchStocks;
+    if (currentApiProvidersState.status !== "success") return [];
+    return currentApiProvidersState.items.filter((stock) => {
+      if (stock.branchId === row.branchId || stock.availableQuantity <= 0) return false;
+      const knownBranch = branches.find((branch) => branch.id === stock.branchId);
+      return !knownBranch || knownBranch.status === BranchStatus.active;
+    });
+  }, [apiMode, branches, currentApiProvidersState, row.branchId, row.otherBranchStocks]);
   const firstProviderWithStock = availableProviders.find((stock) => stock.availableQuantity > 0);
   const initialProvider =
-    providerBranchId ?? firstProviderWithStock?.branchId ?? availableProviders[0]?.branchId ?? "";
+    providerBranchId ??
+    (apiMode ? "" : firstProviderWithStock?.branchId ?? availableProviders[0]?.branchId ?? "");
   const [value, setValue] = useState<EditableTransferRequestDto>(() => ({
     productId: row.productId,
     requesterBranchId: row.branchId,
@@ -3290,19 +3331,48 @@ function RequestTransferModal({
     notes: "",
   }));
   const [errors, setErrors] = useState<TransferValidationErrors>({});
-  const selectedProvider = availableProviders.find(
+  const effectiveProviderBranchId = availableProviders.some(
     (stock) => stock.branchId === value.providerBranchId,
+  )
+    ? value.providerBranchId
+    : (availableProviders[0]?.branchId ?? "");
+  const selectedProvider = availableProviders.find(
+    (stock) => stock.branchId === effectiveProviderBranchId,
   );
-  const transferDto = toTransferRequestDto(value);
-  const transferValidationErrors = validateTransfer(transferDto, row);
+  const transferDto = toTransferRequestDto({
+    ...value,
+    providerBranchId: effectiveProviderBranchId,
+  });
+  const transferValidationErrors = validateTransfer(transferDto, row, availableProviders);
   const transferQuantityError = getUnitQuantityInputError(value.quantity, row.unitAllowsDecimals);
   if (transferQuantityError) transferValidationErrors.quantity = transferQuantityError;
   const transferInvalid = hasValidationErrors(transferValidationErrors);
+  const providersLoading = apiMode && currentApiProvidersState.status === "loading";
+
+  useEffect(() => {
+    if (!apiMode) return;
+    const requestId = ++providerRequestIdRef.current;
+    let active = true;
+    if (!service) return;
+    void service
+      .execute({ productId: row.productId, branchId: row.branchId })
+      .then((items) => {
+        if (!active || requestId !== providerRequestIdRef.current) return;
+        setApiProvidersState({ contextKey: providerContextKey, status: "success", items });
+      })
+      .catch(() => {
+        if (!active || requestId !== providerRequestIdRef.current) return;
+        setApiProvidersState({ contextKey: providerContextKey, status: "error", items: [] });
+      });
+    return () => {
+      active = false;
+    };
+  }, [apiMode, providerContextKey, row.branchId, row.productId, service]);
 
   function update(patch: Partial<EditableTransferRequestDto>) {
     const nextValue = { ...value, ...patch };
     const nextDto = toTransferRequestDto(nextValue);
-    const nextValidationErrors = validateTransfer(nextDto, row);
+    const nextValidationErrors = validateTransfer(nextDto, row, availableProviders);
     const nextQuantityError = getUnitQuantityInputError(nextValue.quantity, row.unitAllowsDecimals);
     if (nextQuantityError) nextValidationErrors.quantity = nextQuantityError;
     const affectedFields = new Set<keyof TransferValidationErrors>();
@@ -3346,7 +3416,7 @@ function RequestTransferModal({
             Cerrar
           </Button>
           <Button
-            disabled={transferInvalid || busy}
+            disabled={transferInvalid || busy || providersLoading}
             form="inventory-transfer-request-form"
             type="submit"
             variant="secondary"
@@ -3365,6 +3435,24 @@ function RequestTransferModal({
     >
       <form className="space-y-4" id="inventory-transfer-request-form" onSubmit={submit}>
         {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
+        {providersLoading ? (
+          <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+            Cargando sucursales proveedoras...
+          </p>
+        ) : null}
+        {apiMode && currentApiProvidersState.status === "error" ? (
+          <InlineAlert
+            title="No se pudieron cargar las sucursales proveedoras."
+            tone="danger"
+          />
+        ) : null}
+        {apiMode &&
+        currentApiProvidersState.status === "success" &&
+        availableProviders.length === 0 ? (
+          <p className="rounded-md border border-[var(--color-border)] p-3 text-sm text-[var(--color-text-muted)]">
+            No hay sucursales proveedoras con existencias disponibles.
+          </p>
+        ) : null}
         <div className="grid gap-3 md:grid-cols-2">
           <ReadonlyField label="Producto" value={row.productName} />
           <ReadonlyField label="Codigo" value={row.sku} />
@@ -3385,12 +3473,20 @@ function RequestTransferModal({
             error={errors.providerBranchId}
           >
             <Select
+              disabled={
+                busy ||
+                providersLoading ||
+                (apiMode && currentApiProvidersState.status !== "success") ||
+                availableProviders.length === 0
+              }
               id="transfer-provider"
               onChange={(event) => update({ providerBranchId: event.target.value })}
-              value={value.providerBranchId}
+              value={effectiveProviderBranchId}
             >
               {availableProviders.length === 0 ? (
-                <option value="">Sin sucursales disponibles</option>
+                <option value="">
+                  {providersLoading ? "Cargando sucursales..." : "Sin sucursales disponibles"}
+                </option>
               ) : null}
               {availableProviders.map((stock) => (
                 <option

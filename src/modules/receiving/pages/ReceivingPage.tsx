@@ -22,7 +22,9 @@ import { IncidentDetailDrawer } from "@/modules/receiving/components/IncidentDet
 import { useReceivingDocuments } from "@/modules/receiving/hooks/useReceivingDocuments";
 
 const DEFAULT_PAGE_SIZE: TablePageSize = 10;
-const STATUS_FILTERS: Array<{ value: ReceivingStatus; label: string }> = [
+type ReceivingStatusFilter = ReceivingStatus | "all";
+const STATUS_FILTERS: Array<{ value: ReceivingStatusFilter; label: string }> = [
+  { value: "all", label: "Todas" },
   { value: "pending", label: "Pendientes" },
   { value: "in_process", label: "En proceso" },
   { value: "partial", label: "Parciales" },
@@ -80,8 +82,8 @@ export function ReceivingPage() {
     setSelectedDocumentId(null);
   }
 
-  function handleStatusChange(status: ReceivingStatus) {
-    updateFilters({ status: filters.status === status ? "all" : status });
+  function handleStatusChange(status: ReceivingStatusFilter) {
+    updateFilters({ status: status === "all" || filters.status === status ? "all" : status });
     setPage(1);
     setSelectedDocumentId(null);
   }

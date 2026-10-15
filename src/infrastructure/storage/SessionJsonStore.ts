@@ -1,22 +1,29 @@
 /**
  * Almacen JSON en `sessionStorage` (por pestana: sobrevive a una recarga, no a cerrar la pestana).
- * Nunca lanza: si el navegador lo bloquea o el valor esta corrupto, se comporta como vacio.
+ * Nunca lanza. `read` distingue almacenamiento inaccesible y contenido corrupto;
+ * `get` conserva el comportamiento historico de tratarlos como ausencia de valor.
  */
 export class SessionJsonStore {
-  get<T>(key: string): T | null {
+  read<T>(key: string): SessionJsonReadResult<T> {
     try {
-      if (typeof window === "undefined") return null;
+      if (typeof window === "undefined") return { status: "unavailable" };
       const raw = window.sessionStorage.getItem(key);
-      if (!raw) return null;
+      if (!raw) return { status: "empty" };
       try {
-        return JSON.parse(raw) as T;
+        return { status: "value", value: JSON.parse(raw) as T };
       } catch {
-        this.remove(key);
-        return null;
+        return { status: "invalid" };
       }
     } catch {
-      return null;
+      return { status: "unavailable" };
     }
+  }
+
+  get<T>(key: string): T | null {
+    const result = this.read<T>(key);
+    if (result.status === "value") return result.value;
+    if (result.status === "invalid") this.remove(key);
+    return null;
   }
 
   /** `true` si el valor quedo guardado. */
@@ -38,3 +45,7 @@ export class SessionJsonStore {
     }
   }
 }
+
+export type SessionJsonReadResult<T> =
+  | { status: "empty" | "invalid" | "unavailable" }
+  | { status: "value"; value: T };

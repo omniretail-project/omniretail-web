@@ -146,6 +146,8 @@ export class ReceivingDocumentDetailService {
       dataSource: this.repositories.receivingDataSource,
       canConfirm,
       canManageIncidents: permissions.includes("receiving.incidents.manage"),
+      readOnly:
+        content.readOnly || Boolean(transferReception && !transferReception.canReceiveTransfer),
     };
   }
 
@@ -511,9 +513,36 @@ export class ReceivingDocumentDetailService {
       transfer.transfer.id,
       transfer.transfer.destinationBranchId,
     );
-    const reception = detail.transferReception;
-    const destinationLocationId = reception?.destinationLocationId;
-    if (!reception?.canConfirmTransfer || !destinationLocationId) {
+    const requestedQuantityByLineId = new Map(
+      input.lines.map((line) => [line.sourceLineId, line.receivedNow]),
+    );
+    const baseReception = detail.transferReception;
+    const idempotentReplay = input.transferOperation?.idempotentReplay === true;
+    const reception = baseReception
+      ? resolveApiTransferSelection({
+          lines: detail.lines.map((line) => ({
+            ...line,
+            receivedNow: requestedQuantityByLineId.get(line.sourceLineId) ?? 0,
+          })),
+          canReceiveTransfer: baseReception.canReceiveTransfer,
+          activeLocationById: new Map(
+            detail.locations.map((location) => [location.id, location]),
+          ),
+          unavailableProductLineIds: baseReception.unavailableProductLineIds,
+          traceabilityBlockedLineIds: baseReception.traceabilityBlockedLineIds,
+          unavailableReason: baseReception.blockingReason,
+        })
+      : undefined;
+    const destinationLocationId = idempotentReplay
+      ? input.transferOperation?.destinationLocationId
+      : reception?.destinationLocationId;
+    if (
+      !destinationLocationId ||
+      (!idempotentReplay && !reception?.canConfirmTransfer) ||
+      (!idempotentReplay &&
+        input.transferOperation !== undefined &&
+        input.transferOperation?.destinationLocationId !== destinationLocationId)
+    ) {
       throw new ReceivingServiceError(
         reception?.blockingReason ?? "El traslado no puede confirmarse en su estado actual.",
       );
@@ -530,12 +559,29 @@ export class ReceivingDocumentDetailService {
       if (!canonical || !item || receivedItemIds.has(item.id)) {
         throw new ReceivingServiceError("La línea recibida no pertenece al traslado actual.");
       }
-      if (!Number.isFinite(quantity) || quantity > canonical.pendingQuantity) {
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new ReceivingServiceError(
+          `${canonical.productName}: la cantidad recibida debe ser positiva.`,
+        );
+      }
+      if (!isQuantityCompatibleWithUnit(line.receivedNow, canonical.unitAllowsDecimals)) {
+        throw new ReceivingServiceError(
+          canonical.unitAllowsDecimals
+            ? `${canonical.productName}: la cantidad recibida admite hasta ${QUANTITY_DECIMAL_PLACES} decimales.`
+            : `${canonical.productName}: la unidad no admite cantidades fraccionarias.`,
+        );
+      }
+      if (quantity > MAX_SAFE_INVENTORY_QUANTITY) {
+        throw new ReceivingServiceError(
+          `${canonical.productName}: la cantidad recibida supera el máximo permitido.`,
+        );
+      }
+      if (!idempotentReplay && quantity > canonical.pendingQuantity) {
         throw new ReceivingServiceError(
           `${canonical.productName}: la cantidad recibida excede lo pendiente.`,
         );
       }
-      if (canonical.tracking.lot || canonical.tracking.serial) {
+      if (!idempotentReplay && (canonical.tracking.lot || canonical.tracking.serial)) {
         throw new ReceivingServiceError(
           `${canonical.productName}: el Backend aún no expone las selecciones físicas despachadas requeridas para recibir lotes o series.`,
         );
@@ -1096,12 +1142,17 @@ export class ReceivingDocumentDetailService {
         activeLocationById.has(settings.defaultLocationId)
           ? settings.defaultLocationId
           : "";
-      return this.toTransferDetailLine(
-        item,
-        productById.get(item.productId),
-        unitById,
-        configuredLocationId,
-      );
+      return {
+        ...this.toTransferDetailLine(
+          item,
+          productById.get(item.productId),
+          unitById,
+          configuredLocationId,
+        ),
+        // La API parte de una seleccion explicita. Asi una linea pendiente de otra ubicacion no
+        // impide recibir parcialmente las lineas compatibles elegidas por el usuario.
+        receivedNow: 0,
+      };
     });
     const receivable = await this.hasTransferDispatchEvidence(transfer);
     const transferReception = buildApiTransferReception({
@@ -1134,7 +1185,7 @@ export class ReceivingDocumentDetailService {
       incidents: [],
       previousReceipts: [],
       capabilities: toCapabilityFlags(capabilities, entitlements),
-      readOnly: !transferReception.canConfirmTransfer,
+      readOnly: !transferReception.canReceiveTransfer,
       transferReception,
     };
   }
@@ -2472,9 +2523,10 @@ function applyTransferReceptionPermissions(
   reception: TransferReceptionReadModel,
   hasPermission: boolean,
 ): TransferReceptionReadModel {
-  if (hasPermission || !reception.canConfirmTransfer) return reception;
+  if (hasPermission) return reception;
   return {
     ...reception,
+    canReceiveTransfer: false,
     canConfirmTransfer: false,
     blockingReason: "No dispone de permisos para confirmar traslados.",
   };
@@ -2486,84 +2538,205 @@ export function buildApiTransferReception(input: {
   activeLocationById: Map<string, StorageLocation>;
   productById: Map<string, Product>;
 }): TransferReceptionReadModel {
-  const pendingLines = input.lines.filter((line) => line.pendingQuantity > 0);
+  const pendingLines = input.lines.filter((line) => getTransferRemainingQuantity(line) > 0);
   const allLineIds = pendingLines.map((line) => line.id);
   if (!input.transferIsReceivable) {
     return blockedTransferReception(
       allLineIds,
       "El traslado debe estar en tránsito y tener cantidades despachadas pendientes para poder recibirse.",
+      false,
     );
   }
   if (pendingLines.length === 0) {
-    return blockedTransferReception([], "El traslado no tiene productos pendientes por recibir.");
+    return blockedTransferReception(
+      [],
+      "El traslado no tiene productos pendientes por recibir.",
+      false,
+    );
   }
 
   const unavailableProductLineIds = pendingLines
     .filter((line) => !input.productById.has(line.productId))
     .map((line) => line.id);
-  if (unavailableProductLineIds.length > 0) {
-    return blockedTransferReception(
-      unavailableProductLineIds,
-      "No se pudo consultar la configuración de uno o más productos del traslado.",
-    );
-  }
-
   const traceabilityBlockedLineIds = pendingLines
     .filter((line) => line.tracking.lot || line.tracking.serial)
     .map((line) => line.id);
-  if (traceabilityBlockedLineIds.length > 0) {
-    return {
-      ...blockedTransferReception(
-        traceabilityBlockedLineIds,
-        "La recepción de productos con lotes o series permanece bloqueada hasta que Backend exponga las selecciones físicas despachadas.",
-      ),
-      traceabilityBlockedLineIds,
-    };
+  return resolveApiTransferSelection({
+    lines: input.lines,
+    canReceiveTransfer: true,
+    activeLocationById: input.activeLocationById,
+    unavailableProductLineIds,
+    traceabilityBlockedLineIds,
+  });
+}
+
+export function resolveApiTransferSelection(input: {
+  lines: ReceivingDocumentLine[];
+  canReceiveTransfer: boolean;
+  activeLocationById: Map<string, { id: string; code: string; name: string }>;
+  unavailableProductLineIds?: string[];
+  traceabilityBlockedLineIds?: string[];
+  unavailableReason?: string;
+}): TransferReceptionReadModel {
+  const unavailableProductLineIds = input.unavailableProductLineIds ?? [];
+  const traceabilityBlockedLineIds = input.traceabilityBlockedLineIds ?? input.lines
+    .filter(
+      (line) =>
+        getTransferRemainingQuantity(line) > 0 && (line.tracking.lot || line.tracking.serial),
+    )
+    .map((line) => line.id);
+  if (!input.canReceiveTransfer) {
+    return blockedTransferReception(
+      [],
+      input.unavailableReason ?? "El traslado no puede recibirse en su estado actual.",
+      false,
+      { unavailableProductLineIds, traceabilityBlockedLineIds },
+    );
   }
 
-  const missingLocationLineIds = pendingLines
+  const selectedLines = input.lines.filter(
+    (line) => getTransferRemainingQuantity(line) > 0 && toFiniteNumber(line.receivedNow) > 0,
+  );
+  if (selectedLines.length === 0) {
+    const pendingLineIds = input.lines
+      .filter((line) => getTransferRemainingQuantity(line) > 0)
+      .map((line) => line.id);
+    const missingLocationLineIds = input.lines
+      .filter(
+        (line) =>
+          getTransferRemainingQuantity(line) > 0 &&
+          (!line.locationId || !input.activeLocationById.has(line.locationId)),
+      )
+      .map((line) => line.id);
+    if (
+      pendingLineIds.length > 0 &&
+      pendingLineIds.every((lineId) => unavailableProductLineIds.includes(lineId))
+    ) {
+      return blockedTransferReception(
+        unavailableProductLineIds,
+        "No se pudo consultar la configuración de los productos pendientes.",
+        true,
+        { unavailableProductLineIds, traceabilityBlockedLineIds },
+      );
+    }
+    if (
+      pendingLineIds.length > 0 &&
+      pendingLineIds.every((lineId) => traceabilityBlockedLineIds.includes(lineId))
+    ) {
+      return blockedTransferReception(
+        traceabilityBlockedLineIds,
+        "La recepción de productos con lotes o series permanece bloqueada hasta que Backend exponga las selecciones físicas despachadas.",
+        true,
+        { unavailableProductLineIds, traceabilityBlockedLineIds },
+      );
+    }
+    if (
+      pendingLineIds.length > 0 &&
+      pendingLineIds.every((lineId) => missingLocationLineIds.includes(lineId))
+    ) {
+      return blockedTransferReception(
+        missingLocationLineIds,
+        "Los productos pendientes no tienen una ubicación operativa activa configurada en la sucursal destino.",
+        true,
+        { unavailableProductLineIds, traceabilityBlockedLineIds },
+      );
+    }
+    return blockedTransferReception(
+      [],
+      "Selecciona al menos una cantidad para recibir.",
+      true,
+      { unavailableProductLineIds, traceabilityBlockedLineIds },
+    );
+  }
+
+  const selectedUnavailableLineIds = selectedLines
+    .filter((line) => unavailableProductLineIds.includes(line.id))
+    .map((line) => line.id);
+  if (selectedUnavailableLineIds.length > 0) {
+    return blockedTransferReception(
+      selectedUnavailableLineIds,
+      "No se pudo consultar la configuración de uno o más productos seleccionados.",
+      true,
+      { unavailableProductLineIds, traceabilityBlockedLineIds },
+    );
+  }
+
+  const selectedTraceabilityLineIds = selectedLines
+    .filter((line) => traceabilityBlockedLineIds.includes(line.id))
+    .map((line) => line.id);
+  if (selectedTraceabilityLineIds.length > 0) {
+    return blockedTransferReception(
+      selectedTraceabilityLineIds,
+      "La recepción de productos con lotes o series permanece bloqueada hasta que Backend exponga las selecciones físicas despachadas.",
+      true,
+      { unavailableProductLineIds, traceabilityBlockedLineIds },
+    );
+  }
+
+  const missingLocationLineIds = selectedLines
     .filter((line) => !line.locationId || !input.activeLocationById.has(line.locationId))
     .map((line) => line.id);
   if (missingLocationLineIds.length > 0) {
     return blockedTransferReception(
       missingLocationLineIds,
-      "Hay productos sin una ubicación operativa activa configurada en la sucursal destino.",
+      "Hay productos seleccionados sin una ubicación operativa activa configurada en la sucursal destino.",
+      true,
+      { unavailableProductLineIds, traceabilityBlockedLineIds },
     );
   }
 
-  const locationIds = [...new Set(pendingLines.map((line) => line.locationId))];
+  const locationIds = [...new Set(selectedLines.map((line) => line.locationId))];
   if (locationIds.length !== 1) {
     return blockedTransferReception(
-      allLineIds,
-      "Los productos pendientes tienen ubicaciones operativas diferentes y el Backend solo admite una ubicación de destino por confirmación.",
+      selectedLines.map((line) => line.id),
+      "Los productos seleccionados tienen ubicaciones operativas diferentes y el Backend solo admite una ubicación de destino por confirmación.",
+      true,
+      { unavailableProductLineIds, traceabilityBlockedLineIds },
     );
   }
   const destinationLocation = input.activeLocationById.get(locationIds[0]);
   if (!destinationLocation) {
     return blockedTransferReception(
-      allLineIds,
+      selectedLines.map((line) => line.id),
       "La ubicación operativa configurada ya no está disponible en la sucursal destino.",
+      true,
+      { unavailableProductLineIds, traceabilityBlockedLineIds },
     );
   }
   return {
     requiresSingleDestinationLocation: true,
+    canReceiveTransfer: true,
     canConfirmTransfer: true,
     destinationLocationId: destinationLocation.id,
     destinationLocationName: `${destinationLocation.code} · ${destinationLocation.name}`,
     blockedLineIds: [],
-    traceabilityBlockedLineIds: [],
+    traceabilityBlockedLineIds,
+    unavailableProductLineIds,
   };
+}
+
+function getTransferRemainingQuantity(line: ReceivingDocumentLine): number {
+  // En el estado editable `pendingQuantity` ya descuenta `receivedNow`; al evaluar la selección
+  // se reconstruye el pendiente previo. En una lectura canónica `receivedNow` es cero.
+  return Math.max(0, line.pendingQuantity + toFiniteNumber(line.receivedNow));
 }
 
 function blockedTransferReception(
   blockedLineIds: string[],
   blockingReason: string,
+  canReceiveTransfer = true,
+  metadata: {
+    unavailableProductLineIds?: string[];
+    traceabilityBlockedLineIds?: string[];
+  } = {},
 ): TransferReceptionReadModel {
   return {
     requiresSingleDestinationLocation: true,
+    canReceiveTransfer,
     canConfirmTransfer: false,
     blockedLineIds,
-    traceabilityBlockedLineIds: [],
+    traceabilityBlockedLineIds: metadata.traceabilityBlockedLineIds ?? [],
+    unavailableProductLineIds: metadata.unavailableProductLineIds ?? [],
     blockingReason,
   };
 }

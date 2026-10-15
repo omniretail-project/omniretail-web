@@ -255,7 +255,7 @@ export class ReceivingDocumentsService {
     const entries = Object.entries(PURCHASE_ORDER_STREAMS) as Array<
       [ReceivingPurchaseOrderStream, PurchaseOrderStatus]
     >;
-    const [pages, inTransitTransfers] = await Promise.all([
+    const [pages, transferGroups] = await Promise.all([
       Promise.all(
         entries.map(
           async ([stream, status]) =>
@@ -271,11 +271,15 @@ export class ReceivingDocumentsService {
         ),
       ),
       this.repositories.inventoryTransfersDataSource === "api"
-        ? this.repositories.inventoryTransfers.query({
-            tenantId,
-            destinationBranchId: activeBranchId,
-            status: InventoryTransferStatus.inTransit,
-          })
+        ? Promise.all(
+            [InventoryTransferStatus.inTransit, InventoryTransferStatus.received].map((status) =>
+              this.repositories.inventoryTransfers.query({
+                tenantId,
+                destinationBranchId: activeBranchId,
+                status,
+              }),
+            ),
+          )
         : Promise.resolve([]),
     ]);
     const batch = await this.toApiPurchaseOrderRows(
@@ -289,7 +293,12 @@ export class ReceivingDocumentsService {
         { currentPage: page.page, totalPages: page.totalPages },
       ]),
     ) as ReceivingPaginationState["streams"];
-    const transferRows = await this.toApiTransferRows(inTransitTransfers);
+    const transfersById = new Map(
+      transferGroups
+        .flatMap((group) => group)
+        .map((transfer) => [transfer.transfer.id, transfer] as const),
+    );
+    const transferRows = await this.toApiTransferRows([...transfersById.values()]);
     return {
       documents: [...batch.documents, ...transferRows].sort(
         (left, right) =>

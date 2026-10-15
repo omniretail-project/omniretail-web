@@ -1,5 +1,6 @@
 import type {
   AdjustStockDto,
+  BranchStockSummary,
   InventoryProductRow,
   TransferRequestDto,
 } from "@/modules/inventory/application/dto/InventoryAlertsDto";
@@ -102,6 +103,9 @@ export function validateAdjustment(
 export function validateTransfer(
   dto: TransferRequestDto,
   row: InventoryProductRow,
+  providerStocks: ReadonlyArray<
+    Pick<BranchStockSummary, "branchId" | "availableQuantity">
+  > = row.otherBranchStocks,
 ): TransferValidationErrors {
   const errors: TransferValidationErrors = {};
   if (!dto.providerBranchId) {
@@ -110,7 +114,7 @@ export function validateTransfer(
     errors.providerBranchId = "La sucursal debe ser diferente.";
   }
   const providerStock =
-    row.otherBranchStocks.find((stock) => stock.branchId === dto.providerBranchId)
+    providerStocks.find((stock) => stock.branchId === dto.providerBranchId)
       ?.availableQuantity ?? 0;
   if (!Number.isFinite(dto.quantity) || dto.quantity <= 0) {
     errors.quantity = "La cantidad debe ser mayor que cero.";

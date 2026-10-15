@@ -85,6 +85,10 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
     dirty,
     error,
     apiMode,
+    transferReception,
+    pendingTransferMessage,
+    pendingTransferRetryReady,
+    hasPendingTransferConfirmation,
     confirmAvailable,
     incidentsAvailable,
     updateLine,
@@ -167,9 +171,12 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
   const hasOpenApiIncidents = incidents.some((incident) => incident.status === "open");
   const confirmationInvalid =
     detail?.document.type === "transfer"
-      ? !lines.some((line) => toFiniteNumber(line.receivedNow) > 0) ||
-        validateLines(lines, incidents, detail).length > 0 ||
-        lines.some((line) => toFiniteNumber(line.receivedNow) > 0 && !line.locationId)
+      ? hasPendingTransferConfirmation
+        ? !pendingTransferRetryReady
+        : !transferReception?.canConfirmTransfer ||
+          !lines.some((line) => toFiniteNumber(line.receivedNow) > 0) ||
+          validateLines(lines, incidents, detail).length > 0 ||
+          lines.some((line) => toFiniteNumber(line.receivedNow) > 0 && !line.locationId)
       : detail
         ? validateLines(lines, incidents, detail).length > 0 ||
           hasOpenApiIncidents ||
@@ -287,9 +294,11 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
   }
 
   const readOnly = detail.readOnly;
+  const showMutationActions = !readOnly || pendingTransferRetryReady;
   const showIncidentPanel = incidentEditorOpen && !readOnly;
   const sidePanelOpen = showIncidentPanel || summaryOpen;
-  const editingDisabled = readOnly || Boolean(detail.draftEditingLocked);
+  const editingDisabled =
+    readOnly || Boolean(detail.draftEditingLocked) || hasPendingTransferConfirmation;
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
@@ -319,9 +328,11 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
                   Descargar PDF
                 </Button>
               ) : null}
-              {!readOnly ? (
+              {showMutationActions ? (
                 <>
-                  {detail.document.type === "purchase_order" && !detail.draftEditingLocked ? (
+                  {!readOnly &&
+                  detail.document.type === "purchase_order" &&
+                  !detail.draftEditingLocked ? (
                     <Button
                       disabled={saving || incidentSaving || !canUseReceiving || saveProgressInvalid}
                       onClick={handleSaveProgress}
@@ -375,6 +386,22 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
         <InlineAlert
           title="El historial confirmado tiene más páginas. Los totales históricos y pendientes no están disponibles; esta recepción es solo de consulta."
           tone="warning"
+        />
+      ) : null}
+      {detail.document.type === "transfer" && transferReception?.blockingReason ? (
+        <InlineAlert title={transferReception.blockingReason} tone="warning" />
+      ) : null}
+      {detail.document.type === "transfer" && pendingTransferMessage ? (
+        <InlineAlert
+          title={pendingTransferMessage}
+          tone={pendingTransferRetryReady ? "info" : "warning"}
+        />
+      ) : null}
+      {detail.document.type === "transfer" && transferReception?.destinationLocationName ? (
+        <InlineAlert
+          title={`Ubicación automática: ${transferReception.destinationLocationName}`}
+          description="La confirmación se registrará en esta ubicación operativa. No requiere selección manual."
+          tone="info"
         />
       ) : null}
 
@@ -457,6 +484,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
               incidents={incidents}
               lines={lines}
               readOnly={editingDisabled}
+              transferReception={transferReception}
               serialPrecheck={serialPrecheck}
               onSerialPrecheck={handleSerialPrecheck}
               onQuantityChange={updateLineQuantity}
@@ -666,6 +694,7 @@ function ReceivingLinesTable({
   incidents,
   lines,
   readOnly,
+  transferReception,
   serialPrecheck,
   onSerialPrecheck,
   onQuantityChange,
@@ -677,6 +706,7 @@ function ReceivingLinesTable({
   incidents: ReceivingDocumentIncident[];
   lines: ReceivingDocumentLine[];
   readOnly: boolean;
+  transferReception: ReturnType<typeof useReceivingDocumentDetail>["transferReception"];
   onQuantityChange: (lineId: string, value: NumericInputValue) => void;
   onUpdateLine: (lineId: string, patch: Partial<ReceivingDocumentLine>) => void;
 }) {
@@ -685,7 +715,16 @@ function ReceivingLinesTable({
     detail.dataSource === "api"
       ? Math.max(0, line.pendingQuantity - getRejectedNow(line, incidents))
       : line.pendingQuantity;
-  const lineLocked = (line: ReceivingDocumentLine) => readOnly || Boolean(line.incidentProtected);
+  const lineLocked = (line: ReceivingDocumentLine) =>
+    readOnly ||
+    Boolean(line.incidentProtected) ||
+    Boolean(
+      detail.dataSource === "api" &&
+      detail.document.type === "transfer" &&
+      (transferReception?.traceabilityBlockedLineIds.includes(line.id) ||
+        transferReception?.unavailableProductLineIds.includes(line.id) ||
+        !line.locationId),
+    );
   return (
     <>
       {detail.dataSource === "api"
@@ -766,7 +805,8 @@ function ReceivingLinesTable({
                 Entrada al inventario: {formatNumber(acceptedNow * line.purchaseToBaseFactor)}{" "}
                 {line.baseUnitName}
               </p>
-              {detail.capabilities.supportsMultipleLocations && line.tracking.stock ? (
+              {detail.document.type === "transfer" ||
+              (detail.capabilities.supportsMultipleLocations && line.tracking.stock) ? (
                 <Field label="Ubicacion operativa">
                   <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-title)]">
                     {getReceivingLocationLabel(detail, line)}
@@ -911,7 +951,8 @@ function ReceivingLinesTable({
                       )}
                     </td>
                     <td className="px-2 py-2.5">
-                      {detail.capabilities.supportsMultipleLocations && line.tracking.stock ? (
+                      {detail.document.type === "transfer" ||
+                      (detail.capabilities.supportsMultipleLocations && line.tracking.stock) ? (
                         <MutedText>{getReceivingLocationLabel(detail, line)}</MutedText>
                       ) : (
                         <MutedText>No requerido</MutedText>
@@ -1056,6 +1097,13 @@ function TransferTraceabilityFields({
   readOnly: boolean;
   onUpdateLine: (lineId: string, patch: Partial<ReceivingDocumentLine>) => void;
 }) {
+  if (detail.dataSource === "api" && (line.tracking.lot || line.tracking.serial)) {
+    return (
+      <MutedText>
+        Bloqueado: el Backend todavía no expone las selecciones físicas despachadas.
+      </MutedText>
+    );
+  }
   const available =
     detail.lines
       .find((entry) => entry.id === line.id)
