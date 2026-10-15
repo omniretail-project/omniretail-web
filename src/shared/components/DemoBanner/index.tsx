@@ -15,14 +15,13 @@ const linkClassName = "font-semibold underline underline-offset-2 hover:no-under
  * Franja informativa de la demo publica. Puramente presentacional: el reinicio y las URLs llegan
  * por props, no conoce repositorios ni variables de entorno.
  */
-export function DemoBanner({ onReset, contractUrl, contactUrl, className }: DemoBannerProps) {
+export function DemoBanner({ onReset, contractUrl, contactUrl, className }: Readonly<DemoBannerProps>) {
   return (
-    <div
+    <section
       className={cn(
         "flex flex-wrap items-center justify-center gap-x-4 gap-y-2 bg-[var(--color-structure)] px-4 py-2 text-sm text-white",
         className,
       )}
-      role="region"
       aria-label="Aviso de demo"
     >
       <span>Estás en una demo con datos de ejemplo</span>
@@ -39,6 +38,6 @@ export function DemoBanner({ onReset, contractUrl, contactUrl, className }: Demo
           ¿Quieres que te contactemos?
         </a>
       ) : null}
-    </div>
+    </section>
   );
 }

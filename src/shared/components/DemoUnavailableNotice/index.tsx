@@ -18,7 +18,7 @@ export function DemoUnavailableNotice({
   description,
   children,
   className,
-}: DemoUnavailableNoticeProps) {
+}: Readonly<DemoUnavailableNoticeProps>) {
   return (
     <section
       aria-label={title}

@@ -19,6 +19,117 @@ import { formatDate } from "@/shared/utils/formatDate";
 
 const money = (amount: number) => "Q" + amount.toFixed(2);
 
+type Addon = (typeof SUBSCRIPTION_ADDONS)[number];
+type SubscriptionDetails = NonNullable<ReturnType<typeof useTenantSubscription>["details"]>;
+
+const usageCurrent = (usage: SubscriptionDetails["usage"], key: string) =>
+  usage.find((item) => item.key === key)?.current ?? 0;
+
+function AddonCard({
+  addon,
+  enabled,
+  disabled,
+  onToggle,
+}: Readonly<{
+  addon: Addon;
+  enabled: boolean;
+  disabled: boolean;
+  onToggle: (code: string) => void;
+}>) {
+  return (
+    <article
+      className={
+        "flex items-center justify-between gap-4 rounded-xl border bg-[var(--color-surface)] p-4 shadow-sm " +
+        (enabled ? "border-blue-300" : "border-[var(--color-border)]")
+      }
+    >
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h3 className="font-semibold text-[var(--color-title)]">{addon.name}</h3>
+          <strong className="whitespace-nowrap text-sm tabular-nums text-[var(--color-title)]">
+            +{money(addon.monthlyQuetzales)}/mes
+          </strong>
+        </div>
+        <p className="mt-1 text-sm leading-5 text-[var(--color-text-muted)]">{addon.description}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        aria-label={"Activar " + addon.name}
+        disabled={disabled}
+        onClick={() => onToggle(addon.code)}
+        className={
+          "relative h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] disabled:opacity-50 " +
+          (enabled ? "bg-blue-600" : "bg-slate-300")
+        }
+      >
+        <span
+          className={
+            "absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform " +
+            (enabled ? "translate-x-5" : "")
+          }
+        />
+      </button>
+    </article>
+  );
+}
+
+// Nota bajo el catalogo: la demo es solo lectura; fuera de la demo, falta el permiso de gestion.
+function ManageNote({ demo, canManage }: Readonly<{ demo: boolean; canManage: boolean }>) {
+  let message: string | null = null;
+  if (demo) {
+    message = "En la demo la suscripción es de solo lectura. Disponible en la versión contratada.";
+  } else if (!canManage) {
+    message = "Se requiere admin.plans.manage para modificar la suscripción.";
+  }
+  if (!message) return null;
+  return <p className="mt-3 text-sm text-[var(--color-text-muted)]">{message}</p>;
+}
+
+function BillingHistory({ invoices }: Readonly<{ invoices: SubscriptionDetails["invoices"] }>) {
+  return (
+    <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
+      <h2 className="text-lg font-bold text-[var(--color-title)]">Historial de facturación</h2>
+      <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+        Estos registros no son facturas fiscales ni comprobantes de pago.
+      </p>
+      {invoices.length === 0 ? (
+        <p className="mt-4 rounded-lg bg-slate-50 px-4 py-5 text-sm text-[var(--color-text-muted)]">
+          Aún no hay ciclos registrados.
+        </p>
+      ) : (
+        <ul className="mt-3 divide-y divide-[var(--color-border)]">
+          {invoices.map((invoice) => (
+            <li key={invoice.id} className="py-3 text-sm">
+              <details>
+                <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 rounded-md px-2 py-1 hover:bg-slate-50">
+                  <span>Ciclo desde {formatDate(invoice.cycleStart)}</span>
+                  <strong className="tabular-nums text-[var(--color-title)]">
+                    {money(invoice.totalQuetzales)}
+                  </strong>
+                </summary>
+                <ul className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3 text-[var(--color-text-muted)]">
+                  <li className="flex justify-between gap-3">
+                    <span>MARJYM Base</span>
+                    <span className="tabular-nums">{money(invoice.baseQuetzales)}</span>
+                  </li>
+                  {invoice.addonLines.map((line) => (
+                    <li key={line.code} className="flex justify-between gap-3">
+                      <span>{line.name}</span>
+                      <span className="tabular-nums">{money(line.amountQuetzales)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function PlanSubscriptionPage() {
   const {
     busy,
@@ -147,13 +258,13 @@ export function PlanSubscriptionPage() {
               <div className="rounded-lg bg-slate-50 px-3 py-2.5">
                 <span className="block text-xs text-[var(--color-text-muted)]">Usuarios</span>
                 <strong className="mt-1 block tabular-nums text-[var(--color-title)]">
-                  {details.usage.find((item) => item.key === "maxEmployees")?.current ?? 0}
+                  {usageCurrent(details.usage, "maxEmployees")}
                 </strong>
               </div>
               <div className="rounded-lg bg-slate-50 px-3 py-2.5">
                 <span className="block text-xs text-[var(--color-text-muted)]">Sucursales</span>
                 <strong className="mt-1 block tabular-nums text-[var(--color-title)]">
-                  {details.usage.find((item) => item.key === "maxBranches")?.current ?? 0}
+                  {usageCurrent(details.usage, "maxBranches")}
                 </strong>
               </div>
               <div className="rounded-lg bg-slate-50 px-3 py-2.5">
@@ -200,61 +311,18 @@ export function PlanSubscriptionPage() {
               </div>
 
               <div className="mt-3 grid gap-3">
-                {SUBSCRIPTION_ADDONS.map((addon) => {
-                  const enabled = selected.includes(addon.code);
-
-                  return (
-                    <article
-                      key={addon.code}
-                      className={
-                        "flex items-center justify-between gap-4 rounded-xl border bg-[var(--color-surface)] p-4 shadow-sm " +
-                        (enabled ? "border-blue-300" : "border-[var(--color-border)]")
-                      }
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                          <h3 className="font-semibold text-[var(--color-title)]">{addon.name}</h3>
-                          <strong className="whitespace-nowrap text-sm tabular-nums text-[var(--color-title)]">
-                            +{money(addon.monthlyQuetzales)}/mes
-                          </strong>
-                        </div>
-                        <p className="mt-1 text-sm leading-5 text-[var(--color-text-muted)]">
-                          {addon.description}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={enabled}
-                        aria-label={"Activar " + addon.name}
-                        disabled={!canManage || busy}
-                        onClick={() => toggle(addon.code)}
-                        className={
-                          "relative h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] disabled:opacity-50 " +
-                          (enabled ? "bg-blue-600" : "bg-slate-300")
-                        }
-                      >
-                        <span
-                          className={
-                            "absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform " +
-                            (enabled ? "translate-x-5" : "")
-                          }
-                        />
-                      </button>
-                    </article>
-                  );
-                })}
+                {SUBSCRIPTION_ADDONS.map((addon) => (
+                  <AddonCard
+                    key={addon.code}
+                    addon={addon}
+                    enabled={selected.includes(addon.code)}
+                    disabled={!canManage || busy}
+                    onToggle={toggle}
+                  />
+                ))}
               </div>
 
-              {demo ? (
-                <p className="mt-3 text-sm text-[var(--color-text-muted)]">
-                  En la demo la suscripción es de solo lectura. Disponible en la versión contratada.
-                </p>
-              ) : !canManage ? (
-                <p className="mt-3 text-sm text-[var(--color-text-muted)]">
-                  Se requiere admin.plans.manage para modificar la suscripción.
-                </p>
-              ) : null}
+              <ManageNote demo={demo} canManage={canManage} />
             </section>
 
             <section
@@ -306,46 +374,7 @@ export function PlanSubscriptionPage() {
             </section>
           </div>
 
-          <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
-            <h2 className="text-lg font-bold text-[var(--color-title)]">
-              Historial de facturación
-            </h2>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-              Estos registros no son facturas fiscales ni comprobantes de pago.
-            </p>
-            {details.invoices.length === 0 ? (
-              <p className="mt-4 rounded-lg bg-slate-50 px-4 py-5 text-sm text-[var(--color-text-muted)]">
-                Aún no hay ciclos registrados.
-              </p>
-            ) : (
-              <ul className="mt-3 divide-y divide-[var(--color-border)]">
-                {details.invoices.map((invoice) => (
-                  <li key={invoice.id} className="py-3 text-sm">
-                    <details>
-                      <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 rounded-md px-2 py-1 hover:bg-slate-50">
-                        <span>Ciclo desde {formatDate(invoice.cycleStart)}</span>
-                        <strong className="tabular-nums text-[var(--color-title)]">
-                          {money(invoice.totalQuetzales)}
-                        </strong>
-                      </summary>
-                      <ul className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3 text-[var(--color-text-muted)]">
-                        <li className="flex justify-between gap-3">
-                          <span>MARJYM Base</span>
-                          <span className="tabular-nums">{money(invoice.baseQuetzales)}</span>
-                        </li>
-                        {invoice.addonLines.map((line) => (
-                          <li key={line.code} className="flex justify-between gap-3">
-                            <span>{line.name}</span>
-                            <span className="tabular-nums">{money(line.amountQuetzales)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          <BillingHistory invoices={details.invoices} />
         </>
       ) : null}
 
