@@ -40,6 +40,8 @@ export interface ReceivingDocumentDetail {
 export interface TransferReceptionReadModel {
   /** El backend actual admite una sola ubicación de destino por confirmación. */
   requiresSingleDestinationLocation: true;
+  /** Estado y permisos permiten preparar una seleccion, aunque todavia no sea confirmable. */
+  canReceiveTransfer: boolean;
   /** La recepción puede enviarse con las cantidades ingresadas por el usuario. */
   canConfirmTransfer: boolean;
   /** Ubicación operativa resuelta desde ProductInventorySettings.defaultLocationId. */
@@ -49,6 +51,8 @@ export interface TransferReceptionReadModel {
   blockedLineIds: string[];
   /** Líneas que requieren selecciones físicas que Backend aún no devuelve al Frontend. */
   traceabilityBlockedLineIds: string[];
+  /** Lineas cuyo producto no pudo resolverse desde el catalogo autoritativo. */
+  unavailableProductLineIds: string[];
   /** Explicación visible y estable para la interfaz cuando la operación queda bloqueada. */
   blockingReason?: string;
 }
@@ -198,6 +202,11 @@ export interface ConfirmReceivingInput extends SaveReceivingProgressInput {
   confirmationId: string;
   /** El hook real siempre lo envía; opcional para comandos legacy/mock ya existentes. */
   hasUnsavedChanges?: boolean;
+  /** Payload efectivo persistido antes del POST de un traslado API. */
+  transferOperation?: {
+    destinationLocationId: string;
+    idempotentReplay: boolean;
+  };
 }
 
 export interface CreateReceivingIncidentInput {

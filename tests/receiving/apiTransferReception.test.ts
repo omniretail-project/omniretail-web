@@ -77,11 +77,12 @@ describe("API transfer reception rules", () => {
   it("resolves one shared active destination location for non-traceable products", () => {
     const resolved = buildApiTransferReception({
       lines: [
-        line(),
+        line({ receivedNow: 2 }),
         line({
           id: "transfer-item-2",
           sourceLineId: "transfer-item-2",
           productId: secondProductId,
+          receivedNow: 1,
         }),
       ],
       transferIsReceivable: true,
@@ -103,12 +104,13 @@ describe("API transfer reception rules", () => {
   it("blocks a confirmation when pending products resolve to different locations", () => {
     const resolved = buildApiTransferReception({
       lines: [
-        line(),
+        line({ receivedNow: 2 }),
         line({
           id: "transfer-item-2",
           sourceLineId: "transfer-item-2",
           productId: secondProductId,
           locationId: secondLocationId,
+          receivedNow: 1,
         }),
       ],
       transferIsReceivable: true,
@@ -129,7 +131,7 @@ describe("API transfer reception rules", () => {
 
   it("blocks a traceable product until Backend exposes its dispatched selections", () => {
     const resolved = buildApiTransferReception({
-      lines: [line({ tracking: { stock: true, lot: true, expiration: false, serial: false } })],
+      lines: [line({ receivedNow: 1, tracking: { stock: true, lot: true, expiration: false, serial: false } })],
       transferIsReceivable: true,
       activeLocationById: new Map([[firstLocationId, location(firstLocationId)]]),
       productById: new Map([[productId, product(productId)]]),
@@ -142,7 +144,7 @@ describe("API transfer reception rules", () => {
 
   it("blocks a product without an active configured destination location", () => {
     const resolved = buildApiTransferReception({
-      lines: [line({ locationId: "" })],
+      lines: [line({ locationId: "", receivedNow: 1 })],
       transferIsReceivable: true,
       activeLocationById: new Map(),
       productById: new Map([[productId, product(productId)]]),
@@ -155,7 +157,7 @@ describe("API transfer reception rules", () => {
 
   it("blocks a transfer that is not receivable or has no pending quantities", () => {
     const notReceivable = buildApiTransferReception({
-      lines: [line()],
+      lines: [line({ receivedNow: 1 })],
       transferIsReceivable: false,
       activeLocationById: new Map([[firstLocationId, location(firstLocationId)]]),
       productById: new Map([[productId, product(productId)]]),
@@ -173,7 +175,7 @@ describe("API transfer reception rules", () => {
 
   it("blocks a line whose product configuration cannot be loaded", () => {
     const resolved = buildApiTransferReception({
-      lines: [line()],
+      lines: [line({ receivedNow: 1 })],
       transferIsReceivable: true,
       activeLocationById: new Map([[firstLocationId, location(firstLocationId)]]),
       productById: new Map(),
@@ -184,5 +186,60 @@ describe("API transfer reception rules", () => {
       blockedLineIds: ["transfer-item-1"],
       blockingReason: expect.stringMatching(/no se pudo consultar/i),
     });
+  });
+
+  it("allows a partial selection when unselected pending lines use another location", () => {
+    const resolved = buildApiTransferReception({
+      lines: [
+        line({ receivedNow: 2 }),
+        line({
+          id: "transfer-item-2",
+          sourceLineId: "transfer-item-2",
+          productId: secondProductId,
+          locationId: secondLocationId,
+          receivedNow: 0,
+        }),
+      ],
+      transferIsReceivable: true,
+      activeLocationById: new Map([
+        [firstLocationId, location(firstLocationId)],
+        [secondLocationId, location(secondLocationId)],
+      ]),
+      productById: new Map([
+        [productId, product(productId)],
+        [secondProductId, product(secondProductId)],
+      ]),
+    });
+
+    expect(resolved).toMatchObject({
+      canReceiveTransfer: true,
+      canConfirmTransfer: true,
+      destinationLocationId: firstLocationId,
+      blockedLineIds: [],
+    });
+  });
+
+  it("does not let an unselected traceable line block a non-traceable partial reception", () => {
+    const resolved = buildApiTransferReception({
+      lines: [
+        line({ receivedNow: 2 }),
+        line({
+          id: "transfer-item-2",
+          sourceLineId: "transfer-item-2",
+          productId: secondProductId,
+          receivedNow: 0,
+          tracking: { stock: true, lot: true, expiration: false, serial: false },
+        }),
+      ],
+      transferIsReceivable: true,
+      activeLocationById: new Map([[firstLocationId, location(firstLocationId)]]),
+      productById: new Map([
+        [productId, product(productId)],
+        [secondProductId, product(secondProductId)],
+      ]),
+    });
+
+    expect(resolved.canConfirmTransfer).toBe(true);
+    expect(resolved.traceabilityBlockedLineIds).toEqual(["transfer-item-2"]);
   });
 });

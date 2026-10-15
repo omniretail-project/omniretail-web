@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ReceivingDocumentsService } from "@/modules/receiving/application/services/ReceivingDocumentsService";
 import type {
   ReceivingIncidentRow,
@@ -12,6 +12,7 @@ import type {
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 
 interface ReceivingFilters {
   search: string;
@@ -33,8 +34,10 @@ const EMPTY_DATA: ReceivingReadModel = {
 
 export function useReceivingDocuments() {
   const repositories = useRepositories();
+  const { sessionId, user } = useCurrentSession();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const activeBranchId = currentBranch?.id;
+  const contextKey = `${sessionId ?? ""}:${user?.id ?? ""}:${user?.tenantId ?? ""}:${activeBranchId ?? ""}`;
   const service = useMemo(() => new ReceivingDocumentsService(repositories), [repositories]);
   const [data, setData] = useState<ReceivingReadModel>(EMPTY_DATA);
   const [filters, setFilters] = useState<ReceivingFilters>(DEFAULT_FILTERS);
@@ -42,12 +45,31 @@ export function useReceivingDocuments() {
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [incrementalError, setIncrementalError] = useState<string | null>(null);
+  const [renderedContextKey, setRenderedContextKey] = useState(contextKey);
   const requestIdRef = useRef(0);
   const loadedBranchIdRef = useRef<string | undefined>(undefined);
+  const contextKeyRef = useRef(contextKey);
   const loadMoreRequestIdRef = useRef<number | null>(null);
+
+  if (renderedContextKey !== contextKey) {
+    setRenderedContextKey(contextKey);
+    setData(EMPTY_DATA);
+    setLoadingMore(false);
+    setIncrementalError(null);
+    setError(null);
+    setLoading(true);
+  }
+
+  useLayoutEffect(() => {
+    contextKeyRef.current = contextKey;
+    requestIdRef.current += 1;
+    loadedBranchIdRef.current = activeBranchId;
+    loadMoreRequestIdRef.current = null;
+  }, [activeBranchId, contextKey]);
 
   const reload = useCallback(async () => {
     const requestId = ++requestIdRef.current;
+    const requestedContextKey = contextKey;
     loadedBranchIdRef.current = activeBranchId;
     loadMoreRequestIdRef.current = null;
     setData(EMPTY_DATA);
@@ -59,6 +81,7 @@ export function useReceivingDocuments() {
       const nextData = await service.execute(activeBranchId);
       if (
         requestId !== requestIdRef.current ||
+        requestedContextKey !== contextKeyRef.current ||
         loadedBranchIdRef.current !== activeBranchId
       ) {
         return;
@@ -67,17 +90,18 @@ export function useReceivingDocuments() {
     } catch {
       if (
         requestId !== requestIdRef.current ||
+        requestedContextKey !== contextKeyRef.current ||
         loadedBranchIdRef.current !== activeBranchId
       ) {
         return;
       }
       setError("No se pudieron cargar las recepciones.");
     } finally {
-      if (requestId === requestIdRef.current) {
+      if (requestId === requestIdRef.current && requestedContextKey === contextKeyRef.current) {
         setLoading(false);
       }
     }
-  }, [activeBranchId, service]);
+  }, [activeBranchId, contextKey, service]);
 
   const loadMore = useCallback(async () => {
     const pagination = data.pagination;
@@ -90,6 +114,7 @@ export function useReceivingDocuments() {
     }
 
     const requestId = ++requestIdRef.current;
+    const requestedContextKey = contextKey;
     loadMoreRequestIdRef.current = requestId;
     setLoadingMore(true);
     setIncrementalError(null);
@@ -97,6 +122,7 @@ export function useReceivingDocuments() {
       const nextData = await service.loadMore(activeBranchId, pagination);
       if (
         requestId !== requestIdRef.current ||
+        requestedContextKey !== contextKeyRef.current ||
         loadedBranchIdRef.current !== activeBranchId
       ) {
         return;
@@ -105,6 +131,7 @@ export function useReceivingDocuments() {
     } catch {
       if (
         requestId !== requestIdRef.current ||
+        requestedContextKey !== contextKeyRef.current ||
         loadedBranchIdRef.current !== activeBranchId
       ) {
         return;
@@ -116,11 +143,11 @@ export function useReceivingDocuments() {
       if (loadMoreRequestIdRef.current === requestId) {
         loadMoreRequestIdRef.current = null;
       }
-      if (requestId === requestIdRef.current) {
+      if (requestId === requestIdRef.current && requestedContextKey === contextKeyRef.current) {
         setLoadingMore(false);
       }
     }
-  }, [activeBranchId, data.pagination, service]);
+  }, [activeBranchId, contextKey, data.pagination, service]);
 
   useEffect(() => {
     let active = true;
