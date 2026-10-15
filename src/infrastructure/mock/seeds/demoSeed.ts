@@ -45,6 +45,7 @@ import {
   UserType,
 } from "@/core/enums";
 import { BASE_MONTHLY_QUETZALES } from "@/core/subscription/catalog";
+import { DEMO_ACCOUNT_PASSWORDS } from "@/config/demo-mode";
 import { permissionsConfig } from "@/config/permissions";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
@@ -408,8 +409,8 @@ const legacyDemoSeedDatabase: MockDatabase = {
       id: "auth-admin",
       userId: "user-admin",
       email: "admin@marjym.demo",
-      // demo password: "AdminDemo123" (mock only, not a real credential)
-      passwordHashMock: buildPasswordHashMock("AdminDemo123"),
+      // Credencial publica de la demo mock (fuente unica en config/demo-mode).
+      passwordHashMock: buildPasswordHashMock(DEMO_ACCOUNT_PASSWORDS.admin),
       status: AccountStatus.active,
       failedLoginAttempts: 0,
       createdAt: now,
@@ -419,8 +420,8 @@ const legacyDemoSeedDatabase: MockDatabase = {
       id: "auth-cashier",
       userId: "user-cashier",
       email: "cajero@marjym.demo",
-      // demo password: "CajeroDemo123" (mock only, not a real credential)
-      passwordHashMock: buildPasswordHashMock("CajeroDemo123"),
+      // Credencial publica de la demo mock (fuente unica en config/demo-mode).
+      passwordHashMock: buildPasswordHashMock(DEMO_ACCOUNT_PASSWORDS.cashier),
       status: AccountStatus.active,
       failedLoginAttempts: 0,
       createdAt: now,
@@ -430,8 +431,8 @@ const legacyDemoSeedDatabase: MockDatabase = {
       id: "auth-warehouse",
       userId: "user-warehouse",
       email: "bodega@marjym.demo",
-      // demo password: "BodegaDemo123" (mock only, not a real credential)
-      passwordHashMock: buildPasswordHashMock("BodegaDemo123"),
+      // Credencial publica de la demo mock (fuente unica en config/demo-mode).
+      passwordHashMock: buildPasswordHashMock(DEMO_ACCOUNT_PASSWORDS.warehouse),
       status: AccountStatus.active,
       failedLoginAttempts: 0,
       createdAt: now,

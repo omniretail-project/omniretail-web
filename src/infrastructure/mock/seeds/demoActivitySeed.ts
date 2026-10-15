@@ -368,6 +368,26 @@ const CUSTOMER_ID: Readonly<Record<CustomerKey, string>> = {
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 const pad = (value: number, size = 3) => String(value).padStart(size, "0");
 
+// Metodo de pago de las ventas POS de un solo pago (las "mixed" se dividen aparte).
+const SINGLE_PAY_METHOD: Record<Exclude<PayKind, "mixed">, PaymentMethod> = {
+  cash: PaymentMethod.cash,
+  card: PaymentMethod.card,
+  transfer: PaymentMethod.transfer,
+};
+
+// Referencia del pago de una venta POS segun el metodo (efectivo no lleva referencia).
+const salePaymentReference = (method: PaymentMethod, number: number) => {
+  if (method === PaymentMethod.card) return `TERM-${pad(4000 + number * 11, 6)}`;
+  if (method === PaymentMethod.transfer) return `TRX-DEMO-${pad(number)}`;
+  return undefined;
+};
+
+// Orden de desempate entre movimientos del mismo instante: las entradas van antes que las salidas.
+const movementTypeOrder = (left: InventoryMovementType, right: InventoryMovementType) => {
+  if (left === right) return 0;
+  return left === InventoryMovementType.in ? -1 : 1;
+};
+
 interface StockEvent {
   branchId: string;
   productId: string;
@@ -577,7 +597,7 @@ export function buildDemoActivity(base: MockDatabase, reference: Date): DemoActi
             const cash = roundMoney(Math.floor(total / 2));
             return [[PaymentMethod.cash, cash], [PaymentMethod.card, roundMoney(total - cash)]];
           })()
-        : [[spec.pay === "cash" ? PaymentMethod.cash : spec.pay === "card" ? PaymentMethod.card : PaymentMethod.transfer, total]];
+        : [[SINGLE_PAY_METHOD[spec.pay], total]];
     split.forEach(([method, amount], paymentIndex) => {
       payments.push({
         id: `payment-demo-${saleId}-${paymentIndex + 1}`,
@@ -588,12 +608,7 @@ export function buildDemoActivity(base: MockDatabase, reference: Date): DemoActi
         amount,
         currency: "GTQ",
         bankAccountId: method === PaymentMethod.transfer ? BANK_ACCOUNT_ID : undefined,
-        reference:
-          method === PaymentMethod.card
-            ? `TERM-${pad(4000 + number * 11, 6)}`
-            : method === PaymentMethod.transfer
-              ? `TRX-DEMO-${pad(number)}`
-              : undefined,
+        reference: salePaymentReference(method, number),
         createdAt,
       });
       if (method === PaymentMethod.cash) {
@@ -633,7 +648,8 @@ export function buildDemoActivity(base: MockDatabase, reference: Date): DemoActi
     .sort((left, right) => right[1].d - left[1].d)
     .forEach(([shiftId, group]) => {
       const cashier = cashierByBranch[group.branchId];
-      const sorted = [...group.times].sort();
+      // Marcas ISO-8601 de igual formato: el orden lexicografico coincide con el cronologico.
+      const sorted = [...group.times].sort((left, right) => left.localeCompare(right));
       const openedAt = shift(sorted[0], -40);
       const isOpen = group.branchId === CENTRO && group.d === 0;
       if (isOpen) {
@@ -652,7 +668,7 @@ export function buildDemoActivity(base: MockDatabase, reference: Date): DemoActi
         return;
       }
       closedShiftIndex += 1;
-      const closedAt = shift(sorted[sorted.length - 1], 75);
+      const closedAt = shift(sorted.at(-1) ?? sorted[0], 75);
       if (closedShiftIndex % 4 === 0) {
         cashMovements.push({
           id: `cash-movement-demo-${shiftId}-out`,
@@ -723,13 +739,22 @@ export function buildDemoActivity(base: MockDatabase, reference: Date): DemoActi
   const packages: Package[] = [...base.packages];
   const orderPayments: Payment[] = [...base.payments];
 
-  ORDER_SPECS.forEach((spec) => {
-    const orderId = `order-${pad(spec.n)}`;
-    const orderNumber = `WEB-${pad(spec.n)}`;
-    const createdAt = at(spec.d, spec.hm, spec.n);
-    const customer = spec.customer ? customerById.get(CUSTOMER_ID[spec.customer]) : undefined;
-    const isHome = spec.delivery === DeliveryMethod.home_delivery;
-    const items: OrderItem[] = spec.items.map(([productId, quantity], index) => {
+  // Referencia del pago de un pedido segun el metodo (efectivo no lleva referencia).
+  const orderPaymentReference = (method: PaymentMethod, orderNumber: string) => {
+    if (method === PaymentMethod.transfer) return `TRX-${orderNumber}`;
+    if (method === PaymentMethod.card) return `CARD-${orderNumber}`;
+    return undefined;
+  };
+
+  // Ultima actualizacion del pedido: entrega, despacho o creacion, en ese orden de prioridad.
+  const orderUpdatedAt = (spec: OrderSpec, createdAt: string) => {
+    if (spec.deliveredDaysAgo !== undefined) return at(spec.deliveredDaysAgo, "15:00");
+    if (spec.dispatchedDaysAgo !== undefined) return at(spec.dispatchedDaysAgo, "09:30");
+    return createdAt;
+  };
+
+  const buildOrderItems = (spec: OrderSpec, orderId: string): OrderItem[] =>
+    spec.items.map(([productId, quantity], index) => {
       const product = requireProduct(productId);
       const unitPrice = unitPriceFor(productId, quantity);
       return {
@@ -746,19 +771,23 @@ export function buildDemoActivity(base: MockDatabase, reference: Date): DemoActi
         fulfillmentComponents: [{ productId, quantity }],
       };
     });
+
+  const buildOrder = (
+    spec: OrderSpec,
+    context: { orderId: string; orderNumber: string; items: OrderItem[]; createdAt: string },
+  ): { order: Order; total: number } => {
+    const { orderId, orderNumber, items, createdAt } = context;
+    const customer = spec.customer ? customerById.get(CUSTOMER_ID[spec.customer]) : undefined;
+    const isHome = spec.delivery === DeliveryMethod.home_delivery;
     const subtotal = roundMoney(items.reduce((sum, item) => sum + item.subtotal, 0));
     const shippingTotal = isHome && subtotal < 300 ? 25 : 0;
     const contactEmail = customer?.email ?? spec.guest?.email ?? "";
     const recipientName = customer?.name ?? spec.guest?.name ?? "Cliente";
+    const recipientPhone = customer?.phone ?? "5555-0000";
     const address = customer ? addresses.find((item) => item.customerId === customer.id) : undefined;
-    const updatedAt =
-      spec.deliveredDaysAgo !== undefined
-        ? at(spec.deliveredDaysAgo, "15:00")
-        : spec.dispatchedDaysAgo !== undefined
-          ? at(spec.dispatchedDaysAgo, "09:30")
-          : createdAt;
+    const total = roundMoney(subtotal + shippingTotal);
 
-    orders.push({
+    const order: Order = {
       id: orderId,
       tenantId: TENANT_ID,
       branchId: CENTRO,
@@ -773,148 +802,178 @@ export function buildDemoActivity(base: MockDatabase, reference: Date): DemoActi
       deliveryAddress: isHome
         ? {
             recipientName,
-            recipientPhone: customer?.phone ?? "5555-0000",
+            recipientPhone,
             line1: address?.line1 ?? "Zona 1",
             city: address?.city ?? "Guatemala",
             stateOrDepartment: "Guatemala",
             country: "Guatemala",
           }
         : undefined,
-      storePickupContact: isHome
-        ? undefined
-        : { recipientName, recipientPhone: customer?.phone ?? "5555-0000" },
+      storePickupContact: isHome ? undefined : { recipientName, recipientPhone },
       notificationContact: { emailMode: "send", email: contactEmail },
       subtotal,
       discountTotal: 0,
       shippingTotal,
-      total: roundMoney(subtotal + shippingTotal),
+      total,
       trackingToken: `TRACK-${orderNumber}`,
       createdAt,
-      updatedAt,
-    });
-    orderItems.push(...items);
+      updatedAt: orderUpdatedAt(spec, createdAt),
+    };
+    return { order, total };
+  };
 
-    orderPayments.push({
-      id: `payment-demo-${orderId}`,
+  const buildOrderPayment = (
+    spec: OrderSpec,
+    context: { orderId: string; orderNumber: string; total: number; createdAt: string },
+  ): Payment => ({
+    id: `payment-demo-${context.orderId}`,
+    tenantId: TENANT_ID,
+    orderId: context.orderId,
+    method: spec.payment.method,
+    status: spec.payment.status,
+    amount: context.total,
+    currency: "GTQ",
+    bankAccountId: spec.payment.method === PaymentMethod.transfer ? BANK_ACCOUNT_ID : undefined,
+    reference: orderPaymentReference(spec.payment.method, context.orderNumber),
+    createdAt: context.createdAt,
+  });
+
+  // Reservas de stock de un pedido; si ya salio a despacho la reserva queda consumida.
+  const reserveOrderStock = (
+    items: OrderItem[],
+    context: { orderId: string; consumed: boolean; createdAt: string; updatedAt: string },
+  ) => {
+    const { orderId, consumed, createdAt, updatedAt } = context;
+    items.forEach((item) => {
+      const balance = balanceFor(CENTRO, item.productId);
+      if (!consumed) balance.reservedQuantity += item.quantity;
+      reservations.push({
+        id: `inventory-reservation-${item.id}`,
+        tenantId: TENANT_ID,
+        branchId: CENTRO,
+        orderId,
+        orderItemId: item.id,
+        productId: item.productId,
+        status: consumed ? InventoryReservationStatus.consumed : InventoryReservationStatus.active,
+        allocations: [
+          {
+            id: `reservation-allocation-${item.id}`,
+            balanceId: balance.id,
+            locationId: balance.locationId,
+            reservedQuantity: item.quantity,
+            consumedQuantity: consumed ? item.quantity : 0,
+          },
+        ],
+        createdAt,
+        updatedAt,
+      });
+    });
+  };
+
+  const addOrderPicking = (spec: OrderSpec, orderId: string, items: OrderItem[], createdAt: string) => {
+    const pickingId = `picking-demo-${pad(spec.n)}`;
+    const startedAt = shift(createdAt, 90);
+    pickingOrders.push({
+      id: pickingId,
       tenantId: TENANT_ID,
       orderId,
-      method: spec.payment.method,
-      status: spec.payment.status,
-      amount: roundMoney(subtotal + shippingTotal),
-      currency: "GTQ",
-      bankAccountId: spec.payment.method === PaymentMethod.transfer ? BANK_ACCOUNT_ID : undefined,
-      reference:
-        spec.payment.method === PaymentMethod.transfer
-          ? `TRX-${orderNumber}`
-          : spec.payment.method === PaymentMethod.card
-            ? `CARD-${orderNumber}`
-            : undefined,
-      createdAt,
+      branchId: CENTRO,
+      assignedUserId: "user-warehouse",
+      status: PickingStatus.completed,
+      priority: PickingPriority.normal,
+      startedAt,
+      completedAt: shift(startedAt, 35),
+      createdAt: shift(createdAt, 30),
+      updatedAt: shift(startedAt, 35),
     });
+    items.forEach((item) => {
+      pickingItems.push({
+        id: `picking-item-${item.id}`,
+        pickingOrderId: pickingId,
+        orderItemId: item.id,
+        productId: item.productId,
+        requestedQuantity: item.quantity,
+        pickedQuantity: item.quantity,
+        locationId: balanceFor(CENTRO, item.productId).locationId,
+        serialNumbers: [],
+        status: PickingItemStatus.completed,
+      });
+    });
+  };
 
-    const consumed = spec.dispatchedDaysAgo !== undefined;
+  const addOrderDispatch = (
+    spec: OrderSpec,
+    context: { orderId: string; orderNumber: string; items: OrderItem[]; dispatchedDaysAgo: number },
+  ) => {
+    const { orderId, orderNumber, items, dispatchedDaysAgo } = context;
+    const dispatchedAt = at(dispatchedDaysAgo, "09:30");
+    const dispatchId = `dispatch-demo-${pad(spec.n)}`;
+    const delivered = spec.deliveredDaysAgo !== undefined;
+    const deliveredAt = delivered ? at(spec.deliveredDaysAgo ?? 0, "15:00") : undefined;
+    dispatches.push({
+      id: dispatchId,
+      tenantId: TENANT_ID,
+      orderId,
+      branchId: CENTRO,
+      status: delivered ? DispatchStatus.delivered : DispatchStatus.dispatched,
+      transportMode: spec.carrier ? TransportMode.third_party : TransportMode.own_fleet,
+      carrierName: spec.carrier?.name,
+      trackingNumber: spec.carrier?.tracking,
+      dispatchedByUserId: "user-warehouse",
+      vehicle: spec.carrier ? undefined : "Pickup P-482KLM",
+      driver: spec.carrier ? undefined : "Mario Tzul",
+      packageCount: 1,
+      dispatchedAt,
+      deliveredAt,
+      createdAt: shift(dispatchedAt, -45),
+      updatedAt: deliveredAt ?? dispatchedAt,
+    });
+    packages.push({
+      id: `package-demo-${pad(spec.n)}`,
+      dispatchId,
+      number: `PKG-${pad(100 + spec.n)}`,
+      description: "Caja de pedido",
+      createdAt: shift(dispatchedAt, -45),
+    });
+    items.forEach((item) => {
+      stockEvents.push({
+        branchId: CENTRO,
+        productId: item.productId,
+        type: InventoryMovementType.out,
+        quantity: item.quantity,
+        createdAt: dispatchedAt,
+        reason: `Despacho pedido ${orderNumber}`,
+        referenceType: "order",
+        referenceId: orderId,
+        performedByUserId: "user-warehouse",
+      });
+    });
+  };
+
+  ORDER_SPECS.forEach((spec) => {
+    const orderId = `order-${pad(spec.n)}`;
+    const orderNumber = `WEB-${pad(spec.n)}`;
+    const createdAt = at(spec.d, spec.hm, spec.n);
+    const items = buildOrderItems(spec, orderId);
+    const { order, total } = buildOrder(spec, { orderId, orderNumber, items, createdAt });
+
+    orders.push(order);
+    orderItems.push(...items);
+    orderPayments.push(buildOrderPayment(spec, { orderId, orderNumber, total, createdAt }));
+
     const reserveStock =
       spec.status !== OrderStatus.pending && spec.status !== OrderStatus.cancelled;
     if (reserveStock) {
-      items.forEach((item) => {
-        const balance = balanceFor(CENTRO, item.productId);
-        if (!consumed) balance.reservedQuantity += item.quantity;
-        reservations.push({
-          id: `inventory-reservation-${item.id}`,
-          tenantId: TENANT_ID,
-          branchId: CENTRO,
-          orderId,
-          orderItemId: item.id,
-          productId: item.productId,
-          status: consumed ? InventoryReservationStatus.consumed : InventoryReservationStatus.active,
-          allocations: [
-            {
-              id: `reservation-allocation-${item.id}`,
-              balanceId: balance.id,
-              locationId: balance.locationId,
-              reservedQuantity: item.quantity,
-              consumedQuantity: consumed ? item.quantity : 0,
-            },
-          ],
-          createdAt,
-          updatedAt,
-        });
-      });
-    }
-
-    if (spec.picked) {
-      const pickingId = `picking-demo-${pad(spec.n)}`;
-      const startedAt = shift(createdAt, 90);
-      pickingOrders.push({
-        id: pickingId,
-        tenantId: TENANT_ID,
+      reserveOrderStock(items, {
         orderId,
-        branchId: CENTRO,
-        assignedUserId: "user-warehouse",
-        status: PickingStatus.completed,
-        priority: PickingPriority.normal,
-        startedAt,
-        completedAt: shift(startedAt, 35),
-        createdAt: shift(createdAt, 30),
-        updatedAt: shift(startedAt, 35),
-      });
-      items.forEach((item) => {
-        pickingItems.push({
-          id: `picking-item-${item.id}`,
-          pickingOrderId: pickingId,
-          orderItemId: item.id,
-          productId: item.productId,
-          requestedQuantity: item.quantity,
-          pickedQuantity: item.quantity,
-          locationId: balanceFor(CENTRO, item.productId).locationId,
-          serialNumbers: [],
-          status: PickingItemStatus.completed,
-        });
+        consumed: spec.dispatchedDaysAgo !== undefined,
+        createdAt,
+        updatedAt: order.updatedAt,
       });
     }
-
+    if (spec.picked) addOrderPicking(spec, orderId, items, createdAt);
     if (spec.dispatchedDaysAgo !== undefined) {
-      const dispatchedAt = at(spec.dispatchedDaysAgo, "09:30");
-      const dispatchId = `dispatch-demo-${pad(spec.n)}`;
-      const delivered = spec.deliveredDaysAgo !== undefined;
-      dispatches.push({
-        id: dispatchId,
-        tenantId: TENANT_ID,
-        orderId,
-        branchId: CENTRO,
-        status: delivered ? DispatchStatus.delivered : DispatchStatus.dispatched,
-        transportMode: spec.carrier ? TransportMode.third_party : TransportMode.own_fleet,
-        carrierName: spec.carrier?.name,
-        trackingNumber: spec.carrier?.tracking,
-        dispatchedByUserId: "user-warehouse",
-        vehicle: spec.carrier ? undefined : "Pickup P-482KLM",
-        driver: spec.carrier ? undefined : "Mario Tzul",
-        packageCount: 1,
-        dispatchedAt,
-        deliveredAt: delivered ? at(spec.deliveredDaysAgo ?? 0, "15:00") : undefined,
-        createdAt: shift(dispatchedAt, -45),
-        updatedAt: delivered ? at(spec.deliveredDaysAgo ?? 0, "15:00") : dispatchedAt,
-      });
-      packages.push({
-        id: `package-demo-${pad(spec.n)}`,
-        dispatchId,
-        number: `PKG-${pad(100 + spec.n)}`,
-        description: "Caja de pedido",
-        createdAt: shift(dispatchedAt, -45),
-      });
-      items.forEach((item) => {
-        stockEvents.push({
-          branchId: CENTRO,
-          productId: item.productId,
-          type: InventoryMovementType.out,
-          quantity: item.quantity,
-          createdAt: dispatchedAt,
-          reason: `Despacho pedido ${orderNumber}`,
-          referenceType: "order",
-          referenceId: orderId,
-          performedByUserId: "user-warehouse",
-        });
-      });
+      addOrderDispatch(spec, { orderId, orderNumber, items, dispatchedDaysAgo: spec.dispatchedDaysAgo });
     }
   });
 
@@ -995,11 +1054,7 @@ export function buildDemoActivity(base: MockDatabase, reference: Date): DemoActi
         orderedQuantity: ordered,
         receivedQuantity: received,
         inventoryQuantity: received,
-        status: hasIncident
-          ? ReceiptLineStatus.partial
-          : received >= ordered
-            ? ReceiptLineStatus.complete
-            : ReceiptLineStatus.partial,
+        status: hasIncident || received < ordered ? ReceiptLineStatus.partial : ReceiptLineStatus.complete,
         locationId: balance.locationId,
       });
       stockEvents.push({
@@ -1070,7 +1125,7 @@ export function buildDemoActivity(base: MockDatabase, reference: Date): DemoActi
     .sort(
       (left, right) =>
         left.createdAt.localeCompare(right.createdAt) ||
-        (left.type === right.type ? 0 : left.type === InventoryMovementType.in ? -1 : 1),
+        movementTypeOrder(left.type, right.type),
     )
     .map((event, index) => {
       const balance = balanceFor(event.branchId, event.productId);
