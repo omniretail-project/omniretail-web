@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { isPublicDemo } from "@/config/demo-mode";
 import {
   BASE_MONTHLY_QUETZALES,
   SUBSCRIPTION_ADDONS,
@@ -19,8 +20,19 @@ import { formatDate } from "@/shared/utils/formatDate";
 const money = (amount: number) => "Q" + amount.toFixed(2);
 
 export function PlanSubscriptionPage() {
-  const { busy, canManage, canRead, details, error, loading, reload, updateAddons } =
-    useTenantSubscription();
+  const {
+    busy,
+    canManage: canManageSubscription,
+    canRead,
+    details,
+    error,
+    loading,
+    reload,
+    updateAddons,
+  } = useTenantSubscription();
+  // En la demo publica el plan es de solo lectura: contratar o cambiar modulos se hace en la version real.
+  const demo = isPublicDemo();
+  const canManage = canManageSubscription && !demo;
   const { showToast } = useToast();
   const [draft, setDraft] = useState<string[] | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -234,7 +246,11 @@ export function PlanSubscriptionPage() {
                 })}
               </div>
 
-              {!canManage ? (
+              {demo ? (
+                <p className="mt-3 text-sm text-[var(--color-text-muted)]">
+                  En la demo la suscripción es de solo lectura. Disponible en la versión contratada.
+                </p>
+              ) : !canManage ? (
                 <p className="mt-3 text-sm text-[var(--color-text-muted)]">
                   Se requiere admin.plans.manage para modificar la suscripción.
                 </p>

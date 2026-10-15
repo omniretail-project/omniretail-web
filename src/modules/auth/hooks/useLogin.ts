@@ -177,14 +177,21 @@ export function useLogin(expectedUserType: UserType) {
     [finishLogin, repositories, resetResendCooldown, startResendCooldown],
   );
 
-  const submit = useCallback(async () => {
+  // `credentials` solo lo usa el acceso rapido de la demo publica: pasa por el mismo login normal.
+  const submit = useCallback(async (credentials?: { email: string; password: string }) => {
     setFormError(undefined);
 
     if (tenantLoading) {
       return;
     }
 
-    const dto: LoginFormDto = { email, password, rememberMe };
+    const dto: LoginFormDto = credentials
+      ? { email: credentials.email, password: credentials.password, rememberMe }
+      : { email, password, rememberMe };
+    if (credentials) {
+      setEmailState(credentials.email);
+      setPasswordState(credentials.password);
+    }
     const errors = validateLoginForm(dto);
     setFieldErrors(errors);
 

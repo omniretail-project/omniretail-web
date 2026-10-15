@@ -362,3 +362,9 @@ export function useDataEventBus() {
   if (!context) throw new Error("useDataEventBus must be used inside RepositoryProvider");
   return context.eventBus;
 }
+
+export function useResetMockData() {
+  const context = useContext(RepositoryContext);
+  if (!context) throw new Error("useResetMockData must be used inside RepositoryProvider");
+  return context.resetMockData;
+}

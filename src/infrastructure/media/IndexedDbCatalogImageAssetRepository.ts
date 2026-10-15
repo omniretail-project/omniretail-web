@@ -52,6 +52,18 @@ export class IndexedDbCatalogImageAssetRepository implements CatalogImageAssetRe
   }
 }
 
+/** Borra por completo la base local de imagenes del catalogo (reinicio de la demo publica). */
+export function clearCatalogImageAssets(): Promise<void> {
+  if (typeof indexedDB === "undefined") return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DATABASE_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error ?? new Error("No se pudo borrar IndexedDB."));
+    // Otra pestana con la base abierta: no bloquea el reinicio.
+    request.onblocked = () => resolve();
+  });
+}
+
 function openDatabase(): Promise<IDBDatabase> {
   if (typeof indexedDB === "undefined") {
     return Promise.reject(new Error("IndexedDB no esta disponible en este entorno."));
