@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:demo": "node scripts/dev-demo.mjs",
+    "dev:all": "node scripts/dev-demo.mjs all",
     "build": "next build",
     "start": "next start",
     "test": "vitest run --coverage",
