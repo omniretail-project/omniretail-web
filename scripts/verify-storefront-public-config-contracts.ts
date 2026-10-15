@@ -445,7 +445,7 @@ async function main() {
     auth: realAuth,
   } as RepositoryRegistry;
   const adminLogin = await realAuth.login({
-    email: "admin@ferrepharma.demo",
+    email: "admin@marjym.demo",
     passwordMock: "AdminDemo123",
     expectedUserType: UserType.employee,
   });
@@ -498,7 +498,7 @@ async function main() {
   );
 
   await realAuth.login({
-    email: "admin@ferrepharma.demo",
+    email: "admin@marjym.demo",
     passwordMock: "AdminDemo123",
     expectedUserType: UserType.employee,
   });

@@ -48,12 +48,13 @@ import { BASE_MONTHLY_QUETZALES } from "@/core/subscription/catalog";
 import { permissionsConfig } from "@/config/permissions";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
+import { buildDemoActivity } from "@/infrastructure/mock/seeds/demoActivitySeed";
 import { hardwareCatalogSeed } from "@/infrastructure/mock/seeds/hardwareCatalogSeed";
 
 const now = "2026-01-01T12:00:00.000Z";
 
 /**
- * Ticket "FIXES FOCALIZADOS" §4: role-admin (demo/bootstrap, admin@ferrepharma.demo) necesita
+ * Ticket "FIXES FOCALIZADOS" §4: role-admin (demo/bootstrap, admin@marjym.demo) necesita
  * poder ejercer la app completa durante desarrollo/demo. Se deriva del catálogo canónico real
  * (`src/config/permissions.ts`) en vez de mantener una segunda lista hardcodeada que se desincroniza
  * cada vez que se agrega un permiso nuevo -- exactamente el problema que tenía la lista fija de
@@ -126,7 +127,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
       enabled: true,
       storeName: "FerrePharma Demo",
       contactPhone: "+502 2222-3333",
-      contactEmail: "ventas@ferrepharma.demo",
+      contactEmail: "ventas@marjym.demo",
       requireAccountForCheckout: false,
       guestTrackingEnabled: true,
       allowedDeliveryMethods: [
@@ -237,7 +238,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       employeeCode: "ADM-001",
       name: "Administrador Demo",
-      email: "admin@ferrepharma.demo",
+      email: "admin@marjym.demo",
       type: UserType.employee,
       status: UserStatus.active,
       roleId: "role-admin",
@@ -251,7 +252,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       employeeCode: "INV-001",
       name: "Inventario Demo",
-      email: "inventario@ferrepharma.demo",
+      email: "inventario@marjym.demo",
       type: UserType.employee,
       status: UserStatus.active,
       roleId: "role-inventory",
@@ -264,7 +265,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       employeeCode: "POS-001",
       name: "Cajero Demo",
-      email: "cajero@ferrepharma.demo",
+      email: "cajero@marjym.demo",
       type: UserType.employee,
       status: UserStatus.active,
       roleId: "role-cashier",
@@ -277,11 +278,24 @@ const legacyDemoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       employeeCode: "BOD-001",
       name: "Bodeguero Demo",
-      email: "bodega@ferrepharma.demo",
+      email: "bodega@marjym.demo",
       type: UserType.employee,
       status: UserStatus.active,
       roleId: "role-warehouse",
       branchId: "branch-centro",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "user-cashier-norte",
+      tenantId: "tenant-demo",
+      employeeCode: "POS-002",
+      name: "Cajero Norte Demo",
+      email: "cajero.norte@marjym.demo",
+      type: UserType.employee,
+      status: UserStatus.active,
+      roleId: "role-cashier",
+      branchId: "branch-norte",
       createdAt: now,
       updatedAt: now,
     },
@@ -393,9 +407,31 @@ const legacyDemoSeedDatabase: MockDatabase = {
     {
       id: "auth-admin",
       userId: "user-admin",
-      email: "admin@ferrepharma.demo",
+      email: "admin@marjym.demo",
       // demo password: "AdminDemo123" (mock only, not a real credential)
       passwordHashMock: buildPasswordHashMock("AdminDemo123"),
+      status: AccountStatus.active,
+      failedLoginAttempts: 0,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "auth-cashier",
+      userId: "user-cashier",
+      email: "cajero@marjym.demo",
+      // demo password: "CajeroDemo123" (mock only, not a real credential)
+      passwordHashMock: buildPasswordHashMock("CajeroDemo123"),
+      status: AccountStatus.active,
+      failedLoginAttempts: 0,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "auth-warehouse",
+      userId: "user-warehouse",
+      email: "bodega@marjym.demo",
+      // demo password: "BodegaDemo123" (mock only, not a real credential)
+      passwordHashMock: buildPasswordHashMock("BodegaDemo123"),
       status: AccountStatus.active,
       failedLoginAttempts: 0,
       createdAt: now,
@@ -1754,18 +1790,18 @@ const hardwareOrderItems = legacyDemoSeedDatabase.orderItems.map((item) =>
       : item,
 );
 
-export const demoSeedDatabase: MockDatabase = {
+const demoSeedBase: MockDatabase = {
   ...legacyDemoSeedDatabase,
   ...hardwareCatalogSeed,
   tenants: legacyDemoSeedDatabase.tenants.map((tenant) => ({
     ...tenant,
-    name: "Ferretería Los Simpson",
-    legalName: "Ferretería Los Simpson, S.A.",
+    name: "Ferretería Demo",
+    legalName: "Ferretería Demo, S.A.",
   })),
   ecommerceConfigs: legacyDemoSeedDatabase.ecommerceConfigs.map((config) => ({
     ...config,
-    storeName: "Ferretería Los Simpson",
-    contactEmail: "ventas@ferreterialossimpson.demo",
+    storeName: "Ferretería Demo",
+    contactEmail: "ventas@marjym.demo",
   })),
   promotions: legacyDemoSeedDatabase.promotions.map((promotion) => ({
     ...promotion,
@@ -1803,6 +1839,17 @@ export const demoSeedDatabase: MockDatabase = {
   dispatches: legacyDemoSeedDatabase.dispatches,
   bankAccounts: legacyDemoSeedDatabase.bankAccounts.map((account) => ({
     ...account,
-    holderName: "Ferretería Los Simpson, S.A.",
+    holderName: "Ferretería Demo, S.A.",
   })),
 };
+
+/**
+ * Construye la base mock completa: seed base + actividad demo (ventas, caja, kardex, pedidos,
+ * compras) con fechas relativas a `reference`. `createMockDatabase()` la invoca al cargar, por lo
+ * que la actividad siempre cae en los ultimos 30 dias de la primera carga del navegador.
+ */
+export function buildDemoSeedDatabase(reference: Date = new Date()): MockDatabase {
+  return { ...demoSeedBase, ...buildDemoActivity(demoSeedBase, reference) };
+}
+
+export const demoSeedDatabase: MockDatabase = buildDemoSeedDatabase();

@@ -326,7 +326,7 @@ function verifySourceInvariants() {
 }
 
 /**
- * Ticket §4: el seed de demo (role-admin, admin@ferrepharma.demo) debe derivar SUS permisos del
+ * Ticket §4: el seed de demo (role-admin, admin@marjym.demo) debe derivar SUS permisos del
  * catálogo canónico real (`src/config/permissions.ts`), nunca de una segunda lista hardcodeada
  * que se desincroniza. Se verifica en runtime contra `demoSeedDatabase` (el resultado final que
  * consume `createMockDatabase()`, ya con el override de hardwareCatalogSeed aplicado) y también a
@@ -359,9 +359,9 @@ function verifyDemoAdminHasAllCanonicalPermissions() {
     "demoSeed.ts debe derivar los permisos de role-admin de permissionsConfig, no de una lista hardcodeada",
   );
 
-  const admin = demoSeedDatabase.users.find((user) => user.email === "admin@ferrepharma.demo");
-  assert.ok(admin, "admin@ferrepharma.demo debe seguir existiendo en el seed");
-  assert.equal(admin!.roleId, "role-admin", "admin@ferrepharma.demo debe seguir apuntando a role-admin");
+  const admin = demoSeedDatabase.users.find((user) => user.email === "admin@marjym.demo");
+  assert.ok(admin, "admin@marjym.demo debe seguir existiendo en el seed");
+  assert.equal(admin!.roleId, "role-admin", "admin@marjym.demo debe seguir apuntando a role-admin");
 }
 
 /**

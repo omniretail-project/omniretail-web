@@ -16,7 +16,7 @@ Esta rama prepara contratos compartidos para que POS pueda confirmar ventas sin 
 
 `CashMovement` conserva `referenceType` y `referenceId` opcionales para registrar ingresos de efectivo relacionados a una venta sin crear un repositorio nuevo.
 
-`RoleRepository.getByIdScoped(tenantId, id)` permite resolver `User.roleId -> Role active -> permissions` sin salir del tenant. `CurrentSessionProvider` es temporal para demo: resuelve `cajero@ferrepharma.demo` via repositories y expone `user`, `role`, `permissions`, `hasPermission`, `canAccessBranch`, `loading` e `isDemo`. Auth real podra reemplazar la estrategia interna sin cambiar `useCurrentSession()`.
+`RoleRepository.getByIdScoped(tenantId, id)` permite resolver `User.roleId -> Role active -> permissions` sin salir del tenant. `CurrentSessionProvider` es temporal para demo: resuelve `cajero@marjym.demo` via repositories y expone `user`, `role`, `permissions`, `hasPermission`, `canAccessBranch`, `loading` e `isDemo`. Auth real podra reemplazar la estrategia interna sin cambiar `useCurrentSession()`.
 
 ## Documento De Venta
 

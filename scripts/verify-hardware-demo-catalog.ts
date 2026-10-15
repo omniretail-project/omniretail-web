@@ -341,8 +341,16 @@ async function main(): Promise<void> {
     assert.ok(unitIds.has(item.purchaseUnitId));
   });
 
-  assert.equal(db.productInventorySettings.length, 30, "Q: settings incompletos");
-  assert.equal(db.inventoryBalances.length, 30, "Q: balances incompletos");
+  assert.equal(
+    db.productInventorySettings.filter((item) => item.branchId === "branch-centro").length,
+    30,
+    "Q: settings incompletos",
+  );
+  assert.equal(
+    db.inventoryBalances.filter((item) => item.branchId === "branch-centro").length,
+    30,
+    "Q: balances incompletos",
+  );
   db.inventoryBalances.forEach((balance) => {
     const branch = branches.get(balance.branchId);
     const location = balance.locationId ? locations.get(balance.locationId) : undefined;

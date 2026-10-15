@@ -44,7 +44,7 @@ Implementado en esta rama:
 
 ## Catalogo demo
 
-Las bases mock nuevas reciben el catalogo coherente de **Ferreteria Los Simpson**: 10 categorias
+Las bases mock nuevas reciben el catalogo coherente de **Ferretería Demo**: 10 categorias
 principales y 30 productos fisicos, con atributos, precios por cantidad, proveedor, configuracion
 de inventario, balance por ubicacion y una imagen principal estatica por producto. No crea kits ni
 servicios, aunque esos contratos de dominio siguen disponibles. El cambio del seed no migra ni

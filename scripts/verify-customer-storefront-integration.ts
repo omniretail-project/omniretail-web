@@ -274,7 +274,7 @@ async function loginCustomer(harness: ReturnType<typeof createSessionReactivityH
 async function loginAdmin(harness: ReturnType<typeof createSessionReactivityHarness>) {
   await harness.auth.login({
     tenantId,
-    email: "admin@ferrepharma.demo",
+    email: "admin@marjym.demo",
     passwordMock: "AdminDemo123",
   });
   await harness.settle();
