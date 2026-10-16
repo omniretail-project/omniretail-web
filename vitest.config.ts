@@ -169,8 +169,9 @@ export default defineConfig({
         "src/infrastructure/mock/repositories/MockAuthRepository.ts",
         "src/app/api/_lib/backend.ts",
         // Endpoints reforzados en la auditoria de seguridad (PR #179).
-        "src/app/api/backend/[...path]/route.ts",
-        "src/app/api/public/[slug]/checkout/route.ts",
+        "src/app/api/_lib/limited-body.ts",
+        "src/app/api/backend/[[]...path]/route.ts",
+        "src/app/api/public/[[]slug]/checkout/route.ts",
         "src/app/api/media/[[]...path]/route.ts",
         "src/infrastructure/mock/database/createMockDatabase.ts",
         "src/infrastructure/storage/storageKeys.ts",
@@ -186,7 +187,6 @@ export default defineConfig({
         // Endurecimiento de los Route Handlers de auth.
         "src/app/api/_lib/authSchemas.ts",
         "src/app/api/auth/**/route.ts",
-        "src/app/api/backend/[[]...path]/route.ts",
         "src/config/auth-policy.ts",
         "src/modules/auth/components/ResendVerificationPrompt.tsx",
         "src/modules/auth/hooks/useResendVerification.ts",
