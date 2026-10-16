@@ -7,12 +7,16 @@ import {
   serviceUnavailable,
   SESSION_COOKIE,
 } from "@/app/api/_lib/backend";
+import { isPublicDemo } from "@/config/demo-mode";
 
 /**
  * Puente de servidor para el checkout real. El navegador nunca conoce la URL
  * interna del backend ni el JWT almacenado en la cookie HttpOnly.
  */
 export async function POST(request: NextRequest, context: { params: Promise<{ slug: string }> }) {
+  // La demo nunca llega al backend real; conserva su 503 controlado incluso sin Origin de navegador.
+  if (isPublicDemo()) return serviceUnavailable();
+
   const forbidden = sameOriginOrForbidden(request);
   if (forbidden) return forbidden;
 
