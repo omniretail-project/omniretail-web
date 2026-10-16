@@ -9,7 +9,10 @@ vi.mock("@/infrastructure/providers/RepositoryProvider", () => ({
   useResetMockData: () => resetMockData,
 }));
 
-import { clearCatalogImageAssets } from "@/infrastructure/media/IndexedDbCatalogImageAssetRepository";
+import {
+  CatalogAssetsResetBlockedError,
+  clearCatalogImageAssets,
+} from "@/infrastructure/media/IndexedDbCatalogImageAssetRepository";
 import { PublicDemoBanner } from "@/modules/auth/components/PublicDemoBanner";
 
 const assign = vi.fn();
@@ -76,6 +79,59 @@ describe("PublicDemoBanner", () => {
     expect(resetMockData).toHaveBeenCalledTimes(1);
     expect(clearLocalSession).toHaveBeenCalledTimes(1);
   });
+
+  function confirmReset() {
+    fireEvent.click(screen.getByRole("button", { name: "Reiniciar demo" }));
+    const confirmButtons = screen.getAllByRole("button", { name: "Reiniciar demo" });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+  }
+
+  it("respeta el orden: imagenes, datos, sesion y redireccion", async () => {
+    vi.stubEnv("NEXT_PUBLIC_PUBLIC_DEMO", "true");
+    const calls: string[] = [];
+    const deleteDatabase = vi.fn(() => {
+      calls.push("images");
+      const request: Record<string, unknown> = { error: null };
+      queueMicrotask(() => (request.onsuccess as () => void)());
+      return request;
+    });
+    vi.stubGlobal("indexedDB", { deleteDatabase });
+    resetMockData.mockImplementation(() => calls.push("data"));
+    clearLocalSession.mockImplementation(async () => {
+      calls.push("session");
+    });
+    assign.mockImplementation(() => calls.push("redirect"));
+    render(<PublicDemoBanner />);
+
+    confirmReset();
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/iniciar-sesion"));
+    expect(calls).toEqual(["images", "data", "session", "redirect"]);
+  });
+
+  it("si el borrado de imagenes queda bloqueado no redirige, no toca datos y avisa", async () => {
+    vi.stubEnv("NEXT_PUBLIC_PUBLIC_DEMO", "true");
+    vi.stubGlobal("indexedDB", {
+      deleteDatabase: vi.fn(() => {
+        const request: Record<string, unknown> = { error: null };
+        queueMicrotask(() => (request.onblocked as () => void)());
+        return request;
+      }),
+    });
+    resetMockData.mockClear();
+    clearLocalSession.mockClear();
+    assign.mockClear();
+    render(<PublicDemoBanner />);
+
+    confirmReset();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "No se pudo reiniciar la demo: cierra las otras pestañas de la demo y vuelve a intentarlo.",
+    );
+    expect(resetMockData).not.toHaveBeenCalled();
+    expect(clearLocalSession).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+  });
 });
 
 describe("clearCatalogImageAssets", () => {
@@ -103,9 +159,9 @@ describe("clearCatalogImageAssets", () => {
     expect(deleteDatabase).toHaveBeenCalledWith("omniretail.catalog.assets.v1");
   });
 
-  it("no bloquea el reinicio si otra pestana tiene la base abierta", async () => {
+  it("rechaza con error controlado si otra pestana tiene la base abierta", async () => {
     stubIndexedDb("blocked");
-    await expect(clearCatalogImageAssets()).resolves.toBeUndefined();
+    await expect(clearCatalogImageAssets()).rejects.toBeInstanceOf(CatalogAssetsResetBlockedError);
   });
 
   it("rechaza si el borrado falla", async () => {

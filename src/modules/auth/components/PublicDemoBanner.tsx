@@ -13,6 +13,7 @@ import { DemoBanner } from "@/shared/components/DemoBanner";
 export function PublicDemoBanner() {
   const resetDemo = useDemoReset();
   const [confirming, setConfirming] = useState(false);
+  const [resetError, setResetError] = useState(false);
 
   if (!isPublicDemo()) return null;
 
@@ -23,6 +24,11 @@ export function PublicDemoBanner() {
         contractUrl={getDemoContractUrl() || undefined}
         onReset={() => setConfirming(true)}
       />
+      {resetError ? (
+        <p className="bg-[var(--color-danger)]/10 px-4 py-2 text-center text-sm text-[var(--color-danger)]" role="alert">
+          No se pudo reiniciar la demo: cierra las otras pestañas de la demo y vuelve a intentarlo.
+        </p>
+      ) : null}
       <ConfirmDialog
         cancelLabel="Cancelar"
         confirmLabel="Reiniciar demo"
@@ -30,7 +36,8 @@ export function PublicDemoBanner() {
         onCancel={() => setConfirming(false)}
         onConfirm={() => {
           setConfirming(false);
-          void resetDemo();
+          setResetError(false);
+          resetDemo().catch(() => setResetError(true));
         }}
         open={confirming}
         title="Reiniciar demo"

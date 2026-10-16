@@ -52,15 +52,29 @@ export class IndexedDbCatalogImageAssetRepository implements CatalogImageAssetRe
   }
 }
 
-/** Borra por completo la base local de imagenes del catalogo (reinicio de la demo publica). */
+/** El borrado quedo bloqueado por otra pestana con la base abierta: el reinicio no debe darse por exitoso. */
+export class CatalogAssetsResetBlockedError extends Error {
+  readonly code = "CATALOG_ASSETS_RESET_BLOCKED";
+
+  constructor() {
+    super("El borrado de imagenes del catalogo esta bloqueado por otra pestana.");
+    this.name = "CatalogAssetsResetBlockedError";
+  }
+}
+
+/**
+ * Borra por completo la base local de imagenes del catalogo (reinicio de la demo publica).
+ * Decision: `blocked` rechaza de inmediato con `CatalogAssetsResetBlockedError` (sin timeout de
+ * espera) para que el caller aborte antes de tocar datos. Nota: el navegador mantiene la solicitud
+ * de borrado pendiente y se completa sola cuando las otras pestanas cierren su conexion.
+ */
 export function clearCatalogImageAssets(): Promise<void> {
   if (typeof indexedDB === "undefined") return Promise.resolve();
   return new Promise((resolve, reject) => {
     const request = indexedDB.deleteDatabase(DATABASE_NAME);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error ?? new Error("No se pudo borrar IndexedDB."));
-    // Otra pestana con la base abierta: no bloquea el reinicio.
-    request.onblocked = () => resolve();
+    request.onblocked = () => reject(new CatalogAssetsResetBlockedError());
   });
 }
 
