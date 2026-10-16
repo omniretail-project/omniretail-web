@@ -1,7 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { CUSTOMER_PASSWORD_POLICY, getPasswordRequirementsMessage } from "@/config/auth-policy";
+import {
+  CUSTOMER_PASSWORD_POLICY,
+  GENERIC_ACCOUNT_EMAIL_MESSAGE,
+  getPasswordRequirementsMessage,
+} from "@/config/auth-policy";
+import { ResendVerificationPrompt } from "@/modules/auth/components/ResendVerificationPrompt";
 import { useRegister } from "@/modules/auth/hooks/useRegister";
 import { BrandMark } from "@/shared/components/BrandMark";
 import { Button } from "@/shared/components/Button";
@@ -42,9 +47,10 @@ export function RegisterPage() {
         <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8">
           <BrandMark />
           <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Revisa tu correo</h1>
+          {/* Mismo texto exista o no una cuenta con ese correo: el registro no revela que
+              correos estan registrados. */}
           <p className="mt-3 text-sm text-[var(--color-text-muted)]">
-            Creamos tu cuenta con <strong>{completed.email}</strong>. Antes de iniciar sesión,
-            necesitamos verificar tu correo.
+            {GENERIC_ACCOUNT_EMAIL_MESSAGE} Antes de iniciar sesión, necesitamos verificar tu correo.
           </p>
 
           {completed.verificationLink ? (
@@ -62,14 +68,17 @@ export function RegisterPage() {
               </Link>
             </InlineAlert>
           ) : (
-            // Sin enlace en pantalla (modo api): el enlace de verificacion llega solo por correo.
+            // Sin enlace en pantalla (modo api, o correo ya registrado en mock): el enlace de
+            // verificacion llega solo por correo.
             <InlineAlert
               className="mt-6"
-              title="Te enviamos un enlace de verificación"
-              description="Abre el correo que te enviamos y sigue el enlace para activar tu cuenta."
+              title="Revisa tu bandeja de entrada"
+              description="Si recibiste el correo, sigue el enlace para activar tu cuenta. Revisa también la carpeta de spam."
               tone="info"
             />
           )}
+
+          <ResendVerificationPrompt email={completed.email} />
 
           <p className="mt-6 text-center text-sm text-[var(--color-text-muted)]">
             <Link

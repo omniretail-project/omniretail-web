@@ -89,13 +89,24 @@ async function readMultipartBody(request: NextRequest): Promise<Blob | undefined
   return totalBytes > 0 ? new Blob(chunks) : undefined;
 }
 
+/**
+ * El primer segmento decide si la ruta cae en `/auth/**`. Se rechaza si trae `;` (matrix params:
+ * el backend podria normalizar `auth;x` a `auth`), `%` (una codificacion que sobrevivio al decode de
+ * Next, p. ej. `%61uth`) o espacios; y se compara sin lo que sigue a `;`, sin espacios y en
+ * minusculas. Solo aplica al PRIMER segmento: los demas pueden llevar ids o codigos codificados.
+ */
+function isBlockedFirstSegment(segment: string): boolean {
+  if (/[;%\s]/.test(segment)) return true;
+  return segment.split(";", 1)[0].trim().toLowerCase() === "auth";
+}
+
 /** Ruta del backend ya codificada, o null si algun segmento no es valido o apunta a `/auth/**`. */
 function backendPath(segments: string[], search: string): string | null {
   if (segments.length === 0) return null;
   const invalid = segments.some(
     (segment) => segment === "" || segment === "." || segment === ".." || /[/\\]/.test(segment),
   );
-  if (invalid || segments[0].toLowerCase() === "auth") return null;
+  if (invalid || isBlockedFirstSegment(segments[0])) return null;
   return `/${segments.map(encodeURIComponent).join("/")}${search}`;
 }
 
