@@ -40,6 +40,7 @@ export default defineConfig({
         "src/modules/pos/components/SaleReversalResult.tsx",
         "src/modules/pos/components/CashShiftSummary.tsx",
         "src/modules/pos/components/ReturnSaleDetails.tsx",
+        "src/modules/pos/components/SaleTicket.tsx",
         "src/modules/pos/hooks/usePosCashShift.ts",
         "src/modules/pos/hooks/usePosReturns.ts",
         "src/modules/pos/hooks/posProductsCache.ts",

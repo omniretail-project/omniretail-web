@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { SaleTicketItemDto } from "@/modules/pos/application/dto/SaleTicketDto";
 import { Button } from "@/shared/components/Button";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
@@ -152,9 +152,26 @@ interface EditableTicketQuantityProps {
 function EditableTicketQuantity({ item, onChange }: EditableTicketQuantityProps) {
   const [draft, setDraft] = useState(String(item.quantity));
   const [editing, setEditing] = useState(false);
+  const cancelledRef = useRef(false);
 
   const commit = () => {
-    onChange(item.productId, draft === "" ? 0 : Number(draft));
+    if (!editing) {
+      cancelledRef.current = false;
+      return;
+    }
+    if (cancelledRef.current) {
+      cancelledRef.current = false;
+      return;
+    }
+
+    const quantity = draft === "" ? 0 : Number(draft);
+    if (quantity < 1) {
+      setDraft(String(item.quantity));
+      setEditing(false);
+      return;
+    }
+
+    onChange(item.productId, quantity);
     setEditing(false);
   };
 
@@ -171,12 +188,20 @@ function EditableTicketQuantity({ item, onChange }: EditableTicketQuantityProps)
         if (/^\d*$/.test(event.target.value)) setDraft(event.target.value);
       }}
       onFocus={(event) => {
+        cancelledRef.current = false;
         setDraft(String(item.quantity));
         setEditing(true);
         event.currentTarget.select();
       }}
       onKeyDown={(event) => {
         if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") {
+          event.preventDefault();
+          cancelledRef.current = true;
+          setDraft(String(item.quantity));
+          setEditing(false);
+          event.currentTarget.blur();
+        }
       }}
     />
   );
