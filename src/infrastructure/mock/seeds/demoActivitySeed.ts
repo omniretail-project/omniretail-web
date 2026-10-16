@@ -65,6 +65,8 @@ const CENTRO = "branch-centro";
 const NORTE = "branch-norte";
 const OPENING_DAYS_AGO = 45;
 const BANK_ACCOUNT_ID = "bank-001";
+/** Hora mas tardia planificada para actividad de hoy (entrega de pedidos 15:00); base del escalado. */
+const LATEST_PLANNED_TODAY_MS = 15 * 60 * 60_000;
 
 export type DemoActivity = Pick<
   MockDatabase,
@@ -97,7 +99,7 @@ type ItemSpec = readonly [productId: string, quantity: number];
 type CustomerKey = "ana" | "carlos" | "lucia" | "constructora" | "roberto";
 type PayKind = "cash" | "card" | "transfer" | "mixed";
 
-interface SaleSpec {
+export interface SaleSpec {
   branch: typeof CENTRO | typeof NORTE;
   d: number;
   hm: string;
@@ -107,7 +109,7 @@ interface SaleSpec {
   items: readonly ItemSpec[];
 }
 
-const SALE_SPECS: readonly SaleSpec[] = [
+export const DEMO_SALE_SPECS: readonly SaleSpec[] = [
   { branch: CENTRO, d: 29, hm: "09:35", pay: "cash", items: [["prod-hammer", 2], ["prod-screws", 10]] },
   { branch: NORTE, d: 28, hm: "10:20", pay: "card", items: [["prod-latex-paint", 1], ["prod-paint-brush", 2], ["prod-paint-roller", 1]] },
   { branch: CENTRO, d: 27, hm: "16:40", customer: "ana", pay: "card", items: [["prod-latex-paint", 2], ["prod-paint-roller", 2], ["prod-paint-brush", 3]] },
@@ -408,16 +410,37 @@ export function buildDemoActivity(base: MockDatabase, reference: Date): DemoActi
     return product;
   };
 
-  /** Fecha relativa: `d` dias atras a la hora local `hm`; nunca en el futuro. */
-  const at = (d: number, hm: string, seq = 0): string => {
-    const [hours, minutes] = hm.split(":").map(Number);
+  /** Inicio (00:00 local) del dia que queda `d` dias antes de `reference`. */
+  const startOfDay = (d: number): Date => {
     const date = new Date(reference);
     date.setDate(date.getDate() - d);
-    date.setHours(hours, minutes, 0, 0);
-    if (date.getTime() > reference.getTime()) {
-      return new Date(reference.getTime() - (20 + seq * 17) * 60_000).toISOString();
+    date.setHours(0, 0, 0, 0);
+    return date;
+  };
+  /**
+   * Estrategia de tiempos (determinista): una actividad ocurre `d` dias atras a la hora local `hm`.
+   * Los dias pasados (d >= 1) siempre quedan antes de `reference`, asi que se usan tal cual. Solo
+   * "hoy" (d === 0) puede planificarse mas tarde que `reference` (p.ej. a las 06:30 con ventas
+   * previstas a las 12:45). En ese caso TODO lo de hoy se escala linealmente al tramo transcurrido
+   * del dia: offset' = offset * (transcurrido / ultima hora planificada de hoy). Un escalado lineal
+   * es monotono, por lo que conserva el orden relativo (ventas, apertura de caja, kardex, despachos)
+   * y el dia calendario, y nunca supera `reference`. Si todo lo planificado ya ocurrio, la escala es 1
+   * y las horas quedan exactamente como se planearon. Limite conocido: exactamente a las 00:00:00.000
+   * no hay tramo transcurrido y las actividades de hoy coinciden en `reference`.
+   */
+  const todayScale = Math.min(
+    1,
+    (reference.getTime() - startOfDay(0).getTime()) / LATEST_PLANNED_TODAY_MS,
+  );
+  const at = (d: number, hm: string): string => {
+    const [hours, minutes] = hm.split(":").map(Number);
+    const dayStart = startOfDay(d);
+    if (d > 0) {
+      dayStart.setHours(hours, minutes, 0, 0);
+      return dayStart.toISOString();
     }
-    return date.toISOString();
+    const plannedOffset = (hours * 60 + minutes) * 60_000;
+    return new Date(dayStart.getTime() + Math.floor(plannedOffset * todayScale)).toISOString();
   };
   const shift = (iso: string, minutes: number) =>
     new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
@@ -518,9 +541,9 @@ export function buildDemoActivity(base: MockDatabase, reference: Date): DemoActi
   const customerById = new Map(customers.map((customer) => [customer.id, customer]));
 
   // --- Ventas POS, pagos, turnos y caja -------------------------------------------------------
-  const orderedSaleSpecs = SALE_SPECS.map((spec, index) => ({
+  const orderedSaleSpecs = DEMO_SALE_SPECS.map((spec) => ({
     spec,
-    createdAt: at(spec.d, spec.hm, index),
+    createdAt: at(spec.d, spec.hm),
   })).sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 
   const cashierByBranch: Record<string, { userId: string; registerCode: string; opening: number }> = {
@@ -650,7 +673,9 @@ export function buildDemoActivity(base: MockDatabase, reference: Date): DemoActi
       const cashier = cashierByBranch[group.branchId];
       // Marcas ISO-8601 de igual formato: el orden lexicografico coincide con el cronologico.
       const sorted = [...group.times].sort((left, right) => left.localeCompare(right));
-      const openedAt = shift(sorted[0], -40);
+      // Apertura 40 min antes de la 1a venta, sin cruzar a un dia anterior (caso de "hoy" escalado).
+      const dayStartIso = startOfDay(group.d).toISOString();
+      const openedAt = [shift(sorted[0], -40), dayStartIso].sort((a, b) => b.localeCompare(a))[0];
       const isOpen = group.branchId === CENTRO && group.d === 0;
       if (isOpen) {
         cashShifts.push({
@@ -953,7 +978,7 @@ export function buildDemoActivity(base: MockDatabase, reference: Date): DemoActi
   ORDER_SPECS.forEach((spec) => {
     const orderId = `order-${pad(spec.n)}`;
     const orderNumber = `WEB-${pad(spec.n)}`;
-    const createdAt = at(spec.d, spec.hm, spec.n);
+    const createdAt = at(spec.d, spec.hm);
     const items = buildOrderItems(spec, orderId);
     const { order, total } = buildOrder(spec, { orderId, orderNumber, items, createdAt });
 
