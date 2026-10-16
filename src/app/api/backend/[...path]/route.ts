@@ -17,6 +17,14 @@ import { callBackend, serviceUnavailable, SESSION_COOKIE } from "@/app/api/_lib/
 type RouteContext = { params: Promise<{ path: string[] }> };
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
+/**
+ * La imagen permitida ocupa hasta 5 MiB. Se reserva un margen fijo para boundary y encabezados del
+ * multipart, manteniendo el cuerpo total estrictamente acotado antes de acumularlo en memoria.
+ */
+const MAX_MULTIPART_BYTES = 5 * 1024 * 1024 + 64 * 1024;
+
+class MultipartTooLargeError extends Error {}
+
 function apiError(request: NextRequest, status: 403 | 404, error: string, code: string, message: string) {
   return NextResponse.json(
     { status, error, code, message, path: request.nextUrl.pathname, timestamp: new Date().toISOString() },
@@ -26,6 +34,59 @@ function apiError(request: NextRequest, status: 403 | 404, error: string, code: 
 
 function notFound(request: NextRequest) {
   return apiError(request, 404, "Not Found", "NOT_FOUND", "Recurso no encontrado.");
+}
+
+function payloadTooLarge(request: NextRequest) {
+  return NextResponse.json(
+    {
+      status: 413,
+      error: "Payload Too Large",
+      code: "PAYLOAD_TOO_LARGE",
+      message: "El archivo supera el tamaño máximo permitido de 5 MB.",
+      path: request.nextUrl.pathname,
+      timestamp: new Date().toISOString(),
+    },
+    { status: 413 },
+  );
+}
+
+/**
+ * Lee multipart con un tope estricto. Content-Length permite rechazar antes de leer, pero no se
+ * considera autoridad: las solicitudes sin longitud o con una longitud falsa se cuentan por bytes.
+ */
+async function readMultipartBody(request: NextRequest): Promise<Blob | undefined> {
+  const contentLength = request.headers.get("Content-Length");
+  if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > MAX_MULTIPART_BYTES) {
+    throw new MultipartTooLargeError();
+  }
+
+  const reader = request.body?.getReader();
+  if (!reader) return undefined;
+
+  const chunks: ArrayBuffer[] = [];
+  let totalBytes = 0;
+  let exceededLimit = false;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_MULTIPART_BYTES) {
+        exceededLimit = true;
+        break;
+      }
+      // Convierte un posible SharedArrayBuffer en un ArrayBuffer transferible que Blob acepta.
+      chunks.push(Uint8Array.from(value).buffer);
+    }
+    if (exceededLimit) {
+      await reader.cancel();
+      throw new MultipartTooLargeError();
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return totalBytes > 0 ? new Blob(chunks) : undefined;
 }
 
 /** Ruta del backend ya codificada, o null si algun segmento no es valido o apunta a `/auth/**`. */
@@ -60,8 +121,12 @@ async function proxy(request: NextRequest, context: RouteContext, method: Method
       body = text || undefined;
       contentType = body === undefined ? undefined : incomingContentType;
     } else if (mediaType === "multipart/form-data" && /(?:^|;)\s*boundary=/i.test(incomingContentType)) {
-      const bytes = await request.arrayBuffer();
-      body = bytes.byteLength > 0 ? bytes : undefined;
+      try {
+        body = await readMultipartBody(request);
+      } catch (error) {
+        if (error instanceof MultipartTooLargeError) return payloadTooLarge(request);
+        throw error;
+      }
       // El boundary del navegador se preserva literalmente; nunca se reconstruye FormData.
       contentType = body === undefined ? undefined : incomingContentType;
     } else {

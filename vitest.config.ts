@@ -168,6 +168,9 @@ export default defineConfig({
         "src/infrastructure/mock/database/MockDatabaseStore.ts",
         "src/infrastructure/mock/repositories/MockAuthRepository.ts",
         "src/app/api/_lib/backend.ts",
+        // Endpoints reforzados en la auditoria de seguridad (PR #179).
+        "src/app/api/backend/[...path]/route.ts",
+        "src/app/api/public/[slug]/checkout/route.ts",
         "src/app/api/media/[[]...path]/route.ts",
         "src/infrastructure/mock/database/createMockDatabase.ts",
         "src/infrastructure/storage/storageKeys.ts",
