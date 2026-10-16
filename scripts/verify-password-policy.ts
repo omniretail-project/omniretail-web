@@ -260,7 +260,7 @@ async function verifyResetPolicies() {
   await customerHarness.auth.resetPassword(customerToken, CUSTOMER_VALID_8);
 
   const employeeHarness = createHarness();
-  await employeeHarness.auth.requestPasswordReset({ email: "admin@marjym.demo" });
+  await employeeHarness.auth.requestPasswordReset({ email: "admin@ferrepharma.demo" });
   const employeeToken = latestResetToken(employeeHarness.store, "user-admin");
   await expectPolicyError(
     employeeHarness.auth.resetPassword(employeeToken, "Abcdef1!"),
@@ -311,7 +311,7 @@ async function verifyChangePolicies() {
   const employeeHarness = createHarness();
   const employeeSession = await authenticatedSessionId(
     employeeHarness.auth,
-    "admin@marjym.demo",
+    "admin@ferrepharma.demo",
     "AdminDemo123",
     UserType.employee,
   );
@@ -333,11 +333,11 @@ async function verifyChangePolicies() {
 async function verifyLegacyLoginDoesNotRevalidatePolicy() {
   const { auth } = createHarness();
   assertDenied(
-    validateEmployeePassword("AdminDemo123", "admin@marjym.demo"),
+    validateEmployeePassword("AdminDemo123", "admin@ferrepharma.demo"),
     "credential legacy bajo la política nueva",
   );
   const result = await auth.login({
-    email: "admin@marjym.demo",
+    email: "admin@ferrepharma.demo",
     passwordMock: "AdminDemo123",
     expectedUserType: UserType.employee,
   });

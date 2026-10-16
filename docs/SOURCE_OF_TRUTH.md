@@ -104,11 +104,16 @@ Termino visible estandar: Codigo / SKU. Diferenciar `id`, `sku`, `barcode` opcio
 
 Las imagenes demo actuales viven en `public/images/products/`. Los modulos deben consultar `ProductMediaRepository`; no deben importar `demoSeed` ni resolver logica leyendo `public/` directamente. `placeholder-product.webp` se usa solo como fallback de UI. Los uploads mock se guardan como Blob mediante `CatalogImageAssetRepository` (IndexedDB), nunca dentro de `MockDatabaseStore`/LocalStorage. `Category.image` es presentacion opcional y usa la misma fuente.
 
-El seed canonico para instalaciones mock nuevas representa Ferretería Demo con exactamente
+El seed canonico para instalaciones mock nuevas representa Ferreteria Los Simpson con exactamente
 10 categorias y 30 productos fisicos. Sus existencias viven en `InventoryBalance`, sus minimos en
 `ProductInventorySettings`, y atributos, escalas de precio y relaciones de proveedor usan sus
 contratos propios. Cambiar `demoSeed` nunca autoriza a borrar ni reemplazar automaticamente
-`omniretail.mock.database.v2`; una base local ya persistida conserva los datos del usuario. Cuando el seed demo cambia de forma incompatible (p.ej. el seed de actividad de la demo publica) se incrementa la version de la key (`v1` -> `v2`), de modo que los navegadores cargan el seed nuevo; los datos de la key anterior quedan huerfanos, no se migran.
+`omniretail.mock.database.v1`; una base local ya persistida conserva los datos del usuario.
+
+La demo publica (`isPublicDemo()`) NO modifica ese seed ni esa llave: aplica una capa propia
+(`publicDemoSeed.ts`: marca "Ferretería Demo", cuentas `@marjym.demo`, actividad de ventas/caja/kardex)
+y persiste en `omniretail.mock.public-demo.database.v1` (sesion en `omniretail.mock.public-demo.session.v1`).
+Fuera de la demo, el modo mock se comporta exactamente como antes.
 
 Catalog / Crear-Editar Producto usa `FileUpload -> procesamiento/preview local -> CatalogImageAssetRepository -> ProductMediaRepository`. El asset se persiste antes de su referencia y se compensa si la referencia falla; reemplazo y borrado eliminan el Blob solo cuando ya no tiene referencias. Con backend real el adapter puede cambiar a `API -> Storage/CDN` sin cambiar el contrato de presentacion.
 

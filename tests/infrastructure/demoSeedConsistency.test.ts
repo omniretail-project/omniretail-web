@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CashMovementType,
   CashShiftStatus,
@@ -11,15 +11,25 @@ import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { createMockDatabase } from "@/infrastructure/mock/database/createMockDatabase";
 import { MockAuthRepository } from "@/infrastructure/mock/repositories/MockAuthRepository";
-import { buildDemoSeedDatabase } from "@/infrastructure/mock/seeds/demoSeed";
+import { buildPublicDemoSeedDatabase } from "@/infrastructure/mock/seeds/publicDemoSeed";
 import { classifyInventoryStatus } from "@/modules/inventory/application/services/GetInventoryAlertsService";
 import { MemoryStorageAdapter } from "../inventory/mockInventoryFixtures";
 
 const cents = (value: number) => Math.round((value + Number.EPSILON) * 100);
 
+// createMockDatabase()/MockDatabaseStore solo usan la capa demo con la bandera publica activa.
+beforeEach(() => {
+  vi.stubEnv("NEXT_PUBLIC_PUBLIC_DEMO", "true");
+  vi.stubEnv("NEXT_PUBLIC_API_MODE", "mock");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("demo seed consistency", () => {
   const reference = new Date();
-  const db = buildDemoSeedDatabase(reference);
+  const db = buildPublicDemoSeedDatabase(reference);
 
   it("keeps the demo tenant branding and the operational emails", () => {
     expect(db.tenants[0]).toMatchObject({ id: "tenant-demo", name: "Ferretería Demo" });

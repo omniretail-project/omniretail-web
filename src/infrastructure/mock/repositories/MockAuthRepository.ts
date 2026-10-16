@@ -51,7 +51,7 @@ import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { canUserOperateBranch } from "@/core/scopes/userBranchAccess";
 import { BranchStatus } from "@/core/enums";
-import { MOCK_SESSION_STORAGE_KEY } from "@/infrastructure/storage/storageKeys";
+import { getMockSessionStorageKey } from "@/infrastructure/storage/storageKeys";
 export class MockAuthRepository extends BaseMockRepository implements AuthRepository {
   private readonly sessionStorage: LocalStorageAdapter;
 
@@ -270,7 +270,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     // observadores de auth.changed. Debe quedar actualizado ANTES del
     // evento; de lo contrario CurrentSessionProvider reconstruye la
     // identidad anterior y no recibe otra senal para corregirse.
-    this.sessionStorage.set(MOCK_SESSION_STORAGE_KEY, outcome.session.id);
+    this.sessionStorage.set(getMockSessionStorageKey(), outcome.session.id);
     this.emit("auth.changed", { entityId: outcome.session.id, action: "created" });
     return { status: "authenticated" as const, session: outcome.session };
   }
@@ -405,7 +405,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       throw new MfaChallengeUnavailableError();
     }
 
-    this.sessionStorage.set(MOCK_SESSION_STORAGE_KEY, outcome.session.id);
+    this.sessionStorage.set(getMockSessionStorageKey(), outcome.session.id);
     this.emit("auth.changed", { entityId: outcome.session.id, action: "created" });
     return outcome.session;
   }
@@ -613,8 +613,8 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       if (session) session.revokedAt = this.now();
       return undefined;
     });
-    if (this.sessionStorage.get<string>(MOCK_SESSION_STORAGE_KEY) === sessionId) {
-      this.sessionStorage.remove(MOCK_SESSION_STORAGE_KEY);
+    if (this.sessionStorage.get<string>(getMockSessionStorageKey()) === sessionId) {
+      this.sessionStorage.remove(getMockSessionStorageKey());
     }
     this.emit("auth.changed", { entityId: sessionId, action: "updated" });
   }
@@ -623,15 +623,15 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     const isStale =
       !session || Boolean(session.revokedAt) || new Date() >= new Date(session.expiresAt);
     if (isStale) {
-      if (this.sessionStorage.get<string>(MOCK_SESSION_STORAGE_KEY) === sessionId) {
-        this.sessionStorage.remove(MOCK_SESSION_STORAGE_KEY);
+      if (this.sessionStorage.get<string>(getMockSessionStorageKey()) === sessionId) {
+        this.sessionStorage.remove(getMockSessionStorageKey());
       }
       return null;
     }
     return session;
   }
   async getCurrentSessionId(): Promise<string | null> {
-    return this.sessionStorage.get<string>(MOCK_SESSION_STORAGE_KEY);
+    return this.sessionStorage.get<string>(getMockSessionStorageKey());
   }
   async setActiveBranchId(branchId: string): Promise<void> {
     const sessionId = await this.getCurrentSessionId();
@@ -650,7 +650,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     });
   }
   async clearLocalSession(): Promise<void> {
-    this.sessionStorage.remove(MOCK_SESSION_STORAGE_KEY);
+    this.sessionStorage.remove(getMockSessionStorageKey());
     this.emit("auth.changed", { action: "updated" });
   }
   async registerCustomer(input: Parameters<AuthRepository["registerCustomer"]>[0]) {

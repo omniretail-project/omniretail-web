@@ -896,7 +896,7 @@ instrucción explícita.
 Estado actual del seed (`src/infrastructure/mock/seeds/demoSeed.ts`): tenant `tenant-demo`
 (FerrePharma Demo) con `businessCapabilities` completas; roles `role-admin`, `role-inventory`,
 `role-cashier`, `role-warehouse`; la sesión demo resuelve al **cajero**
-(`cajero@marjym.demo`), cuyo rol no tiene permisos de administración.
+(`cajero@ferrepharma.demo`), cuyo rol no tiene permisos de administración.
 
 ---
 

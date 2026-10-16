@@ -145,7 +145,7 @@ async function runLifecycleTests() {
   // SCENARIO 10: EMPLOYEE REGRESSION
   const employeeResult = await auth.login({
     tenantId: undefined,
-    email: "admin@marjym.demo",
+    email: "admin@ferrepharma.demo",
     passwordMock: "AdminDemo123"
   });
   assert.equal(employeeResult.status, "authenticated");
