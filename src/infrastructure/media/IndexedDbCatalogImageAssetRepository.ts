@@ -52,29 +52,26 @@ export class IndexedDbCatalogImageAssetRepository implements CatalogImageAssetRe
   }
 }
 
-/** El borrado quedo bloqueado por otra pestana con la base abierta: el reinicio no debe darse por exitoso. */
-export class CatalogAssetsResetBlockedError extends Error {
-  readonly code = "CATALOG_ASSETS_RESET_BLOCKED";
-
-  constructor() {
-    super("El borrado de imagenes del catalogo esta bloqueado por otra pestana.");
-    this.name = "CatalogAssetsResetBlockedError";
-  }
+export interface ClearCatalogImageAssetsOptions {
+  /** Otra pestana mantiene la base abierta: el borrado sigue pendiente hasta que la cierre. */
+  onBlocked?: () => void;
 }
 
 /**
  * Borra por completo la base local de imagenes del catalogo (reinicio de la demo publica).
- * Decision: `blocked` rechaza de inmediato con `CatalogAssetsResetBlockedError` (sin timeout de
- * espera) para que el caller aborte antes de tocar datos. Nota: el navegador mantiene la solicitud
- * de borrado pendiente y se completa sola cuando las otras pestanas cierren su conexion.
+ * La promesa refleja la finalizacion REAL del borrado: `deleteDatabase` no se puede cancelar y,
+ * si otra pestana lo bloquea, el navegador lo completa cuando esa pestana cierra su conexion. Por
+ * eso `blocked` no rechaza: avisa via `onBlocked` (para mostrar un estado de espera) y la promesa
+ * sigue pendiente hasta `success` (o `error`). Asi nunca se informa un fallo de una operacion que
+ * el navegador terminara despues, ni un exito antes de que los datos se hayan eliminado.
  */
-export function clearCatalogImageAssets(): Promise<void> {
+export function clearCatalogImageAssets(options: ClearCatalogImageAssetsOptions = {}): Promise<void> {
   if (typeof indexedDB === "undefined") return Promise.resolve();
   return new Promise((resolve, reject) => {
     const request = indexedDB.deleteDatabase(DATABASE_NAME);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error ?? new Error("No se pudo borrar IndexedDB."));
-    request.onblocked = () => reject(new CatalogAssetsResetBlockedError());
+    request.onblocked = () => options.onBlocked?.();
   });
 }
 
@@ -89,7 +86,12 @@ function openDatabase(): Promise<IDBDatabase> {
         request.result.createObjectStore(STORE_NAME, { keyPath: "id" });
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const database = request.result;
+      // Si otra pestana borra la base (reinicio de la demo), cerrar esta conexion para no bloquearla.
+      database.onversionchange = () => database.close();
+      resolve(database);
+    };
     request.onerror = () => reject(request.error ?? new Error("No se pudo abrir IndexedDB."));
   });
 }
