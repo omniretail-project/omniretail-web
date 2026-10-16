@@ -294,6 +294,28 @@ describe("usePosTerminal", () => {
     await waitFor(() => expect(mocks.products.mock.calls.length).toBe(before + 1));
   });
 
+  it("reutiliza el catálogo en caché al volver a abrir la misma terminal", async () => {
+    const first = await renderReadyTerminal();
+    expect(mocks.products).toHaveBeenCalledTimes(1);
+    first.unmount();
+
+    const second = await renderReadyTerminal();
+    expect(second.result.current.products).toEqual([product]);
+    expect(mocks.products).toHaveBeenCalledTimes(1);
+  });
+
+  it("invalida la caché del catálogo cuando cambia el inventario", async () => {
+    await renderReadyTerminal();
+    expect(mocks.products).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      emit("inventory.changed");
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(mocks.products).toHaveBeenCalledTimes(2));
+  });
+
   it("refresca la caja ante cash-shift.changed", async () => {
     await renderReadyTerminal();
     const before = mocks.openShift.mock.calls.length;
