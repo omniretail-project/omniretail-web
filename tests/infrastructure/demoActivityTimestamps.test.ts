@@ -15,9 +15,12 @@ const plannedDay = (reference: Date, daysAgo: number) => {
 };
 const time = (iso: string) => new Date(iso).getTime();
 
-// Fechas locales explicitas: madrugada, cerca de medianoche (ambos lados) y horario normal.
+// Fechas locales explicitas: madrugada, medianoche exacta, cerca de medianoche (ambos lados) y
+// horario normal.
+const MIDNIGHT = new Date(2026, 5, 15, 0, 0, 0, 0);
 const references: Array<[string, Date]> = [
   ["06:30", new Date(2026, 5, 15, 6, 30, 0, 0)],
+  ["00:00:00.000", MIDNIGHT],
   ["00:05", new Date(2026, 5, 15, 0, 5, 0, 0)],
   ["23:55", new Date(2026, 5, 15, 23, 55, 0, 0)],
   ["15:00", new Date(2026, 5, 15, 15, 0, 0, 0)],
@@ -56,7 +59,10 @@ describe.each(references)("demo activity timestamps at %s", (_label, reference) 
       if (index > 0 && plannedOrder[index - 1].spec.d === spec.d) {
         const previous = sales[index - 1];
         expect(time(sale.createdAt)).toBeGreaterThanOrEqual(time(previous.createdAt));
-        if (plannedOrder[index - 1].spec.hm !== spec.hm) {
+        // A medianoche exacta "hoy" no tiene tramo transcurrido: sus ventas comparten marca de tiempo
+        // (ver el test dedicado); el orden lo conserva el numero de venta.
+        const todayWithoutElapsedTime = spec.d === 0 && reference.getTime() === MIDNIGHT.getTime();
+        if (plannedOrder[index - 1].spec.hm !== spec.hm && !todayWithoutElapsedTime) {
           expect(time(sale.createdAt)).toBeGreaterThan(time(previous.createdAt));
         }
       }
@@ -104,6 +110,40 @@ describe.each(references)("demo activity timestamps at %s", (_label, reference) 
       });
     db.inventoryBalances.forEach((balance) => {
       expect(net.get(`${balance.branchId}|${balance.productId}`) ?? 0).toBe(balance.quantity);
+    });
+  });
+});
+
+describe("demo activity exactly at midnight (00:00:00.000)", () => {
+  const db = buildPublicDemoSeedDatabase(MIDNIGHT);
+  const todaySpecs = DEMO_SALE_SPECS.filter((spec) => spec.d === 0);
+  const todayKey = localDay(MIDNIGHT);
+  const todaySales = db.sales
+    .filter((sale) => localDay(sale.createdAt) === todayKey)
+    .sort((a, b) => a.number.localeCompare(b.number));
+
+  it("keeps today's activity on today, stamped exactly at the reference", () => {
+    expect(todaySpecs.length).toBeGreaterThan(0);
+    expect(todaySales).toHaveLength(todaySpecs.length);
+    todaySales.forEach((sale) => expect(time(sale.createdAt)).toBe(MIDNIGHT.getTime()));
+  });
+
+  it("never moves activity into the previous day or the future", () => {
+    const yesterdayKey = plannedDay(MIDNIGHT, 1);
+    const yesterdaySpecs = DEMO_SALE_SPECS.filter((spec) => spec.d === 1).length;
+    expect(db.sales.filter((sale) => localDay(sale.createdAt) === yesterdayKey)).toHaveLength(
+      yesterdaySpecs,
+    );
+    expect(Math.max(...db.inventoryMovements.map((movement) => time(movement.createdAt)))).toBeLessThanOrEqual(
+      MIDNIGHT.getTime(),
+    );
+  });
+
+  it("opens today's cash shift at the reference so it still contains today's sales", () => {
+    todaySales.forEach((sale) => {
+      const cashShift = db.cashShifts.find((item) => item.id === sale.cashShiftId)!;
+      expect(time(cashShift.openedAt)).toBe(MIDNIGHT.getTime());
+      expect(localDay(cashShift.openedAt)).toBe(todayKey);
     });
   });
 });

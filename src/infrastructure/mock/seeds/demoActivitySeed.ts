@@ -421,7 +421,7 @@ export function buildDemoActivity(base: MockDatabase, reference: Date): DemoActi
    * Estrategia de tiempos (determinista): una actividad ocurre `d` dias atras a la hora local `hm`.
    * Los dias pasados (d >= 1) siempre quedan antes de `reference`, asi que se usan tal cual. Solo
    * "hoy" (d === 0) puede planificarse mas tarde que `reference` (p.ej. a las 06:30 con ventas
-   * previstas a las 12:45). En ese caso TODO lo de hoy se escala linealmente al tramo transcurrido
+   * previstas a las 12:45). En ese caso toda la actividad de hoy se escala linealmente al tramo transcurrido
    * del dia: offset' = offset * (transcurrido / ultima hora planificada de hoy). Un escalado lineal
    * es monotono, por lo que conserva el orden relativo (ventas, apertura de caja, kardex, despachos)
    * y el dia calendario, y nunca supera `reference`. Si todo lo planificado ya ocurrio, la escala es 1
