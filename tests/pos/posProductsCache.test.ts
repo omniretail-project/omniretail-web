@@ -93,6 +93,74 @@ describe("posProductsCache", () => {
     expect(load).toHaveBeenCalledTimes(2);
   });
 
+  describe("carreras entre una carga invalidada y una posterior", () => {
+    const staleProducts: PosProductDto[] = [{ ...products[0], effectivePrice: 50, availableQuantity: 10 }];
+    const freshProducts: PosProductDto[] = [{ ...products[0], effectivePrice: 45, availableQuantity: 3 }];
+
+    async function raceWith(resolveOrder: "fresh-first" | "stale-first") {
+      const registry = repositories();
+      const stale = deferred<PosProductDto[]>();
+      const fresh = deferred<PosProductDto[]>();
+      const load = vi
+        .fn<() => Promise<PosProductDto[]>>()
+        .mockReturnValueOnce(stale.promise)
+        .mockReturnValueOnce(fresh.promise);
+
+      const staleRequest = getCachedPosProducts(registry, "tenant:branch", load);
+      // Un cambio de precio/inventario invalida mientras la primera carga sigue en curso.
+      invalidatePosProductsCache(registry, "tenant:branch");
+      const freshRequest = getCachedPosProducts(registry, "tenant:branch", load);
+
+      if (resolveOrder === "fresh-first") {
+        fresh.resolve(freshProducts);
+        await freshRequest;
+        stale.resolve(staleProducts);
+        await staleRequest;
+      } else {
+        stale.resolve(staleProducts);
+        await staleRequest;
+        fresh.resolve(freshProducts);
+        await freshRequest;
+      }
+
+      const neverCalled = vi.fn<() => Promise<PosProductDto[]>>();
+      const cached = await getCachedPosProducts(registry, "tenant:branch", neverCalled);
+      return { cached, load, neverCalled };
+    }
+
+    it("la carga invalidada que termina DESPUES no sobrescribe la entrada vigente", async () => {
+      const { cached, load, neverCalled } = await raceWith("fresh-first");
+
+      expect(cached).toEqual(freshProducts);
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(neverCalled).not.toHaveBeenCalled();
+    });
+
+    it("la carga invalidada que termina ANTES tampoco ocupa la cache", async () => {
+      const { cached, neverCalled } = await raceWith("stale-first");
+
+      expect(cached).toEqual(freshProducts);
+      expect(neverCalled).not.toHaveBeenCalled();
+    });
+
+    it("una carga invalidada sin carga posterior no deja datos viejos en cache", async () => {
+      const registry = repositories();
+      const stale = deferred<PosProductDto[]>();
+      const load = vi
+        .fn<() => Promise<PosProductDto[]>>()
+        .mockReturnValueOnce(stale.promise)
+        .mockResolvedValueOnce(freshProducts);
+
+      const staleRequest = getCachedPosProducts(registry, "tenant:branch", load);
+      invalidatePosProductsCache(registry, "tenant:branch");
+      stale.resolve(staleProducts);
+      await expect(staleRequest).resolves.toEqual(staleProducts);
+
+      await expect(getCachedPosProducts(registry, "tenant:branch", load)).resolves.toEqual(freshProducts);
+      expect(load).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("descarta una carga fallida para permitir un reintento", async () => {
     const registry = repositories();
     const load = vi

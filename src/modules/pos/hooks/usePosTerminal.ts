@@ -588,6 +588,34 @@ export function usePosTerminal() {
     [invalidateCheckoutValidation, products],
   );
 
+  const setQuantity = useCallback(
+    (productId: string, requestedQuantity: number) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
+      invalidateCheckoutValidation();
+      setTicketState((current) => {
+        const item = current.items.find((candidate) => candidate.productId === productId);
+        if (!item) return current;
+
+        const validationError = validateTicketQuantity(item, requestedQuantity);
+        if (validationError) return { ...current, error: validationError };
+
+        return {
+          error: null,
+          items: current.items.map((candidate) =>
+            candidate.productId === productId
+              ? updateTicketItemQuantity(
+                  candidate,
+                  requestedQuantity,
+                  products.find((product) => product.productId === productId),
+                )
+              : candidate,
+          ),
+        };
+      });
+    },
+    [invalidateCheckoutValidation, products],
+  );
+
   const removeItem = useCallback(
     (productId: string) => {
       if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
@@ -1166,6 +1194,7 @@ export function usePosTerminal() {
     addProduct,
     increaseQuantity,
     decreaseQuantity,
+    setQuantity,
     removeItem,
     clearTicket,
     ticketItems: ticket.items,

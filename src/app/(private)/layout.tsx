@@ -1,6 +1,7 @@
 import { navigationConfig } from "@/config/navigation";
 import { AuthorizedPrivateShell } from "@/modules/auth/components/AuthorizedPrivateShell";
 import { EmployeeInactivityTimeout } from "@/modules/auth/components/EmployeeInactivityTimeout";
+import { PublicDemoBanner } from "@/modules/auth/components/PublicDemoBanner";
 import { RequirePermission } from "@/modules/auth/components/RequirePermission";
 import { RequireSession } from "@/modules/auth/components/RequireSession";
 import { ScopedActiveBranchProvider } from "@/modules/auth/components/ScopedActiveBranchProvider";
@@ -18,6 +19,7 @@ type PrivateLayoutProps = {
 export default function PrivateLayout({ children }: PrivateLayoutProps) {
   return (
     <CurrentSessionProvider>
+      <PublicDemoBanner />
       <PackingMutationCoordinatorProvider>
         <DispatchMutationCoordinatorProvider>
           <ReceivingMutationCoordinatorProvider>

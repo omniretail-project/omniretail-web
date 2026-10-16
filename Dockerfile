@@ -15,6 +15,12 @@ WORKDIR /app
 ARG NEXT_PUBLIC_API_MODE=api
 ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID=
 ARG NEXT_PUBLIC_STOREFRONT_SLUG=
+# Demo publica (solo con NEXT_PUBLIC_API_MODE=mock): PUBLIC_DEMO=true activa banner, accesos rapidos y oculta funciones no demostrables.
+# MARKETING_URL/DEMO_URL/SALES_CONTACT_URL son URLs absolutas (landing real, instancia demo, contacto comercial).
+ARG NEXT_PUBLIC_PUBLIC_DEMO=
+ARG NEXT_PUBLIC_MARKETING_URL=
+ARG NEXT_PUBLIC_DEMO_URL=
+ARG NEXT_PUBLIC_SALES_CONTACT_URL=
 ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY --from=deps /app/node_modules ./node_modules

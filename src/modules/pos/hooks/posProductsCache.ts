@@ -45,7 +45,13 @@ export async function getCachedPosProducts(
 
   try {
     const products = await pending;
-    cache.set(contextKey, { products, expiresAt: Date.now() + POS_PRODUCTS_CACHE_TTL_MS });
+    // Solo la peticion vigente puede poblar la cache: si se invalido mientras estaba en curso (o
+    // ya la reemplazo una peticion posterior), su resultado puede estar desactualizado y no debe
+    // sobrescribir productos mas recientes. Se devuelve igual a su caller, que descarta respuestas
+    // de contextos o solicitudes ya superadas.
+    if (cache.get(contextKey)?.pending === pending) {
+      cache.set(contextKey, { products, expiresAt: Date.now() + POS_PRODUCTS_CACHE_TTL_MS });
+    }
     return products;
   } catch (error) {
     if (cache.get(contextKey)?.pending === pending) cache.delete(contextKey);
