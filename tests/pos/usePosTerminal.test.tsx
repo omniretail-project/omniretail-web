@@ -222,6 +222,70 @@ describe("usePosTerminal", () => {
     expect(result.current.confirmationError).toBeNull();
   });
 
+  describe("edicion directa de cantidad", () => {
+    it("actualiza la cantidad y recalcula los importes confirmados", async () => {
+      const { result } = await renderReadyTerminal();
+      act(() => result.current.addProduct(product));
+
+      act(() => result.current.setQuantity(product.productId, 3));
+
+      expect(result.current.ticketItems[0]).toMatchObject({ quantity: 3, subtotal: 150 });
+      expect(result.current.subtotal).toBe(150);
+      expect(result.current.discountTotal).toBe(0);
+      expect(result.current.total).toBe(150);
+      expect(result.current.ticketError).toBeNull();
+    });
+
+    it("rechaza cantidades superiores a la existencia disponible", async () => {
+      const { result } = await renderReadyTerminal();
+      act(() => result.current.addProduct(product));
+
+      act(() => result.current.setQuantity(product.productId, 11));
+
+      expect(result.current.ticketItems[0]?.quantity).toBe(1);
+      expect(result.current.total).toBe(50);
+      expect(result.current.ticketError).toContain("No puedes agregar más de 10");
+    });
+
+    it.each([0, -1])("rechaza la cantidad no positiva %s", async (quantity) => {
+      const { result } = await renderReadyTerminal();
+      act(() => result.current.addProduct(product));
+
+      act(() => result.current.setQuantity(product.productId, quantity));
+
+      expect(result.current.ticketItems[0]?.quantity).toBe(1);
+      expect(result.current.total).toBe(50);
+      expect(result.current.ticketError).toBe(
+        "La cantidad debe ser un número entero mayor que cero.",
+      );
+    });
+
+    it("ignora un producto que no existe en el ticket", async () => {
+      const { result } = await renderReadyTerminal();
+      act(() => result.current.addProduct(product));
+
+      act(() => result.current.setQuantity(id(999), 4));
+
+      expect(result.current.ticketItems).toHaveLength(1);
+      expect(result.current.ticketItems[0]?.quantity).toBe(1);
+      expect(result.current.total).toBe(50);
+      expect(result.current.ticketError).toBeNull();
+    });
+
+    it("bloquea la cantidad cuando hay una venta pendiente de confirmacion", async () => {
+      const { result } = await renderReadyTerminal();
+      await prepareCashCheckout(result);
+      mocks.confirm.mockRejectedValueOnce(new BackendRequestError("sin respuesta", 0));
+      await act(async () => result.current.confirmSale());
+
+      act(() => result.current.setQuantity(product.productId, 4));
+
+      expect(result.current.ticketItems[0]?.quantity).toBe(1);
+      expect(result.current.total).toBe(50);
+      expect(result.current.ticketError).toContain("venta pendiente de verificar");
+    });
+  });
+
   it("ante un resultado incierto conserva el confirmationId para reintentar sin duplicar", async () => {
     const { result } = await renderReadyTerminal();
     await prepareCashCheckout(result);
