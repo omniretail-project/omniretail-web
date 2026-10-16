@@ -110,6 +110,11 @@ El seed canonico para instalaciones mock nuevas representa Ferreteria Los Simpso
 contratos propios. Cambiar `demoSeed` nunca autoriza a borrar ni reemplazar automaticamente
 `omniretail.mock.database.v1`; una base local ya persistida conserva los datos del usuario.
 
+La demo publica (`isPublicDemo()`) NO modifica ese seed ni esa llave: aplica una capa propia
+(`publicDemoSeed.ts`: marca "Ferretería Demo", cuentas `@marjym.demo`, actividad de ventas/caja/kardex)
+y persiste en `omniretail.mock.public-demo.database.v1` (sesion en `omniretail.mock.public-demo.session.v1`).
+Fuera de la demo, el modo mock se comporta exactamente como antes.
+
 Catalog / Crear-Editar Producto usa `FileUpload -> procesamiento/preview local -> CatalogImageAssetRepository -> ProductMediaRepository`. El asset se persiste antes de su referencia y se compensa si la referencia falla; reemplazo y borrado eliminan el Blob solo cuando ya no tiene referencias. Con backend real el adapter puede cambiar a `API -> Storage/CDN` sin cambiar el contrato de presentacion.
 
 ## Trazabilidad Adaptable

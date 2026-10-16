@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { serviceUnavailable } from "@/app/api/_lib/backend";
+import { getBackendBaseUrl, serviceUnavailable } from "@/app/api/_lib/backend";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const path = mediaPath((await context.params).path);
   if (!path) return notFound(request);
 
-  const configuredUrl = process.env.OMNIRETAIL_API_URL;
+  const configuredUrl = getBackendBaseUrl();
   if (!configuredUrl) return serviceUnavailable();
 
   let backendOrigin: string;

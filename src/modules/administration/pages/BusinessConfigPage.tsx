@@ -1,5 +1,7 @@
 "use client";
 
+import { isPublicDemo } from "@/config/demo-mode";
+import { DemoUnavailableNotice } from "@/shared/components/DemoUnavailableNotice";
 import { useEffect, useState } from "react";
 import { BusinessPreset, PaymentMethod } from "@/core/enums";
 import type { BusinessConfigDto } from "@/modules/administration/application/dto/BusinessConfigDto";
@@ -195,7 +197,14 @@ export function BusinessConfigPage() {
         </div>
       ) : null}
 
-      <EmailSenderSection />
+      {isPublicDemo() ? (
+        <DemoUnavailableNotice
+          description="Disponible en la versión contratada"
+          title="Correo y notificaciones"
+        />
+      ) : (
+        <EmailSenderSection />
+      )}
     </div>
   );
 }

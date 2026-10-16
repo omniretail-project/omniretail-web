@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { GENERIC_AUTH_ERROR_MESSAGE } from "@/config/auth-policy";
+import { isPublicDemo } from "@/config/demo-mode";
 
 /**
  * Utilidades SOLO de servidor para los Route Handlers de `app/api` (modo api). La carpeta
@@ -19,6 +20,24 @@ const SERVICE_UNAVAILABLE_BODY = {
   message: "El servicio no está disponible en este momento. Intenta más tarde.",
 };
 
+/** Respuesta 503 con la misma forma que "no configurado", pero con codigo propio de la demo publica. */
+const PUBLIC_DEMO_BACKEND_DISABLED_BODY = {
+  ...SERVICE_UNAVAILABLE_BODY,
+  code: "PUBLIC_DEMO_BACKEND_DISABLED",
+  message: "El backend está deshabilitado en la demo pública.",
+};
+
+/**
+ * Punto unico (chokepoint) que resuelve la URL base del backend para TODOS los Route Handlers.
+ * Se evalua en cada request (nunca como constante de modulo). En la demo publica devuelve null
+ * aunque `OMNIRETAIL_API_URL` este definida por error: ningun handler puede hablar con el backend
+ * real. Cualquier handler nuevo debe obtener la URL de aqui y no leer la variable de entorno.
+ */
+export function getBackendBaseUrl(): string | null {
+  if (isPublicDemo()) return null;
+  return process.env.OMNIRETAIL_API_URL || null;
+}
+
 /**
  * Llama al backend. Devuelve null si `OMNIRETAIL_API_URL` no esta configurada o el backend no
  * responde (el caller responde 503 con `serviceUnavailable()`). Los headers extra van primero:
@@ -34,7 +53,7 @@ export async function callBackend(
     headers?: { "Idempotency-Key"?: string };
   },
 ): Promise<Response | null> {
-  const baseUrl = process.env.OMNIRETAIL_API_URL;
+  const baseUrl = getBackendBaseUrl();
   if (!baseUrl) return null;
   const headers: Record<string, string> = { Accept: "application/json" };
   if (init.headers?.["Idempotency-Key"])
@@ -55,7 +74,8 @@ export async function callBackend(
 }
 
 export function serviceUnavailable(): NextResponse {
-  return NextResponse.json(SERVICE_UNAVAILABLE_BODY, { status: 503 });
+  const body = isPublicDemo() ? PUBLIC_DEMO_BACKEND_DISABLED_BODY : SERVICE_UNAVAILABLE_BODY;
+  return NextResponse.json(body, { status: 503 });
 }
 
 /**

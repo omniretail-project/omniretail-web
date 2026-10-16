@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { DEMO_QUICK_LOGINS, getMarketingSiteUrl, isPublicDemo } from "@/config/demo-mode";
 import { getGoogleClientId } from "@/config/google-auth";
 import { UserType } from "@/core/enums";
 import { GoogleSignInButton } from "@/modules/auth/components/GoogleSignInButton";
@@ -117,6 +118,9 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
   } = useLogin(expectedUserType);
   const { showToast } = useToast();
   const routes = useOptionalStorefrontRoutes();
+  const demo = isPublicDemo();
+  // Accesos rapidos solo en la demo y solo para el login de personal.
+  const showDemoQuickLogins = demo && expectedUserType === UserType.employee;
 
   async function handleResendMfaCode() {
     if (await resendMfaCode()) {
@@ -275,18 +279,40 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
               />
               Recordarme
             </label>
-            <Link
-              className="font-semibold text-[var(--color-title)] hover:underline"
-              href={routes ? routes.forgotPassword() : "/recuperar-contrasena"}
-            >
-              ¿Olvidaste tu contraseña?
-            </Link>
+            {demo ? null : (
+              <Link
+                className="font-semibold text-[var(--color-title)] hover:underline"
+                href={routes ? routes.forgotPassword() : "/recuperar-contrasena"}
+              >
+                ¿Olvidaste tu contraseña?
+              </Link>
+            )}
           </div>
 
           <Button className="w-full" disabled={isSubmitting || tenantLoading} type="submit">
             {isSubmitting ? "Ingresando..." : "Iniciar sesión"}
           </Button>
         </form>
+
+        {showDemoQuickLogins ? (
+          <div className="mt-6 space-y-2" data-testid="demo-quick-logins">
+            <p className="text-center text-xs uppercase text-[var(--color-text-muted)]">
+              Acceso rápido a la demo
+            </p>
+            {DEMO_QUICK_LOGINS.map((account) => (
+              <Button
+                className="w-full"
+                disabled={isSubmitting || tenantLoading}
+                key={account.email}
+                onClick={() => void submit({ email: account.email, password: account.password })}
+                type="button"
+                variant="secondary"
+              >
+                Entrar como {account.label}
+              </Button>
+            ))}
+          </div>
+        ) : null}
 
         {showGoogleLogin ? (
           <>
@@ -327,7 +353,7 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
           </Link>
         </p>
         <p className="mt-2 text-center text-sm text-[var(--color-text-muted)]">
-          <Link className="font-semibold text-[var(--color-title)] hover:underline" href={routes ? routes.home() : "/"}>
+          <Link className="font-semibold text-[var(--color-title)] hover:underline" href={routes ? routes.home() : (demo && getMarketingSiteUrl()) || "/"}>
             Volver al inicio
           </Link>
         </p>

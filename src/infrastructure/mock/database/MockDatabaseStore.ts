@@ -34,7 +34,7 @@ import { BASE_MONTHLY_QUETZALES } from "@/core/subscription/catalog";
 import { createMockDatabase } from "@/infrastructure/mock/database/createMockDatabase";
 import { synchronizeSupplierLeadTimeDays } from "@/infrastructure/mock/database/supplierLeadTime";
 import type { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
-import { MOCK_DATABASE_STORAGE_KEY } from "@/infrastructure/storage/storageKeys";
+import { getMockDatabaseStorageKey } from "@/infrastructure/storage/storageKeys";
 
 type PersistedCustomerPaymentMethod = Partial<CustomerPaymentMethod> & {
   expiryMonth?: number;
@@ -707,7 +707,7 @@ export class MockDatabaseStore {
   private database: MockDatabase;
 
   constructor(private readonly storage: LocalStorageAdapter) {
-    const persisted = this.storage.get<PersistedMockDatabase>(MOCK_DATABASE_STORAGE_KEY);
+    const persisted = this.storage.get<PersistedMockDatabase>(getMockDatabaseStorageKey());
     this.database = normalizeMockDatabase(persisted ?? createMockDatabase());
     this.persist();
   }
@@ -741,7 +741,7 @@ export class MockDatabaseStore {
   }
 
   private persist(): void {
-    this.storage.set(MOCK_DATABASE_STORAGE_KEY, this.database);
+    this.storage.set(getMockDatabaseStorageKey(), this.database);
   }
 }
 

@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { PublicDemoBanner } from "@/modules/auth/components/PublicDemoBanner";
 import { CurrentSessionProvider } from "@/modules/auth/providers/CurrentSessionProvider";
 import { PublicStorefrontShell } from "@/modules/storefront/components/PublicStorefrontShell";
 import { StorefrontCartProvider } from "@/modules/storefront/providers/StorefrontCartProvider";
@@ -25,11 +26,17 @@ export default function PublicLayout({ children }: Readonly<{ children: ReactNod
   if (isGlobalRegistrationRoute) return null;
 
   if (isGlobalAuthRoute) {
-    return <CurrentSessionProvider>{children}</CurrentSessionProvider>;
+    return (
+      <CurrentSessionProvider>
+        <PublicDemoBanner />
+        {children}
+      </CurrentSessionProvider>
+    );
   }
 
   return (
     <CurrentSessionProvider>
+      <PublicDemoBanner />
       <PublicTenantProvider tenantSlug={publicStorefrontSlug}>
         <StorefrontCartProvider>
           <StorefrontCheckoutConfirmationProvider>
