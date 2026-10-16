@@ -156,7 +156,7 @@ export interface InventoryTransferRequestRow {
   sourceBranchId: string;
   sourceBranchName: string;
   requestedQuantity: number;
-  availableQuantity: number;
+  availableQuantity?: number;
   reason: InventoryTransferReason;
   notes?: string;
   status: InventoryTransferRequestStatus;

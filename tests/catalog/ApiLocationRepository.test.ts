@@ -3,7 +3,9 @@ import { LocationStatus } from "@/core/enums";
 import type { ProductRepository } from "@/core/repositories";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
+import { withApiInventoryStock } from "@/infrastructure/api/withApiInventoryStock";
 import { ApiLocationRepository } from "@/infrastructure/api/repositories/ApiLocationRepository";
+import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import {
   ASSIGNED_LOCATION_STATUS_CONFLICT_MESSAGE,
   toLocationStatusMutationError,
@@ -56,6 +58,35 @@ function createRepository() {
 }
 
 describe("ApiLocationRepository inventory settings", () => {
+  it("installs the real settings adapter after the stock adapter", async () => {
+    const products = {
+      getById: vi.fn(async () => ({ tenantId: ids.tenant })),
+    } as unknown as ProductRepository;
+    const configured = withApiInventoryStock(
+      {
+        products,
+        inventory: {},
+        inventoryAdjustments: {},
+      } as unknown as RepositoryRegistry,
+      new DataEventBus(),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(settingsResponse())),
+    );
+
+    const settings = await configured.inventory.getProductInventorySettings(
+      ids.product,
+      ids.branch,
+    );
+
+    expect(settings).toMatchObject({
+      tenantId: ids.tenant,
+      defaultLocationId: ids.location,
+    });
+    expect(products.getById).toHaveBeenCalledWith(ids.product);
+  });
+
   it("preserves omitted replacement fields with one current-settings read", async () => {
     const { products, repository } = createRepository();
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
