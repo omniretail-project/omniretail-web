@@ -65,17 +65,22 @@ async function readMultipartBody(request: NextRequest): Promise<Blob | undefined
 
   const chunks: ArrayBuffer[] = [];
   let totalBytes = 0;
+  let exceededLimit = false;
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       totalBytes += value.byteLength;
       if (totalBytes > MAX_MULTIPART_BYTES) {
-        await reader.cancel();
-        throw new MultipartTooLargeError();
+        exceededLimit = true;
+        break;
       }
       // Convierte un posible SharedArrayBuffer en un ArrayBuffer transferible que Blob acepta.
       chunks.push(Uint8Array.from(value).buffer);
+    }
+    if (exceededLimit) {
+      await reader.cancel();
+      throw new MultipartTooLargeError();
     }
   } finally {
     reader.releaseLock();
