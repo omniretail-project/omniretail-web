@@ -36,6 +36,7 @@ export default defineConfig({
         "src/infrastructure/api/withApiPos.ts",
         "src/modules/pos/application/mappers/PosCashShiftMapper.ts",
         "src/modules/pos/application/mappers/SaleReversalResultMapper.ts",
+        "src/modules/pos/application/posTrackingSelection.ts",
         "src/modules/pos/application/services/**/*.ts",
         "src/modules/pos/components/SaleReversalResult.tsx",
         "src/modules/pos/components/CashShiftSummary.tsx",

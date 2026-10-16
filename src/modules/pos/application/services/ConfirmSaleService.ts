@@ -206,7 +206,7 @@ export class ConfirmSaleService {
         productId: item.productId,
         quantity: item.quantity,
         discount: item.discount,
-        trackingSelections: [],
+        trackingSelections: item.trackingSelections ?? [],
       })),
       payments: payments.map((payment) => ({
         method: payment.method,

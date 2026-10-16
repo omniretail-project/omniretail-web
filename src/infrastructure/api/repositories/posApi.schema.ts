@@ -331,6 +331,49 @@ const notificationSchema = z.discriminatedUnion("emailMode", [
   z.object({ emailMode: z.literal("not_applicable") }),
 ]);
 
+const trackingQuantitySchema = z
+  .number()
+  .finite()
+  .positive()
+  .max(999_999_999.999)
+  .refine(hasAtMostThreeDecimals, { message: "La cantidad admite maximo tres decimales." });
+
+const trackingSelectionSchema = z.object({
+  productId: uuidSchema,
+  locationId: uuidSchema,
+  lotId: uuidSchema.nullable().optional(),
+  quantity: trackingQuantitySchema,
+  serialNumbers: z
+    .array(
+      z
+        .string()
+        .max(100)
+        .refine((serial) => serial.trim().length > 0, {
+          message: "El numero de serie no puede estar vacio.",
+        }),
+    )
+    .optional(),
+});
+
+const trackingSelectionsSchema = z
+  .array(trackingSelectionSchema)
+  .superRefine((selections, context) => {
+    const serials = new Set<string>();
+    selections.forEach((selection, selectionIndex) => {
+      selection.serialNumbers?.forEach((serial, serialIndex) => {
+        const normalized = serial.trim();
+        if (serials.has(normalized)) {
+          context.addIssue({
+            code: "custom",
+            message: "Un numero de serie no puede repetirse entre selecciones.",
+            path: [selectionIndex, "serialNumbers", serialIndex],
+          });
+        }
+        serials.add(normalized);
+      });
+    });
+  });
+
 const confirmSaleCommandSchema = z.object({
   branchId: uuidSchema,
   cashShiftId: uuidSchema,
@@ -342,7 +385,7 @@ const confirmSaleCommandSchema = z.object({
         productId: uuidSchema,
         quantity: z.number().positive(),
         discount: z.number().nonnegative(),
-        trackingSelections: z.tuple([]),
+        trackingSelections: trackingSelectionsSchema,
       }),
     )
     .min(1),
@@ -420,6 +463,12 @@ const returnCommandSchema = z.object({
     .min(1),
 });
 const voidCommandSchema = z.object({ reason: z.string().trim().min(1).max(1000) });
+
+function hasAtMostThreeDecimals(value: number): boolean {
+  const scaled = value * 1000;
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4;
+  return Math.abs(scaled - Math.round(scaled)) <= tolerance;
+}
 
 function parse<T>(schema: z.ZodType<T>, value: unknown, message: string): T {
   const result = schema.safeParse(value);
@@ -512,7 +561,7 @@ export function parsePosVoidOperation(value: unknown): PosApiVoidResult {
 }
 
 export const parseConfirmSaleCommand = (
-  value: PosApiConfirmSaleCommand,
+  value: unknown,
 ): PosApiConfirmSaleCommand =>
   parseRequest(
     confirmSaleCommandSchema,

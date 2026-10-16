@@ -129,6 +129,31 @@ describe("ConfirmSaleService en modo API", () => {
     });
   });
 
+  it("conserva las selecciones fisicas preparadas al construir el comando API", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    const trackingSelections = [
+      {
+        productId: ids.product,
+        locationId: ids.location,
+        lotId: ids.lot,
+        quantity: 2,
+        serialNumbers: ["SER-001", "SER-002"],
+      },
+    ];
+
+    await new ConfirmSaleService(repositories).execute(
+      confirmInput({
+        ticket: ticket({
+          items: [{ ...ticket().items[0]!, trackingSelections }],
+        }),
+      }),
+    );
+
+    expect(posApi.confirmSale.mock.calls[0]?.[0].items[0]?.trackingSelections).toEqual(
+      trackingSelections,
+    );
+  });
+
   it("envía el pedido de retiro en tienda con el contacto recortado y la clave de pedido", async () => {
     const { repositories, posApi } = createPosRepositories();
 

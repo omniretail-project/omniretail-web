@@ -1,3 +1,5 @@
+import type { PosApiTrackingSelection } from "@/core/repositories";
+
 export interface SaleTicketItemDto {
   productId: string;
   sku: string;
@@ -12,6 +14,8 @@ export interface SaleTicketItemDto {
   saleUnitName: string;
   tracksStock: boolean;
   requiresUnsupportedTraceability: boolean;
+  /** Seleccion fisica canonicalizada que debe conservarse intacta durante un reintento. */
+  trackingSelections?: PosApiTrackingSelection[];
   /** Producto tipo kit: el backend no admite su fulfillment diferido (retiro o domicilio). */
   isKit?: boolean;
 }
