@@ -6,6 +6,7 @@ import { DEMO_QUICK_LOGINS, getMarketingSiteUrl, isPublicDemo } from "@/config/d
 import { getGoogleClientId } from "@/config/google-auth";
 import { UserType } from "@/core/enums";
 import { GoogleSignInButton } from "@/modules/auth/components/GoogleSignInButton";
+import { ResendVerificationPrompt } from "@/modules/auth/components/ResendVerificationPrompt";
 import { useLogin } from "@/modules/auth/hooks/useLogin";
 import { useOptionalStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 import { BrandMark } from "@/shared/components/BrandMark";
@@ -121,6 +122,9 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
   const demo = isPublicDemo();
   // Accesos rapidos solo en la demo y solo para el login de personal.
   const showDemoQuickLogins = demo && expectedUserType === UserType.employee;
+  // Reenvio del correo de verificacion: solo cuentas de cliente de la tienda (los empleados se
+  // activan por invitacion). En la demo publica no hay correos, igual que la recuperacion.
+  const showResendVerification = expectedUserType === UserType.customer && !demo;
 
   async function handleResendMfaCode() {
     if (await resendMfaCode()) {
@@ -293,6 +297,8 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
             {isSubmitting ? "Ingresando..." : "Iniciar sesión"}
           </Button>
         </form>
+
+        {showResendVerification ? <ResendVerificationPrompt editable email={email} /> : null}
 
         {showDemoQuickLogins ? (
           <div className="mt-6 space-y-2" data-testid="demo-quick-logins">

@@ -19,7 +19,6 @@ import type {
 import type { AuthRepository } from "@/core/repositories";
 import { MfaChallengeUnavailableError } from "@/core/repositories/AuthRepository";
 import {
-  EMAIL_ALREADY_REGISTERED_MESSAGE,
   EMAIL_VERIFICATION_TOKEN_MINUTES,
   EMPLOYEE_INVITATION_TOKEN_HOURS,
   GENERIC_AUTH_ERROR_MESSAGE,
@@ -686,18 +685,19 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       // R-A03: email unico dentro del tenant. Se resuelve via AuthAccount
       // (la credencial real) cruzando con User.tenantId, porque
       // AuthAccount no guarda tenantId directamente. Se comprueba ANTES
-      // de crear cualquier entidad: un intento rechazado no debe dejar un
-      // Customer/User/AuthAccount a medias en el store. Resuelto en PR8:
-      // este metodo nacio en un PR solo de contrato, sin ninguna pantalla
-      // que lo alcanzara -- PR8 expone un formulario real y el gap deja
-      // de ser teorico.
-      const existingAccountInTenant = db.authAccounts.find((account) => {
-        if (account.email.toLowerCase() !== normalizedEmail) return false;
-        const owner = db.users.find((item) => item.id === account.userId);
-        return owner?.tenantId === tenantId;
-      });
-      if (existingAccountInTenant) {
-        throw new Error(EMAIL_ALREADY_REGISTERED_MESSAGE);
+      // de crear cualquier entidad. Un correo ya registrado NO crea nada
+      // y tampoco lanza: responde igual que un registro nuevo (sin token
+      // demo), para no revelar que el correo tiene cuenta -- mismo
+      // contrato que el backend (202 generico, sin 409).
+      const existingOwner = db.users.find(
+        (item) =>
+          item.tenantId === tenantId &&
+          db.authAccounts.some(
+            (account) => account.userId === item.id && account.email.toLowerCase() === normalizedEmail,
+          ),
+      );
+      if (existingOwner) {
+        return { created: false as const, user: existingOwner, emailVerificationToken: null };
       }
 
       const customer: Customer = {
@@ -769,19 +769,59 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       // permita pedirlo despues por userId (ver AuthRepository.
       // RegisterCustomerResult: asi se cierra el oraculo
       // cross-account/cross-tenant que existia antes).
-      return { user: createdUser, emailVerificationToken: verification.token };
+      return { created: true as const, user: createdUser, emailVerificationToken: verification.token };
     });
-    this.emit("auth.changed", {
-      entityId: result.user.id,
-      tenantId: result.user.tenantId,
-      action: "created",
-    });
-    this.emit("customer.changed", {
-      entityId: result.user.customerId,
-      tenantId: result.user.tenantId,
-      action: "created",
-    });
-    return result;
+    if (result.created) {
+      this.emit("auth.changed", {
+        entityId: result.user.id,
+        tenantId: result.user.tenantId,
+        action: "created",
+      });
+      this.emit("customer.changed", {
+        entityId: result.user.customerId,
+        tenantId: result.user.tenantId,
+        action: "created",
+      });
+    }
+    // El contrato (RegisterCustomerResult) solo expone name/email/type a la UI. Esta clase devuelve
+    // el User completo porque los scripts verify-* de storefront leen su id/tenantId/customerId
+    // directamente del mock; la UI nunca lo ve (usa la interfaz AuthRepository).
+    return { user: result.user, emailVerificationToken: result.emailVerificationToken };
+  }
+  /**
+   * Mismo contrato que el backend: nunca lanza ni devuelve nada. Si el correo pertenece a una
+   * cuenta de cliente PENDIENTE de esta tienda, genera un token de verificacion nuevo (el anterior
+   * sigue valido hasta vencer); en cualquier otro caso no hace nada. El token no se expone por
+   * ninguna via (en un sistema real viajaria solo por correo).
+   */
+  async resendEmailVerification(input: Parameters<AuthRepository["resendEmailVerification"]>[0]) {
+    try {
+      this.store.mutate((db) => {
+        const normalizedEmail = input.email.trim().toLowerCase();
+        const tenant = db.tenants.find(
+          (item) => item.slug === input.tenantSlug && item.status === TenantStatus.active,
+        );
+        if (!tenant) return;
+        const pendingAccount = db.authAccounts.find((account) => {
+          if (account.email.toLowerCase() !== normalizedEmail) return false;
+          if (account.status !== AccountStatus.pending_verification) return false;
+          const owner = db.users.find((item) => item.id === account.userId);
+          return owner?.tenantId === tenant.id && owner.type === UserType.customer;
+        });
+        if (!pendingAccount) return;
+        db.emailVerifications.push({
+          id: this.id("email-verification"),
+          userId: pendingAccount.userId,
+          token: this.id("token"),
+          createdAt: this.now(),
+          expiresAt: new Date(
+            Date.now() + EMAIL_VERIFICATION_TOKEN_MINUTES * 60 * 1000,
+          ).toISOString(),
+        });
+      });
+    } catch {
+      // Misma respuesta generica pase lo que pase.
+    }
   }
   async requestPasswordReset(input: Parameters<AuthRepository["requestPasswordReset"]>[0]) {
     this.store.mutate((db) => {

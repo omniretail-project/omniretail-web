@@ -1,7 +1,7 @@
 import { PasswordPolicyError } from "@/config/auth-policy";
 import { publicStorefrontSlug } from "@/config/publicStorefront";
-import type { MfaMethod, Session, User } from "@/core/entities";
-import { AccountStatus, UserStatus, UserType } from "@/core/enums";
+import type { MfaMethod, Session } from "@/core/entities";
+import { AccountStatus, UserType } from "@/core/enums";
 import {
   type AuthRepository,
   type BeginMfaEnrollmentResult,
@@ -15,6 +15,7 @@ import {
   type RegisterCustomerInput,
   type RegisterCustomerResult,
   type RequestPasswordResetInput,
+  type ResendEmailVerificationInput,
   type ResetPasswordResult,
 } from "@/core/repositories/AuthRepository";
 import type { TenantRepository } from "@/core/repositories";
@@ -139,7 +140,7 @@ export class ApiAuthRepository implements AuthRepository {
 
   constructor(
     private readonly currentSession: CurrentSessionClient,
-    /** Repositorio de tenants (mock) solo para traducir tenantId <-> slug (login, recuperacion, registro). */
+    /** Repositorio de tenants (mock) solo para traducir tenantId -> slug (login y recuperacion). */
     private readonly tenants: TenantRepository,
     private readonly eventBus: DataEventBus,
   ) {}
@@ -261,25 +262,28 @@ export class ApiAuthRepository implements AuthRepository {
     });
     if (!response.ok) throw await toError(response, GENERIC_REGISTER_ERROR);
 
-    const { user } = (await response.json()) as { user: { id: string; name: string; email: string; type: string } };
-    const now = new Date().toISOString();
+    // El backend responde el mismo 202 sea el correo nuevo o ya registrado, sin id: no se lee su
+    // cuerpo. El resumen sale de lo que escribio el usuario y la UI muestra el mensaje generico.
     return {
-      // El backend solo devuelve id, nombre, correo y tipo. El resto son valores neutros para
-      // cumplir el tipo User: la UI del registro solo lee `email` y no decide nada con ellos.
-      user: {
-        id: user.id,
-        tenantId: (await this.resolveTenantId(input.tenantSlug)) ?? "",
-        name: user.name,
-        email: user.email,
-        phone: input.phone,
-        type: user.type as UserType,
-        status: UserStatus.active,
-        createdAt: now,
-        updatedAt: now,
-      } satisfies User,
+      user: { name: input.name, email: input.email, type: UserType.customer },
       // En modo api el enlace de verificacion llega solo por correo.
       emailVerificationToken: null,
     };
+  }
+
+  /**
+   * Nunca lanza (mismo criterio que requestPasswordReset): la UI muestra el mismo mensaje generico
+   * pase lo que pase, incluidos un 400, un 429 o un backend caido.
+   */
+  async resendEmailVerification(input: ResendEmailVerificationInput): Promise<void> {
+    try {
+      await postJson("/api/auth/email/resend", {
+        email: input.email.trim().toLowerCase(),
+        tenantSlug: input.tenantSlug,
+      });
+    } catch {
+      // Sin red: misma respuesta generica.
+    }
   }
 
   async verifyEmail(token: string): Promise<{ tenantSlug?: string }> {
@@ -495,15 +499,6 @@ export class ApiAuthRepository implements AuthRepository {
         });
     }
     return this.publicStorefrontTenantId;
-  }
-
-  /** Solo para completar `User.tenantId` en el resultado del registro; nunca decide nada. */
-  private async resolveTenantId(tenantSlug: string): Promise<string | undefined> {
-    try {
-      return (await this.tenants.getBySlug(tenantSlug))?.id ?? undefined;
-    } catch {
-      return undefined;
-    }
   }
 
   /** Con MFA activo aun no hay sesion: el mismo formulario pide el codigo. */

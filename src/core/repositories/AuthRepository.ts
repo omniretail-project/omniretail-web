@@ -135,8 +135,18 @@ export interface RegisterCustomerInput {
   phone?: string;
   passwordMock: string;
 }
+/**
+ * Lo unico que el registro devuelve de la cuenta: nunca su id (ni tenantId, customerId o roleId).
+ * La respuesta es la misma para un correo nuevo y para uno ya registrado, asi que no hay ningun
+ * identificador real que exponer.
+ */
+export interface RegisteredCustomerSummary {
+  name: string;
+  email: string;
+  type: UserType;
+}
 export interface RegisterCustomerResult {
-  user: User;
+  user: RegisteredCustomerSummary;
   /**
    * Token de verificacion recien generado para ESTE registro, o null si
    * por algun motivo no se pudo generar. Existe unicamente porque este
@@ -160,6 +170,14 @@ export interface InviteEmployeeResult {
    * cliente (ver historial: getActiveEmailVerificationToken, removido).
    */
   invitationToken: string | null;
+}
+/**
+ * Reenvio del correo de verificacion de una cuenta de cliente pendiente. La tienda se identifica
+ * por slug (igual que el registro), nunca por un id elegido por el caller.
+ */
+export interface ResendEmailVerificationInput {
+  email: string;
+  tenantSlug: string;
 }
 export interface RequestPasswordResetInput {
   email: string;
@@ -295,6 +313,13 @@ export interface AuthRepository {
    * registro.
    */
   registerCustomer(input: RegisterCustomerInput): Promise<RegisterCustomerResult>;
+  /**
+   * Reenvia el correo de verificacion de una cuenta de cliente pendiente. SIEMPRE resuelve sin
+   * error (nunca lanza ni devuelve nada): la UI muestra el mismo mensaje generico exista o no la
+   * cuenta, este o no verificada, o falle la red -- mismo criterio que requestPasswordReset (R-A19).
+   * El token nuevo viaja solo por correo; ningun modo lo devuelve.
+   */
+  resendEmailVerification(input: ResendEmailVerificationInput): Promise<void>;
   /**
    * Solicita recuperación de contraseña. SIEMPRE resuelve exitosamente
    * (nunca lanza, nunca revela si el correo tiene o no una cuenta
