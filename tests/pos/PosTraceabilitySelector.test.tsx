@@ -273,6 +273,56 @@ describe("PosTraceabilitySelector", () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
+  it("limpia la seleccion al cancelar y reabrir", async () => {
+    const selectedProduct = product({ requiresExpiration: false });
+    const view = renderSelector({ selectedProduct });
+    await waitUntilLoaded();
+    fireEvent.change(screen.getByLabelText("Cantidad del lote LOT-001"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    view.rerender(
+      <PosTraceabilitySelector
+        open={false}
+        product={selectedProduct}
+        onCancel={view.onCancel}
+        onConfirm={view.onConfirm}
+      />,
+    );
+    view.rerender(
+      <PosTraceabilitySelector
+        open
+        product={selectedProduct}
+        onCancel={view.onCancel}
+        onConfirm={view.onConfirm}
+      />,
+    );
+
+    await waitFor(() => expect(mocks.load).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText("Cantidad del lote LOT-001")).toHaveValue("");
+    expect(view.onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("conserva lotes y series seleccionados durante rerenders del mismo contexto", async () => {
+    const selectedProduct = product({ requiredBaseQuantity: 2, requiresSerial: true });
+    const view = renderSelector({ selectedProduct });
+    await waitUntilLoaded();
+    fireEvent.click(screen.getByRole("checkbox", { name: "SER-001" }));
+
+    view.rerender(
+      <PosTraceabilitySelector
+        open
+        product={selectedProduct}
+        onCancel={view.onCancel}
+        onConfirm={view.onConfirm}
+      />,
+    );
+
+    expect(screen.getByRole("checkbox", { name: "SER-001" })).toBeChecked();
+    expect(mocks.load).toHaveBeenCalledOnce();
+  });
+
   it("diferencia errores de permisos o red de una consulta sin inventario", () => {
     mocks.state = {
       status: "error",

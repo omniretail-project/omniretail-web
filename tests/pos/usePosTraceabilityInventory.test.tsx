@@ -1,3 +1,4 @@
+import { StrictMode, type ReactNode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
@@ -70,6 +71,10 @@ async function renderTraceabilityHook() {
   return view;
 }
 
+function StrictModeWrapper({ children }: { children: ReactNode }) {
+  return <StrictMode>{children}</StrictMode>;
+}
+
 describe("usePosTraceabilityInventory", () => {
   beforeEach(() => {
     mocks.branch = {
@@ -89,6 +94,9 @@ describe("usePosTraceabilityInventory", () => {
 
   it("consulta el producto en la sucursal activa y conserva los filtros", async () => {
     const { result } = await renderTraceabilityHook();
+
+    expect(result.current.status).toBe("idle");
+    expect(result.current.data).toBeNull();
 
     await act(async () => {
       expect(
@@ -132,7 +140,7 @@ describe("usePosTraceabilityInventory", () => {
     expect(result.current.data?.productId).toBe(otherProductId);
   });
 
-  it("invalida respuestas tardias al cambiar de sucursal o cerrar la consulta", async () => {
+  it("invalida respuestas tardias ante un cambio rapido de sucursal A-B-A o al cerrar", async () => {
     const branchRequest = deferred<PosTraceabilityInventoryDto>();
     mocks.execute.mockReturnValueOnce(branchRequest.promise);
     const view = await renderTraceabilityHook();
@@ -146,6 +154,13 @@ describe("usePosTraceabilityInventory", () => {
       loading: false,
     };
     view.rerender();
+    expect(view.result.current.status).toBe("idle");
+    mocks.branch = {
+      currentBranch: { id: ids.branch, tenantId: ids.tenant, name: "Principal" },
+      loading: false,
+    };
+    view.rerender();
+    expect(view.result.current.status).toBe("idle");
     branchRequest.resolve(inventory(ids.product, ids.branch));
     await act(async () => {
       expect(await branchLoad).toBe(false);
@@ -159,14 +174,14 @@ describe("usePosTraceabilityInventory", () => {
       closeLoad = view.result.current.load(ids.product);
       view.result.current.close();
     });
-    closeRequest.resolve(inventory(ids.product, ids.otherBranch));
+    closeRequest.resolve(inventory(ids.product, ids.branch));
     await act(async () => {
       expect(await closeLoad).toBe(false);
     });
     expect(view.result.current.status).toBe("idle");
   });
 
-  it("descarta una respuesta iniciada por una sesion anterior", async () => {
+  it("descarta una respuesta de una visita anterior al volver a la misma sesion", async () => {
     const pending = deferred<PosTraceabilityInventoryDto>();
     mocks.execute.mockReturnValueOnce(pending.promise);
     const view = await renderTraceabilityHook();
@@ -184,6 +199,14 @@ describe("usePosTraceabilityInventory", () => {
       },
     };
     view.rerender();
+    expect(view.result.current.status).toBe("idle");
+    mocks.session = {
+      ...mocks.session,
+      sessionId: ids.session,
+      user: { id: ids.user, tenantId: ids.tenant },
+    };
+    view.rerender();
+    expect(view.result.current.status).toBe("idle");
     pending.resolve(inventory());
 
     await act(async () => {
@@ -191,6 +214,54 @@ describe("usePosTraceabilityInventory", () => {
     });
     expect(view.result.current.status).toBe("idle");
     expect(view.result.current.data).toBeNull();
+  });
+
+  it("invalida de inmediato datos y respuestas al cambiar de tenant", async () => {
+    const pending = deferred<PosTraceabilityInventoryDto>();
+    const otherTenant = "20000000-0000-4000-8000-000000000047";
+    mocks.execute.mockReturnValueOnce(pending.promise);
+    const view = await renderTraceabilityHook();
+    let loading!: Promise<boolean>;
+    act(() => {
+      loading = view.result.current.load(ids.product);
+    });
+
+    mocks.session = {
+      ...mocks.session,
+      user: { id: ids.user, tenantId: otherTenant },
+    };
+    mocks.branch = {
+      currentBranch: { id: ids.branch, tenantId: otherTenant, name: "Principal" },
+      loading: false,
+    };
+    view.rerender();
+
+    expect(view.result.current.status).toBe("idle");
+    expect(view.result.current.data).toBeNull();
+    pending.resolve(inventory());
+    await act(async () => {
+      expect(await loading).toBe(false);
+    });
+    expect(view.result.current.status).toBe("idle");
+  });
+
+  it("mantiene una sola respuesta vigente bajo Strict Mode", async () => {
+    const pending = deferred<PosTraceabilityInventoryDto>();
+    mocks.execute.mockReturnValueOnce(pending.promise);
+    const view = renderHook(() => usePosTraceabilityInventory(), { wrapper: StrictModeWrapper });
+    let loading!: Promise<boolean>;
+
+    act(() => {
+      loading = view.result.current.load(ids.product);
+    });
+    pending.resolve(inventory());
+    await act(async () => {
+      expect(await loading).toBe(true);
+    });
+
+    expect(mocks.execute).toHaveBeenCalledOnce();
+    expect(view.result.current.status).toBe("loaded");
+    expect(view.result.current.data?.productId).toBe(ids.product);
   });
 
   it("expone errores de red y permisos sin fabricar resultados", async () => {

@@ -228,6 +228,7 @@ export function usePosTerminal() {
     currentBranch,
     productService,
     readContextKey,
+    repositories,
     sessionError,
     sessionLoading,
     user,

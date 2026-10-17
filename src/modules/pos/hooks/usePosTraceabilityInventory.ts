@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useState } from "react";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type {
@@ -28,6 +28,49 @@ export interface PosTraceabilityReadState {
 
 const idleState: PosTraceabilityReadState = { status: "idle", data: null, error: null };
 
+interface ContextualReadState {
+  context: TraceabilityRequestContext;
+  value: PosTraceabilityReadState;
+}
+
+interface TraceabilityRequestContext {
+  readonly key: string;
+  activate: () => void;
+  deactivate: () => void;
+  begin: () => symbol;
+  finish: (request: symbol) => boolean;
+  cancel: () => void;
+}
+
+function createTraceabilityRequestContext(key: string): TraceabilityRequestContext {
+  let active = false;
+  let currentRequest: symbol | null = null;
+
+  return {
+    key,
+    activate: () => {
+      active = true;
+    },
+    deactivate: () => {
+      active = false;
+      currentRequest = null;
+    },
+    begin: () => {
+      const request = Symbol("pos-traceability-request");
+      currentRequest = request;
+      return request;
+    },
+    finish: (request) => {
+      if (!active || currentRequest !== request) return false;
+      currentRequest = null;
+      return true;
+    },
+    cancel: () => {
+      currentRequest = null;
+    },
+  };
+}
+
 export function usePosTraceabilityInventory() {
   const repositories = useRepositories();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
@@ -43,11 +86,13 @@ export function usePosTraceabilityInventory() {
     () => new GetPosTraceabilityInventoryService(repositories),
     [repositories],
   );
-  const [state, setState] = useState<PosTraceabilityReadState>(idleState);
-  const requestSequenceRef = useRef(0);
-  const contextKey = `${sessionId ?? ""}:${user?.id ?? ""}:${user?.tenantId ?? ""}:${currentBranch?.id ?? ""}`;
-  const contextKeyRef = useRef(contextKey);
-  contextKeyRef.current = contextKey;
+  const contextKey = `${sessionId ?? ""}:${user?.id ?? ""}:${user?.tenantId ?? ""}:${currentBranch?.tenantId ?? ""}:${currentBranch?.id ?? ""}`;
+  const requestContext = useMemo(() => createTraceabilityRequestContext(contextKey), [contextKey]);
+  const [contextualState, setContextualState] = useState<ContextualReadState>(() => ({
+    context: requestContext,
+    value: idleState,
+  }));
+  const state = contextualState.context === requestContext ? contextualState.value : idleState;
 
   const hasBranchAccess = Boolean(
     user &&
@@ -66,59 +111,81 @@ export function usePosTraceabilityInventory() {
     !sessionLoading;
 
   useLayoutEffect(() => {
-    requestSequenceRef.current += 1;
-    setState(idleState);
-  }, [contextKey]);
+    requestContext.activate();
+    return () => requestContext.deactivate();
+  }, [requestContext]);
 
   const close = useCallback(() => {
-    requestSequenceRef.current += 1;
-    setState(idleState);
-  }, []);
+    requestContext.cancel();
+    setContextualState({ context: requestContext, value: idleState });
+  }, [requestContext]);
 
   const load = useCallback(
     async (productId: string, filters: PosTraceabilityReadFilters = {}): Promise<boolean> => {
-      const requestId = ++requestSequenceRef.current;
-      const requestContextKey = contextKeyRef.current;
+      const request = requestContext.begin();
       const normalizedProductId = productId.trim();
 
       if (branchLoading || sessionLoading) {
-        setState({
-          status: "error",
-          data: null,
-          error: "La sesion y la sucursal aun se estan cargando.",
+        requestContext.finish(request);
+        setContextualState({
+          context: requestContext,
+          value: {
+            status: "error",
+            data: null,
+            error: "La sesion y la sucursal aun se estan cargando.",
+          },
         });
         return false;
       }
       if (!normalizedProductId) {
-        setState({ status: "error", data: null, error: "Debe seleccionar un producto." });
+        requestContext.finish(request);
+        setContextualState({
+          context: requestContext,
+          value: { status: "error", data: null, error: "Debe seleccionar un producto." },
+        });
         return false;
       }
       if (!user || !currentBranch || !hasBranchAccess) {
-        setState({
-          status: "error",
-          data: null,
-          error: sessionError ?? "No dispone de acceso a la sucursal seleccionada.",
+        requestContext.finish(request);
+        setContextualState({
+          context: requestContext,
+          value: {
+            status: "error",
+            data: null,
+            error: sessionError ?? "No dispone de acceso a la sucursal seleccionada.",
+          },
         });
         return false;
       }
       if (repositories.inventoryStockDataSource !== "api") {
-        setState({
-          status: "error",
-          data: null,
-          error: "La consulta de inventario trazable solo esta disponible en modo API.",
+        requestContext.finish(request);
+        setContextualState({
+          context: requestContext,
+          value: {
+            status: "error",
+            data: null,
+            error: "La consulta de inventario trazable solo esta disponible en modo API.",
+          },
         });
         return false;
       }
       if (!hasReadPermissions) {
-        setState({
-          status: "error",
-          data: null,
-          error: "No dispone de permisos para consultar inventario trazable y ubicaciones.",
+        requestContext.finish(request);
+        setContextualState({
+          context: requestContext,
+          value: {
+            status: "error",
+            data: null,
+            error: "No dispone de permisos para consultar inventario trazable y ubicaciones.",
+          },
         });
         return false;
       }
 
-      setState({ status: "loading", data: null, error: null });
+      setContextualState({
+        context: requestContext,
+        value: { status: "loading", data: null, error: null },
+      });
       const input: PosTraceabilityInventoryQueryDto = {
         branchId: currentBranch.id,
         productId: normalizedProductId,
@@ -127,25 +194,21 @@ export function usePosTraceabilityInventory() {
       };
       try {
         const data = await service.execute(input);
-        if (
-          requestId !== requestSequenceRef.current ||
-          requestContextKey !== contextKeyRef.current
-        ) {
-          return false;
-        }
-        setState({ status: "loaded", data, error: null });
+        if (!requestContext.finish(request)) return false;
+        setContextualState({
+          context: requestContext,
+          value: { status: "loaded", data, error: null },
+        });
         return true;
       } catch (error) {
-        if (
-          requestId !== requestSequenceRef.current ||
-          requestContextKey !== contextKeyRef.current
-        ) {
-          return false;
-        }
-        setState({
-          status: "error",
-          data: null,
-          error: cleanPosError(error, "No se pudo consultar el inventario trazable."),
+        if (!requestContext.finish(request)) return false;
+        setContextualState({
+          context: requestContext,
+          value: {
+            status: "error",
+            data: null,
+            error: cleanPosError(error, "No se pudo consultar el inventario trazable."),
+          },
         });
         return false;
       }
@@ -156,6 +219,7 @@ export function usePosTraceabilityInventory() {
       hasBranchAccess,
       hasReadPermissions,
       repositories.inventoryStockDataSource,
+      requestContext,
       service,
       sessionError,
       sessionLoading,

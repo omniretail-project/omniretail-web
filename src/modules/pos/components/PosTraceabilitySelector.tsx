@@ -44,7 +44,13 @@ export function PosTraceabilitySelector({
   onCancel,
   onConfirm,
 }: PosTraceabilitySelectorProps) {
-  const inventory = usePosTraceabilityInventory();
+  const {
+    status: inventoryStatus,
+    data: inventoryData,
+    error: inventoryError,
+    load: loadInventory,
+    close: closeInventory,
+  } = usePosTraceabilityInventory();
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [selectedSerialIds, setSelectedSerialIds] = useState<Set<string>>(new Set());
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -58,15 +64,15 @@ export function PosTraceabilitySelector({
       setQuantities({});
       setSelectedSerialIds(new Set());
       setValidationError(null);
-      void inventory.load(productId);
+      void loadInventory(productId);
     });
     return () => {
       active = false;
-      inventory.close();
+      closeInventory();
     };
-  }, [inventory.close, inventory.load, open, productId]);
+  }, [closeInventory, loadInventory, open, productId]);
 
-  const data = inventory.data?.productId === product?.productId ? inventory.data : null;
+  const data = inventoryData?.productId === product?.productId ? inventoryData : null;
   const combinations = data?.combinations ?? [];
   const fefoState = useMemo(() => {
     if (!data || !product?.requiresExpiration) return { plan: null, error: null };
@@ -125,7 +131,7 @@ export function PosTraceabilitySelector({
   if (!open || !product) return null;
 
   const resetAndCancel = () => {
-    inventory.close();
+    closeInventory();
     setQuantities({});
     setSelectedSerialIds(new Set());
     setValidationError(null);
@@ -209,7 +215,7 @@ export function PosTraceabilitySelector({
             </Button>
             <Button
               disabled={
-                inventory.status !== "loaded" ||
+                inventoryStatus !== "loaded" ||
                 selectableCount === 0 ||
                 fefoUnavailable ||
                 !serialSelectionComplete
@@ -255,7 +261,7 @@ export function PosTraceabilitySelector({
           />
         ) : null}
 
-        {inventory.status === "loading" ? (
+        {inventoryStatus === "loading" ? (
           <p
             className="rounded-lg border border-[var(--color-border)] p-5 text-sm text-[var(--color-text-muted)]"
             role="status"
@@ -264,14 +270,14 @@ export function PosTraceabilitySelector({
           </p>
         ) : null}
 
-        {inventory.status === "error" ? (
+        {inventoryStatus === "error" ? (
           <InlineAlert
-            description={inventory.error ?? "No se pudo consultar el inventario trazable."}
+            description={inventoryError ?? "No se pudo consultar el inventario trazable."}
             title="No se pudo cargar el inventario"
           />
         ) : null}
 
-        {inventory.status === "loaded" && visibleCombinations.length === 0 ? (
+        {inventoryStatus === "loaded" && visibleCombinations.length === 0 ? (
           <InlineAlert
             description="La consulta fue exitosa, pero no devolvió combinaciones físicas disponibles para este producto."
             title="Sin inventario trazable disponible"
@@ -279,7 +285,7 @@ export function PosTraceabilitySelector({
           />
         ) : null}
 
-        {inventory.status === "loaded" && orderedCombinations.length > 0 ? (
+        {inventoryStatus === "loaded" && orderedCombinations.length > 0 ? (
           <ul className="space-y-3">
             {orderedCombinations.map((combination) => {
               const key = traceabilityCombinationKey(combination);
