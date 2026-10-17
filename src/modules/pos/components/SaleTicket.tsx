@@ -109,7 +109,9 @@ export function SaleTicket({
                   ) : null}
                   {item.requiresUnsupportedTraceability ? (
                     <p className="mt-1 font-semibold text-[var(--color-warning)]">
-                      Esta línea no puede confirmarse.
+                      {item.trackingSelections?.length
+                        ? `Selección física preparada: ${item.baseQuantity ?? 0} unidades base. El cobro de esta línea aún no está habilitado.`
+                        : "Esta línea no puede confirmarse."}
                     </p>
                   ) : null}
                 </div>

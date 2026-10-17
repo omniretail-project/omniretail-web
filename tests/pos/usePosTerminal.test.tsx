@@ -114,13 +114,31 @@ const product: PosProductDto = {
   discount: 0,
   salesPriceTiers: [],
   availableQuantity: 10,
+  baseUnitId: id(50),
   saleUnitId: id(50),
   saleUnitName: "Unidad",
+  saleUnitToBaseFactor: 1,
   tracksStock: true,
   requiresLot: false,
   requiresSerial: false,
+  requiresExpiration: false,
+  requiresTraceabilitySelection: false,
   requiresUnsupportedTraceability: false,
   isAvailableForSale: true,
+};
+
+const traceableProduct: PosProductDto = {
+  ...product,
+  productId: id(90),
+  sku: "POS-TRZ-001",
+  name: "Producto trazable",
+  requiresLot: true,
+  requiresSerial: true,
+  requiresExpiration: true,
+  requiresTraceabilitySelection: true,
+  saleUnitId: id(51),
+  saleUnitName: "Caja",
+  saleUnitToBaseFactor: 2,
 };
 
 const openShift = (branchId = ids.branch) => ({
@@ -146,6 +164,26 @@ async function renderReadyTerminal() {
   await waitFor(() => expect(view.result.current.products).toHaveLength(1));
   await waitFor(() => expect(view.result.current.paymentMethodsLoading).toBe(false));
   return view;
+}
+
+async function renderTerminalWithProducts(products: PosProductDto[]) {
+  mocks.products.mockResolvedValue(products);
+  const view = renderHook(() => usePosTerminal());
+  await waitFor(() => expect(view.result.current.hasOpenCashShift).toBe(true));
+  await waitFor(() => expect(view.result.current.products).toHaveLength(products.length));
+  return view;
+}
+
+function traceabilitySelections(productId = traceableProduct.productId, serialNumber = "SER-001") {
+  return [
+    {
+      productId,
+      locationId: id(80),
+      lotId: id(81),
+      quantity: 2,
+      serialNumbers: [serialNumber, `${serialNumber}-2`],
+    },
+  ];
 }
 
 async function prepareCashCheckout(result: { current: ReturnType<typeof usePosTerminal> }) {
@@ -283,6 +321,169 @@ describe("usePosTerminal", () => {
       expect(result.current.ticketItems[0]?.quantity).toBe(1);
       expect(result.current.total).toBe(50);
       expect(result.current.ticketError).toContain("venta pendiente de verificar");
+    });
+  });
+
+  describe("preparacion de trazabilidad", () => {
+    it("abre el selector sin agregar la linea y permite cancelar sin modificar el ticket", async () => {
+      const { result } = await renderTerminalWithProducts([product, traceableProduct]);
+
+      act(() => result.current.addProduct(traceableProduct));
+
+      expect(result.current.ticketItems).toEqual([]);
+      expect(result.current.traceabilityRequest).toMatchObject({
+        product: { productId: traceableProduct.productId },
+        requestedQuantity: 1,
+        requiredBaseQuantity: 2,
+      });
+      act(() => result.current.cancelTraceabilitySelection());
+      expect(result.current.traceabilityRequest).toBeNull();
+      expect(result.current.ticketItems).toEqual([]);
+    });
+
+    it("conserva unidad, cantidad base y seleccion fisica canonicalizada en la linea correcta", async () => {
+      const { result } = await renderTerminalWithProducts([product, traceableProduct]);
+      act(() => result.current.addProduct(traceableProduct));
+
+      act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
+
+      expect(result.current.traceabilityRequest).toBeNull();
+      expect(result.current.ticketItems).toEqual([
+        expect.objectContaining({
+          productId: traceableProduct.productId,
+          quantity: 1,
+          saleUnitId: traceableProduct.saleUnitId,
+          baseUnitId: traceableProduct.baseUnitId,
+          baseQuantity: 2,
+          trackingSelections: traceabilitySelections(),
+          requiresUnsupportedTraceability: true,
+        }),
+      ]);
+      expect(result.current.hasUnsupportedTraceability).toBe(true);
+    });
+
+    it("exige una nueva seleccion antes de aplicar un cambio de cantidad", async () => {
+      const { result } = await renderTerminalWithProducts([product, traceableProduct]);
+      act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
+
+      act(() => result.current.setQuantity(traceableProduct.productId, 2));
+      expect(result.current.ticketItems[0]).toMatchObject({ quantity: 1, baseQuantity: 2 });
+      expect(result.current.traceabilityRequest).toMatchObject({
+        requestedQuantity: 2,
+        requiredBaseQuantity: 4,
+      });
+
+      act(() =>
+        result.current.confirmTraceabilitySelection([
+          { ...traceabilitySelections()[0]!, quantity: 4, serialNumbers: ["S1", "S2", "S3", "S4"] },
+        ]),
+      );
+      expect(result.current.ticketItems[0]).toMatchObject({ quantity: 2, baseQuantity: 4 });
+    });
+
+    it("conserva la cantidad y seleccion anteriores al cancelar una nueva seleccion", async () => {
+      const { result } = await renderTerminalWithProducts([product, traceableProduct]);
+      const originalSelections = traceabilitySelections();
+      act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.confirmTraceabilitySelection(originalSelections));
+
+      act(() => result.current.setQuantity(traceableProduct.productId, 2));
+      expect(result.current.traceabilityRequest).toMatchObject({
+        requestedQuantity: 2,
+        requiredBaseQuantity: 4,
+      });
+
+      act(() => result.current.cancelTraceabilitySelection());
+
+      expect(result.current.traceabilityRequest).toBeNull();
+      expect(result.current.ticketItems).toEqual([
+        expect.objectContaining({
+          productId: traceableProduct.productId,
+          quantity: 1,
+          baseQuantity: 2,
+          trackingSelections: originalSelections,
+        }),
+      ]);
+    });
+
+    it("elimina selecciones al quitar la linea o vaciar el ticket", async () => {
+      const { result } = await renderTerminalWithProducts([product, traceableProduct]);
+      act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
+      act(() => result.current.removeItem(traceableProduct.productId));
+      expect(result.current.ticketItems).toEqual([]);
+
+      act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
+      act(() => result.current.clearTicket());
+      expect(result.current.ticketItems).toEqual([]);
+      expect(result.current.traceabilityRequest).toBeNull();
+    });
+
+    it("invalida ticket y selector al cambiar de sucursal o sesion", async () => {
+      const view = await renderTerminalWithProducts([product, traceableProduct]);
+      act(() => view.result.current.addProduct(traceableProduct));
+
+      mocks.branch = {
+        currentBranch: { id: ids.otherBranch, tenantId: ids.tenant, name: "Norte" },
+        loading: false,
+      };
+      view.rerender();
+
+      await waitFor(() => expect(view.result.current.currentBranchName).toBe("Norte"));
+      await waitFor(() => expect(view.result.current.traceabilityRequest).toBeNull());
+      expect(view.result.current.ticketItems).toEqual([]);
+
+      act(() => view.result.current.addProduct(traceableProduct));
+      expect(view.result.current.traceabilityRequest).not.toBeNull();
+      mocks.session = { ...mocks.session, sessionId: id(93) };
+      view.rerender();
+      await waitFor(() => expect(view.result.current.traceabilityRequest).toBeNull());
+    });
+
+    it("rechaza series ya usadas por otra linea y no publica una seleccion invalida", async () => {
+      const other = {
+        ...traceableProduct,
+        productId: id(91),
+        sku: "POS-TRZ-002",
+        name: "Otro trazable",
+      };
+      const { result } = await renderTerminalWithProducts([traceableProduct, other]);
+      act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
+
+      act(() => result.current.addProduct(other));
+      act(() =>
+        result.current.confirmTraceabilitySelection(
+          traceabilitySelections(other.productId, "SER-001"),
+        ),
+      );
+
+      expect(result.current.ticketItems).toHaveLength(1);
+      expect(result.current.ticketError).toContain("ya está asignada a otra línea");
+      expect(result.current.traceabilityRequest?.product.productId).toBe(other.productId);
+    });
+
+    it("bloquea conversiones serializadas fraccionarias y kits con trazabilidad especial", async () => {
+      const fractional = { ...traceableProduct, saleUnitToBaseFactor: 0.5 };
+      const kit = {
+        ...traceableProduct,
+        productId: id(92),
+        productType: ProductType.kit,
+        requiresTraceabilitySelection: false,
+        requiresUnsupportedTraceability: true,
+      };
+      const { result } = await renderTerminalWithProducts([fractional, kit]);
+
+      act(() => result.current.addProduct(fractional));
+      expect(result.current.traceabilityRequest).toBeNull();
+      expect(result.current.ticketError).toContain("cantidad base entera");
+
+      act(() => result.current.addProduct(kit));
+      expect(result.current.traceabilityRequest).toBeNull();
+      expect(result.current.ticketItems).toEqual([]);
+      expect(result.current.ticketError).toContain("todavía no soporta");
     });
   });
 

@@ -10,6 +10,10 @@ export interface SaleTicketItemDto {
   discount: number;
   subtotal: number;
   availableQuantity: number | null;
+  /** Unidad canonica del inventario usada por las selecciones fisicas. */
+  baseUnitId?: string;
+  /** Cantidad total preparada en unidades base para esta linea. */
+  baseQuantity?: number;
   saleUnitId: string;
   saleUnitName: string;
   tracksStock: boolean;

@@ -338,7 +338,15 @@ describe("GetPosProductsService en modo API", () => {
     ...extra,
   });
 
-  function catalogRepositories(products: ReturnType<typeof product>[]) {
+  function catalogRepositories(
+    products: ReturnType<typeof product>[],
+    conversions?: Array<{
+      productId: string | null;
+      fromUnitId: string;
+      toUnitId: string;
+      factor: number;
+    }>,
+  ) {
     const calls = { applicable: vi.fn(), conversionsByProduct: vi.fn() };
     const { repositories } = createPosRepositories({
       extra: {
@@ -352,16 +360,21 @@ describe("GetPosProductsService en modo API", () => {
               totalPages: 2,
             })
             .mockResolvedValueOnce({
-              items: [{ productId: products[1]!.id, productType: ProductType.physical, availableQuantity: 0 }],
+              items: [
+                { productId: products[1]!.id, productType: ProductType.physical, availableQuantity: 0 },
+                { productId: products[3]!.id, productType: ProductType.physical, availableQuantity: 3 },
+              ],
               totalPages: 2,
             }),
         },
         units: {
           getByTenant: vi.fn().mockResolvedValue([{ id: unitId, name: "Unidad" }]),
-          getAllConversionsByTenant: vi.fn().mockResolvedValue([
-            { productId: products[0]!.id, fromUnitId: unitId, toUnitId: unitId, factor: 1 },
-            { productId: null, fromUnitId: unitId, toUnitId: otherUnit, factor: 12 },
-          ]),
+          getAllConversionsByTenant: vi.fn().mockResolvedValue(
+            conversions ?? [
+              { productId: products[0]!.id, fromUnitId: unitId, toUnitId: unitId, factor: 1 },
+              { productId: null, fromUnitId: otherUnit, toUnitId: unitId, factor: 12 },
+            ],
+          ),
           getConversionsByProductScoped: calls.conversionsByProduct,
         },
         promotions: {
@@ -419,15 +432,98 @@ describe("GetPosProductsService en modo API", () => {
       isAvailableForSale: true,
       salesPriceTiers: [{ minQuantity: 10, unitPrice: 80, active: true }],
       saleUnitName: "Unidad",
+      baseUnitId: unitId,
+      saleUnitToBaseFactor: 1,
     });
     expect(byId.get(products[1]!.id)).toMatchObject({ effectivePrice: 100, isAvailableForSale: false });
     expect(byId.get(products[2]!.id)).toMatchObject({ availableQuantity: null, isAvailableForSale: true });
     expect(byId.get(products[3]!.id)).toMatchObject({
-      requiresUnsupportedTraceability: true,
+      requiresTraceabilitySelection: true,
+      requiresUnsupportedTraceability: false,
+      isAvailableForSale: true,
+    });
+    expect(byId.get(products[4]!.id)).toMatchObject({
+      availableQuantity: 0,
+      saleUnitToBaseFactor: 12,
       isAvailableForSale: false,
     });
-    expect(byId.get(products[4]!.id)).toMatchObject({ availableQuantity: 0, isAvailableForSale: false });
     expect(result.map((item) => item.name)).toEqual([...result.map((item) => item.name)].sort());
+  });
+
+  it("resuelve factor 1 sin inventar una conversion cuando venta y base usan la misma unidad", async () => {
+    const products = [
+      product(11, { tracking: { stock: true, lot: true, serial: false, expiration: false } }),
+      product(12),
+      product(13),
+      product(14),
+      product(15),
+    ];
+    const { repositories } = catalogRepositories(products, []);
+
+    const result = await new GetPosProductsService(repositories).execute({
+      tenantId: ids.tenant,
+      branchId: ids.branch,
+    });
+
+    expect(result.find((item) => item.productId === products[0]!.id)).toMatchObject({
+      saleUnitToBaseFactor: 1,
+      requiresTraceabilitySelection: true,
+      isAvailableForSale: true,
+    });
+  });
+
+  it("bloquea un producto trazable cuando falta la conversion real a la unidad base", async () => {
+    const products = [
+      product(21, {
+        saleUnitId: otherUnit,
+        tracking: { stock: true, lot: true, serial: false, expiration: false },
+      }),
+      product(22),
+      product(23),
+      product(24),
+      product(25),
+    ];
+    const { repositories } = catalogRepositories(products, []);
+
+    const result = await new GetPosProductsService(repositories).execute({
+      tenantId: ids.tenant,
+      branchId: ids.branch,
+    });
+
+    expect(result.find((item) => item.productId === products[0]!.id)).toMatchObject({
+      availableQuantity: 0,
+      saleUnitToBaseFactor: 0,
+      requiresTraceabilitySelection: true,
+      isAvailableForSale: false,
+    });
+  });
+
+  it.each([0, -2])("rechaza un factor de conversion invalido: %s", async (factor) => {
+    const products = [
+      product(31, {
+        saleUnitId: otherUnit,
+        tracking: { stock: true, lot: true, serial: false, expiration: false },
+      }),
+      product(32),
+      product(33),
+      product(34),
+      product(35),
+    ];
+    const { repositories } = catalogRepositories(products, [
+      { productId: null, fromUnitId: otherUnit, toUnitId: unitId, factor },
+    ]);
+
+    const result = await new GetPosProductsService(repositories).execute({
+      tenantId: ids.tenant,
+      branchId: ids.branch,
+    });
+
+    expect(result.find((item) => item.productId === products[0]!.id)).toMatchObject({
+      availableQuantity: 0,
+      saleUnitToBaseFactor: 0,
+      requiresTraceabilitySelection: true,
+      isAvailableForSale: false,
+    });
   });
 });
 
