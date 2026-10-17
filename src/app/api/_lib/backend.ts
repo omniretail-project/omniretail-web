@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers as requestHeaders } from "next/headers";
 import { NextResponse } from "next/server";
 import type { z } from "zod";
 import { GENERIC_AUTH_ERROR_MESSAGE } from "@/config/auth-policy";
@@ -39,6 +39,26 @@ export function getBackendBaseUrl(): string | null {
   return process.env.OMNIRETAIL_API_URL || null;
 }
 
+/** IPv4 o IPv6 (incluida la IPv4 embebida): solo hex, ":" y ".", maximo 45 caracteres. */
+const CLIENT_IP_PATTERN = /^[0-9a-fA-F:.]{1,45}$/;
+
+/**
+ * IP del usuario para el rate limit por IP del backend: primera entrada del `X-Forwarded-For` que
+ * pone Caddy (unico punto de entrada publico). Si no viene, no parece una IP o no hay request en
+ * curso (`headers()` falla), devuelve null y la cabecera no se envia.
+ */
+async function clientIpFromRequest(): Promise<string | null> {
+  try {
+    const forwardedFor = (await requestHeaders()).get("x-forwarded-for");
+    if (!forwardedFor) return null;
+    const comma = forwardedFor.indexOf(",");
+    const first = (comma === -1 ? forwardedFor : forwardedFor.slice(0, comma)).trim();
+    return CLIENT_IP_PATTERN.test(first) ? first : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Llama al backend. Devuelve null si `OMNIRETAIL_API_URL` no esta configurada o el backend no
  * responde (el caller responde 503 con `serviceUnavailable()`). Los headers extra van primero:
@@ -59,6 +79,8 @@ export async function callBackend(
   const headers: Record<string, string> = { Accept: "application/json" };
   if (init.headers?.["Idempotency-Key"])
     headers["Idempotency-Key"] = init.headers["Idempotency-Key"];
+  const clientIp = await clientIpFromRequest();
+  if (clientIp) headers["X-Forwarded-For"] = clientIp;
   if (init.body !== undefined)
     headers["Content-Type"] = init.contentType ?? "application/json";
   if (init.token) headers.Authorization = `Bearer ${init.token}`;
