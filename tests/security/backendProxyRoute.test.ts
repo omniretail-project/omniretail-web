@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/backend/[...path]/route";
+import { MULTIPART_BODY_MAX_BYTES } from "@/app/api/_lib/limited-body";
 
 vi.mock("next/headers", () => ({ cookies: vi.fn() }));
 
@@ -25,15 +26,20 @@ describe("backend proxy multipart limit", () => {
     cookieStore.get.mockReturnValue(undefined);
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })),
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
     );
   });
 
   it("reenvía un multipart pequeño preservando el boundary original", async () => {
-    const response = await POST(requestWith("--omniretail-boundary\r\nsmall\r\n--omniretail-boundary--"), context);
+    const response = await POST(
+      requestWith("--omniretail-boundary\r\nsmall\r\n--omniretail-boundary--"),
+      context,
+    );
 
     expect(response.status).toBe(200);
     expect(fetch).toHaveBeenCalledWith(
@@ -46,7 +52,7 @@ describe("backend proxy multipart limit", () => {
 
   it("rechaza por Content-Length antes de reenviar un multipart demasiado grande", async () => {
     const response = await POST(
-      requestWith("small", { "Content-Length": String(5 * 1024 * 1024 + 64 * 1024 + 1) }),
+      requestWith("small", { "Content-Length": String(MULTIPART_BODY_MAX_BYTES + 1) }),
       context,
     );
 
@@ -56,9 +62,30 @@ describe("backend proxy multipart limit", () => {
   });
 
   it("rechaza un multipart sin Content-Length cuando supera el límite durante la lectura", async () => {
-    const response = await POST(requestWith("x".repeat(5 * 1024 * 1024 + 64 * 1024 + 1)), context);
+    const response = await POST(requestWith("x".repeat(MULTIPART_BODY_MAX_BYTES + 1)), context);
 
     expect(response.status).toBe(413);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("acepta un multipart entre el limite legado y el limite definitivo", async () => {
+    const legacyMultipartLimit = 5 * 1024 * 1024 + 64 * 1024;
+    const body = new Uint8Array(legacyMultipartLimit + 1);
+
+    expect(body.byteLength).toBeLessThan(MULTIPART_BODY_MAX_BYTES);
+
+    const response = await POST(
+      requestWith(body, {
+        "Content-Type": "multipart/form-data; boundary=legacy-limit-regression",
+      }),
+      context,
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.example/api/v1/media/upload",
+      expect.objectContaining({ body: expect.any(Uint8Array) }),
+    );
   });
 });

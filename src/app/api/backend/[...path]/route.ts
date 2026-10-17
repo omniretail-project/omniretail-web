@@ -1,6 +1,11 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { callBackend, serviceUnavailable, SESSION_COOKIE } from "@/app/api/_lib/backend";
+import {
+  JSON_BODY_MAX_BYTES,
+  MULTIPART_BODY_MAX_BYTES,
+  readBodyWithLimit,
+} from "@/app/api/_lib/limited-body";
 
 /**
  * Puente generico del modo api: `/api/backend/<ruta>` -> `${OMNIRETAIL_API_URL}/<ruta>`.
@@ -17,76 +22,28 @@ import { callBackend, serviceUnavailable, SESSION_COOKIE } from "@/app/api/_lib/
 type RouteContext = { params: Promise<{ path: string[] }> };
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
-/**
- * La imagen permitida ocupa hasta 5 MiB. Se reserva un margen fijo para boundary y encabezados del
- * multipart, manteniendo el cuerpo total estrictamente acotado antes de acumularlo en memoria.
- */
-const MAX_MULTIPART_BYTES = 5 * 1024 * 1024 + 64 * 1024;
-
-class MultipartTooLargeError extends Error {}
-
-function apiError(request: NextRequest, status: 403 | 404, error: string, code: string, message: string) {
+function apiError(
+  request: NextRequest,
+  status: 400 | 403 | 404 | 413 | 415,
+  error: string,
+  code: string,
+  message: string,
+) {
   return NextResponse.json(
-    { status, error, code, message, path: request.nextUrl.pathname, timestamp: new Date().toISOString() },
+    {
+      status,
+      error,
+      code,
+      message,
+      path: request.nextUrl.pathname,
+      timestamp: new Date().toISOString(),
+    },
     { status },
   );
 }
 
 function notFound(request: NextRequest) {
   return apiError(request, 404, "Not Found", "NOT_FOUND", "Recurso no encontrado.");
-}
-
-function payloadTooLarge(request: NextRequest) {
-  return NextResponse.json(
-    {
-      status: 413,
-      error: "Payload Too Large",
-      code: "PAYLOAD_TOO_LARGE",
-      message: "El archivo supera el tamaño máximo permitido de 5 MB.",
-      path: request.nextUrl.pathname,
-      timestamp: new Date().toISOString(),
-    },
-    { status: 413 },
-  );
-}
-
-/**
- * Lee multipart con un tope estricto. Content-Length permite rechazar antes de leer, pero no se
- * considera autoridad: las solicitudes sin longitud o con una longitud falsa se cuentan por bytes.
- */
-async function readMultipartBody(request: NextRequest): Promise<Blob | undefined> {
-  const contentLength = request.headers.get("Content-Length");
-  if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > MAX_MULTIPART_BYTES) {
-    throw new MultipartTooLargeError();
-  }
-
-  const reader = request.body?.getReader();
-  if (!reader) return undefined;
-
-  const chunks: ArrayBuffer[] = [];
-  let totalBytes = 0;
-  let exceededLimit = false;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      totalBytes += value.byteLength;
-      if (totalBytes > MAX_MULTIPART_BYTES) {
-        exceededLimit = true;
-        break;
-      }
-      // Convierte un posible SharedArrayBuffer en un ArrayBuffer transferible que Blob acepta.
-      chunks.push(Uint8Array.from(value).buffer);
-    }
-    if (exceededLimit) {
-      await reader.cancel();
-      throw new MultipartTooLargeError();
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  return totalBytes > 0 ? new Blob(chunks) : undefined;
 }
 
 /**
@@ -128,29 +85,60 @@ async function proxy(request: NextRequest, context: RouteContext, method: Method
 
   if (method !== "GET" && incomingContentType) {
     if (mediaType === "application/json") {
-      const text = await request.text();
-      body = text || undefined;
-      contentType = body === undefined ? undefined : incomingContentType;
-    } else if (mediaType === "multipart/form-data" && /(?:^|;)\s*boundary=/i.test(incomingContentType)) {
-      try {
-        body = await readMultipartBody(request);
-      } catch (error) {
-        if (error instanceof MultipartTooLargeError) return payloadTooLarge(request);
-        throw error;
+      const result = await readBodyWithLimit(request, JSON_BODY_MAX_BYTES);
+      if (result.status === "too-large") {
+        return apiError(
+          request,
+          413,
+          "Payload Too Large",
+          "PAYLOAD_TOO_LARGE",
+          "El cuerpo JSON excede el limite permitido.",
+        );
       }
+      if (result.status === "read-error") {
+        return apiError(
+          request,
+          400,
+          "Bad Request",
+          "INVALID_REQUEST_BODY",
+          "No fue posible leer el cuerpo de la solicitud.",
+        );
+      }
+      body = result.body;
+      contentType = body === undefined ? undefined : incomingContentType;
+    } else if (
+      mediaType === "multipart/form-data" &&
+      /(?:^|;)\s*boundary=/i.test(incomingContentType)
+    ) {
+      const result = await readBodyWithLimit(request, MULTIPART_BODY_MAX_BYTES);
+      if (result.status === "too-large") {
+        return apiError(
+          request,
+          413,
+          "Payload Too Large",
+          "PAYLOAD_TOO_LARGE",
+          "El cuerpo multipart excede el limite permitido.",
+        );
+      }
+      if (result.status === "read-error") {
+        return apiError(
+          request,
+          400,
+          "Bad Request",
+          "INVALID_REQUEST_BODY",
+          "No fue posible leer el cuerpo de la solicitud.",
+        );
+      }
+      body = result.body;
       // El boundary del navegador se preserva literalmente; nunca se reconstruye FormData.
       contentType = body === undefined ? undefined : incomingContentType;
     } else {
-      return NextResponse.json(
-        {
-          status: 415,
-          error: "Unsupported Media Type",
-          code: "UNSUPPORTED_MEDIA_TYPE",
-          message: "Tipo de contenido no soportado.",
-          path: request.nextUrl.pathname,
-          timestamp: new Date().toISOString(),
-        },
-        { status: 415 },
+      return apiError(
+        request,
+        415,
+        "Unsupported Media Type",
+        "UNSUPPORTED_MEDIA_TYPE",
+        "Tipo de contenido no soportado.",
       );
     }
   }
@@ -166,14 +154,14 @@ async function proxy(request: NextRequest, context: RouteContext, method: Method
   if (response.status === 401 && token) cookieStore.delete(SESSION_COOKIE);
 
   // Solo status, cuerpo y Content-Type: nunca Set-Cookie ni otros headers del backend.
-  const payload = response.status === 204 ? null : await response.arrayBuffer();
   const responseContentType = response.headers.get("Content-Type");
-  return new NextResponse(payload && payload.byteLength > 0 ? payload : null, {
+  const responseBody =
+    response.status === 204 || response.status === 205 || response.status === 304
+      ? null
+      : response.body;
+  return new NextResponse(responseBody, {
     status: response.status,
-    headers:
-      payload && payload.byteLength > 0 && responseContentType
-        ? { "Content-Type": responseContentType }
-        : undefined,
+    headers: responseContentType ? { "Content-Type": responseContentType } : undefined,
   });
 }
 
