@@ -107,11 +107,13 @@ export function SaleTicket({
                   {item.discount > 0 ? (
                     <p>Descuento por unidad: {formatCurrency(item.discount)}</p>
                   ) : null}
-                  {item.requiresUnsupportedTraceability ? (
+                  {item.trackingSelections?.length ? (
+                    <p className="mt-1 font-semibold text-[var(--color-success)]">
+                      Selección física preparada: {item.baseQuantity ?? 0} unidades base.
+                    </p>
+                  ) : item.requiresUnsupportedTraceability ? (
                     <p className="mt-1 font-semibold text-[var(--color-warning)]">
-                      {item.trackingSelections?.length
-                        ? `Selección física preparada: ${item.baseQuantity ?? 0} unidades base. El cobro de esta línea aún no está habilitado.`
-                        : "Esta línea no puede confirmarse."}
+                      Esta línea no puede confirmarse.
                     </p>
                   ) : null}
                 </div>

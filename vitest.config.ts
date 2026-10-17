@@ -37,6 +37,7 @@ export default defineConfig({
         "src/modules/pos/application/mappers/PosCashShiftMapper.ts",
         "src/modules/pos/application/mappers/SaleReversalResultMapper.ts",
         "src/modules/pos/application/posTrackingSelection.ts",
+        "src/modules/pos/application/validateSaleTicketTraceability.ts",
         "src/modules/pos/application/posTraceabilitySelection.ts",
         "src/modules/pos/application/services/**/*.ts",
         "src/modules/pos/components/SaleReversalResult.tsx",

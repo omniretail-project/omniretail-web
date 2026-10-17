@@ -25,11 +25,13 @@ import type {
 import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import type { CurrencyCode } from "@/core/types/common.types";
 import type { OrderNotificationContact } from "@/core/types/orderNotification.types";
-import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { parseConfirmSaleCommand } from "@/infrastructure/api/repositories/posApi.schema";
 import { isStockLotEligible } from "@/infrastructure/mock/repositories/stockLotMutations";
+import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { CheckoutDto } from "@/modules/pos/application/dto/CheckoutDto";
 import type { SaleTicketDto, SaleTicketItemDto } from "@/modules/pos/application/dto/SaleTicketDto";
 import type { PosSaleConfirmationDto } from "@/modules/pos/application/dto/PosSaleConfirmationDto";
+import { validateSaleTicketTraceability } from "@/modules/pos/application/validateSaleTicketTraceability";
 import {
   getApprovedCardTerminalReference,
   validateCheckout,
@@ -191,13 +193,21 @@ export class ConfirmSaleService {
   ): Promise<PosSaleConfirmationDto> {
     const seenProductIds = new Set<string>();
     input.ticket.items.forEach((item) => validateTicketItem(item, seenProductIds));
+    validateSaleTicketTraceability(input.ticket.items);
+    if (
+      input.checkout.deliveryMethod !== DeliveryMethod.immediate &&
+      input.ticket.items.some((item) => (item.trackingSelections?.length ?? 0) > 0)
+    ) {
+      throw new Error(
+        "Los productos con selección física solo pueden venderse con entrega inmediata.",
+      );
+    }
     const payments = await this.validateAndBuildPayments(input);
     assertAllowedPaymentMethods(payments, allowedMethods);
     assertPaymentsMatchTotal(payments, toCents(input.ticket.total));
     const currentShift = await this.requireCurrentCashShift(input);
     const deferredOrder = this.createDeferredOrderInput(input);
-    input.beforeSend?.();
-    const result = await requirePosApi(this.repositories).confirmSale({
+    const command = parseConfirmSaleCommand({
       branchId: input.currentBranch.id,
       cashShiftId: currentShift.id,
       customerId: input.customerId,
@@ -220,6 +230,8 @@ export class ConfirmSaleService {
       sourceOrderId: null,
       deferredOrder,
     });
+    input.beforeSend?.();
+    const result = await requirePosApi(this.repositories).confirmSale(command);
     return {
       sale: {
         id: result.id,
@@ -578,9 +590,6 @@ function toSaleConfirmationDto(result: ConfirmSaleResult): PosSaleConfirmationDt
 function validateTicketItem(item: SaleTicketItemDto, seenProductIds: Set<string>) {
   if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
     throw new Error(`La cantidad de ${item.name} no es válida.`);
-  }
-  if (item.requiresUnsupportedTraceability) {
-    throw new Error(`${item.name} requiere trazabilidad no soportada en Terminal.`);
   }
   if (seenProductIds.has(item.productId)) {
     throw new Error(`El producto ${item.name} está duplicado en el ticket.`);

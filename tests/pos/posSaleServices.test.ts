@@ -10,8 +10,12 @@ import {
   SalesChannel,
   TransportMode,
 } from "@/core/enums";
+import type { PosApiTrackingSelection } from "@/core/repositories";
 import type { CheckoutDto } from "@/modules/pos/application/dto/CheckoutDto";
-import type { SaleTicketDto } from "@/modules/pos/application/dto/SaleTicketDto";
+import type {
+  SaleTicketDto,
+  SaleTicketItemDto,
+} from "@/modules/pos/application/dto/SaleTicketDto";
 import {
   mapApiReturnResult,
   mapApiVoidResult,
@@ -52,6 +56,10 @@ function ticket(overrides: Partial<SaleTicketDto> = {}): SaleTicketDto {
         saleUnitId: id(50),
         saleUnitName: "Unidad",
         tracksStock: true,
+        requiresTraceabilitySelection: false,
+        requiresLot: false,
+        requiresSerial: false,
+        requiresExpiration: false,
         requiresUnsupportedTraceability: false,
       },
     ],
@@ -61,6 +69,39 @@ function ticket(overrides: Partial<SaleTicketDto> = {}): SaleTicketDto {
     hasUnsupportedTraceability: false,
     ...overrides,
   };
+}
+
+function traceableTicket(
+  selectionOverrides: Partial<PosApiTrackingSelection> = {},
+  itemOverrides: Partial<SaleTicketItemDto> = {},
+): SaleTicketDto {
+  const productId = selectionOverrides.productId ?? ids.product;
+  return ticket({
+    items: [
+      {
+        ...ticket().items[0]!,
+        productId,
+        baseUnitId: id(50),
+        baseQuantity: 2,
+        saleUnitToBaseFactor: 1,
+        requiresTraceabilitySelection: true,
+        requiresLot: true,
+        requiresSerial: true,
+        requiresExpiration: true,
+        trackingSelections: [
+          {
+            productId,
+            locationId: ids.location,
+            lotId: ids.lot,
+            quantity: 2,
+            serialNumbers: ["SER-001", "SER-002"],
+            ...selectionOverrides,
+          },
+        ],
+        ...itemOverrides,
+      },
+    ],
+  });
 }
 
 function checkout(overrides: Partial<CheckoutDto> = {}): CheckoutDto {
@@ -144,7 +185,19 @@ describe("ConfirmSaleService en modo API", () => {
     await new ConfirmSaleService(repositories).execute(
       confirmInput({
         ticket: ticket({
-          items: [{ ...ticket().items[0]!, trackingSelections }],
+          items: [
+            {
+              ...ticket().items[0]!,
+              baseUnitId: id(50),
+              baseQuantity: 2,
+              saleUnitToBaseFactor: 1,
+              requiresTraceabilitySelection: true,
+              requiresLot: true,
+              requiresSerial: true,
+              requiresExpiration: true,
+              trackingSelections,
+            },
+          ],
         }),
       }),
     );
@@ -152,6 +205,133 @@ describe("ConfirmSaleService en modo API", () => {
     expect(posApi.confirmSale.mock.calls[0]?.[0].items[0]?.trackingSelections).toEqual(
       trackingSelections,
     );
+  });
+
+  it("confirma un ticket mixto sin agregar trazabilidad a la línea ordinaria", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    const traceable = {
+      ...ticket().items[0]!,
+      productId: id(90),
+      name: "Producto trazable",
+      quantity: 1,
+      subtotal: 50,
+      baseUnitId: id(50),
+      baseQuantity: 2,
+      saleUnitToBaseFactor: 2,
+      requiresTraceabilitySelection: true,
+      requiresLot: true,
+      requiresSerial: false,
+      requiresExpiration: true,
+      trackingSelections: [
+        { productId: id(90), locationId: ids.location, lotId: ids.lot, quantity: 2 },
+      ],
+    };
+
+    await new ConfirmSaleService(repositories).execute(
+      confirmInput({
+        ticket: ticket({
+          items: [{ ...ticket().items[0]!, quantity: 1, subtotal: 50 }, traceable],
+          subtotal: 100,
+          total: 100,
+        }),
+      }),
+    );
+
+    expect(posApi.confirmSale.mock.calls[0]?.[0].items).toEqual([
+      expect.objectContaining({ productId: ids.product, trackingSelections: [] }),
+      expect.objectContaining({
+        productId: id(90),
+        trackingSelections: traceable.trackingSelections,
+      }),
+    ]);
+  });
+
+  it("rechaza selecciones incompletas, duplicadas o ajenas antes del POST", async () => {
+    const invalidSelections = [
+      [],
+      [
+        {
+          productId: id(99),
+          locationId: ids.location,
+          lotId: ids.lot,
+          quantity: 2,
+          serialNumbers: ["SER-001", "SER-002"],
+        },
+      ],
+      [
+        {
+          productId: ids.product,
+          locationId: ids.location,
+          lotId: ids.lot,
+          quantity: 2,
+          serialNumbers: ["SER-001", "SER-001"],
+        },
+      ],
+    ];
+
+    for (const trackingSelections of invalidSelections) {
+      const { repositories, posApi } = createPosRepositories();
+      await expect(
+        new ConfirmSaleService(repositories).execute(
+          confirmInput({
+            ticket: ticket({
+              items: [
+                {
+                  ...ticket().items[0]!,
+                  baseUnitId: id(50),
+                  baseQuantity: 2,
+                  saleUnitToBaseFactor: 1,
+                  requiresTraceabilitySelection: true,
+                  requiresLot: true,
+                  requiresSerial: true,
+                  requiresExpiration: true,
+                  trackingSelections,
+                },
+              ],
+            }),
+          }),
+        ),
+      ).rejects.toThrow();
+      expect(posApi.confirmSale).not.toHaveBeenCalled();
+    }
+  });
+
+  it("bloquea una venta trazable diferida porque el Backend la resuelve en Picking", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    const traceableItem = {
+      ...ticket().items[0]!,
+      baseUnitId: id(50),
+      baseQuantity: 2,
+      saleUnitToBaseFactor: 1,
+      requiresTraceabilitySelection: true,
+      requiresLot: true,
+      requiresSerial: true,
+      requiresExpiration: true,
+      trackingSelections: [
+        {
+          productId: ids.product,
+          locationId: ids.location,
+          lotId: ids.lot,
+          quantity: 2,
+          serialNumbers: ["SER-001", "SER-002"],
+        },
+      ],
+    };
+
+    await expect(
+      new ConfirmSaleService(repositories).execute(
+        confirmInput({
+          ticket: ticket({ items: [traceableItem] }),
+          orderIdempotencyKey: "order-traceable",
+          checkout: checkout({
+            deliveryMethod: DeliveryMethod.store_pickup,
+            transportMode: TransportMode.customer,
+            storePickupContact: { recipientName: "Ana", recipientPhone: "55550101" },
+          }),
+        }),
+      ),
+    ).rejects.toThrow("solo pueden venderse con entrega inmediata");
+    expect(posApi.confirmSale).not.toHaveBeenCalled();
   });
 
   it("envía el pedido de retiro en tienda con el contacto recortado y la clave de pedido", async () => {
@@ -928,6 +1108,19 @@ describe("devoluciones y anulaciones en modo API", () => {
 });
 
 describe("ConfirmSaleService: beforeSend", () => {
+  const invalidUuidInputs: Array<[string, () => ReturnType<typeof confirmInput>]> = [
+    ["confirmationId", () => confirmInput({ confirmationId: "confirmation-invalida" })],
+    [
+      "productId",
+      () => confirmInput({ ticket: traceableTicket({ productId: "producto-invalido" }) }),
+    ],
+    [
+      "locationId",
+      () => confirmInput({ ticket: traceableTicket({ locationId: "ubicacion-invalida" }) }),
+    ],
+    ["lotId", () => confirmInput({ ticket: traceableTicket({ lotId: "lote-invalido" }) })],
+  ];
+
   it("se invoca justo antes del POST y, si lanza, la venta no se envía", async () => {
     const { repositories, posApi } = createPosRepositories();
     const beforeSend = vi.fn();
@@ -962,4 +1155,57 @@ describe("ConfirmSaleService: beforeSend", () => {
     expect(beforeSend).not.toHaveBeenCalled();
     expect(posApi.confirmSale).not.toHaveBeenCalled();
   });
+
+  it.each(invalidUuidInputs)(
+    "valida el UUID de %s antes de persistir o enviar",
+    async (_field, createInput) => {
+      const { repositories, posApi } = createPosRepositories();
+      const beforeSend = vi.fn();
+
+      await expect(
+        new ConfirmSaleService(repositories).execute({ ...createInput(), beforeSend }),
+      ).rejects.toThrow("La confirmacion de venta contiene datos invalidos.");
+
+      expect(beforeSend).not.toHaveBeenCalled();
+      expect(posApi.confirmSale).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rechaza una serie que excede el contrato antes de persistir o enviar", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    const beforeSend = vi.fn();
+
+    await expect(
+      new ConfirmSaleService(repositories).execute(
+        confirmInput({
+          beforeSend,
+          ticket: traceableTicket({ serialNumbers: ["S".repeat(101), "SER-002"] }),
+        }),
+      ),
+    ).rejects.toThrow("La confirmacion de venta contiene datos invalidos.");
+
+    expect(beforeSend).not.toHaveBeenCalled();
+    expect(posApi.confirmSale).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["serie vacia", { serialNumbers: ["", "SER-002"] }],
+    ["cantidad fisica invalida", { quantity: 0 }],
+    ["series duplicadas", { serialNumbers: ["SER-001", "SER-001"] }],
+  ] satisfies Array<[string, Partial<PosApiTrackingSelection>]>)(
+    "mantiene como local el error de %s",
+    async (_scenario, selectionOverrides) => {
+      const { repositories, posApi } = createPosRepositories();
+      const beforeSend = vi.fn();
+
+      await expect(
+        new ConfirmSaleService(repositories).execute(
+          confirmInput({ beforeSend, ticket: traceableTicket(selectionOverrides) }),
+        ),
+      ).rejects.toThrow();
+
+      expect(beforeSend).not.toHaveBeenCalled();
+      expect(posApi.confirmSale).not.toHaveBeenCalled();
+    },
+  );
 });

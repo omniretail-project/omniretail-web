@@ -1125,8 +1125,12 @@ export function usePosTerminal() {
       const value = { ...current.value, changeAmount: amounts.changeAmount };
       const result = validateCheckoutDto(value, ticket.total);
       const hasAllowedPaymentMode = availablePaymentModes.includes(value.paymentMode);
+      const hasDeferredTraceability =
+        value.deliveryMethod !== DeliveryMethod.immediate &&
+        ticket.items.some((item) => (item.trackingSelections?.length ?? 0) > 0);
       const hasOperationalBlock =
         ticket.hasUnsupportedTraceability ||
+        hasDeferredTraceability ||
         !hasOpenCashShift ||
         !hasPosSalesPermission ||
         !hasCurrentBranchAccess ||
@@ -1149,6 +1153,7 @@ export function usePosTerminal() {
               hasOpenCashShift,
               hasPosSalesPermission,
               hasUnsupportedTraceability: ticket.hasUnsupportedTraceability,
+              hasDeferredTraceability,
               hasAllowedPaymentMode,
               paymentMethodsError,
               paymentMethodsLoading,
@@ -1166,6 +1171,7 @@ export function usePosTerminal() {
     paymentMethodsError,
     paymentMethodsLoading,
     ticket.hasUnsupportedTraceability,
+    ticket.items,
     ticket.total,
   ]);
 
@@ -1175,6 +1181,8 @@ export function usePosTerminal() {
   );
   const checkoutHasOperationalBlock =
     ticket.hasUnsupportedTraceability ||
+    (checkoutState.value.deliveryMethod !== DeliveryMethod.immediate &&
+      ticket.items.some((item) => (item.trackingSelections?.length ?? 0) > 0)) ||
     !hasOpenCashShift ||
     !hasPosSalesPermission ||
     !hasCurrentBranchAccess ||
@@ -1191,6 +1199,9 @@ export function usePosTerminal() {
         hasOpenCashShift,
         hasPosSalesPermission,
         hasUnsupportedTraceability: ticket.hasUnsupportedTraceability,
+        hasDeferredTraceability:
+          checkoutState.value.deliveryMethod !== DeliveryMethod.immediate &&
+          ticket.items.some((item) => (item.trackingSelections?.length ?? 0) > 0),
         hasAllowedPaymentMode: availablePaymentModes.includes(checkoutState.value.paymentMode),
         paymentMethodsError,
         paymentMethodsLoading,
@@ -1467,12 +1478,15 @@ function createTicketItem(
     availableQuantity: product.availableQuantity,
     baseUnitId: product.baseUnitId,
     baseQuantity,
+    saleUnitToBaseFactor: product.saleUnitToBaseFactor,
     saleUnitId: product.saleUnitId,
     saleUnitName: product.saleUnitName,
     tracksStock: product.tracksStock,
-    // Fase 3A prepara la seleccion pero conserva cerrado el checkout hasta integrar el POST.
-    requiresUnsupportedTraceability:
-      product.requiresUnsupportedTraceability || trackingSelections.length > 0,
+    requiresTraceabilitySelection: product.requiresTraceabilitySelection,
+    requiresLot: product.requiresLot,
+    requiresSerial: product.requiresSerial,
+    requiresExpiration: product.requiresExpiration,
+    requiresUnsupportedTraceability: product.requiresUnsupportedTraceability,
     trackingSelections: trackingSelections.length > 0 ? trackingSelections : undefined,
     isKit: product.productType === "kit",
   };
@@ -1556,6 +1570,7 @@ function getCheckoutValidationMessage({
   hasOpenCashShift,
   hasPosSalesPermission,
   hasUnsupportedTraceability,
+  hasDeferredTraceability,
   hasAllowedPaymentMode,
   paymentMethodsError,
   paymentMethodsLoading,
@@ -1566,6 +1581,7 @@ function getCheckoutValidationMessage({
   hasOpenCashShift: boolean;
   hasPosSalesPermission: boolean;
   hasUnsupportedTraceability: boolean;
+  hasDeferredTraceability: boolean;
   hasAllowedPaymentMode: boolean;
   paymentMethodsError: string | null;
   paymentMethodsLoading: boolean;
@@ -1594,6 +1610,9 @@ function getCheckoutValidationMessage({
   }
   if (hasUnsupportedTraceability) {
     return "Cobro validado, pero la venta tiene productos con trazabilidad no soportada.";
+  }
+  if (hasDeferredTraceability) {
+    return "Cobro validado, pero los productos con selección física requieren entrega inmediata.";
   }
   return "Cobro validado. Pendiente de confirmación de venta.";
 }
