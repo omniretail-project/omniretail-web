@@ -45,6 +45,8 @@ export interface PosTraceabilityCombinationDto {
 export interface PosTraceabilityInventoryDto {
   branchId: string;
   productId: string;
+  /** Fecha comercial del tenant (YYYY-MM-DD), calculada con la misma zona usada por Backend. */
+  businessDate: string;
   locations: PosTraceabilityLocationDto[];
   lots: PosTraceabilityLotDto[];
   serials: PosTraceabilitySerialDto[];

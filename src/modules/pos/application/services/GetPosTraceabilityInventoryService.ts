@@ -20,6 +20,33 @@ import {
 
 export const POS_TRACEABILITY_STOCK_PERMISSION = "inventory.stock.read";
 export const POS_TRACEABILITY_LOCATIONS_PERMISSION = "catalog.locations.read";
+const DEFAULT_BUSINESS_TIME_ZONE = "America/Guatemala";
+
+function getBusinessDate(timeZone: string, now = new Date()): string {
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+  } catch {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: DEFAULT_BUSINESS_TIME_ZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+  }
+  const parts = Object.fromEntries(
+    formatter
+      .formatToParts(now)
+      .filter((part) => part.type === "year" || part.type === "month" || part.type === "day")
+      .map((part) => [part.type, part.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
 
 function normalizeOptionalId(value: string | undefined) {
   const normalized = value?.trim();
@@ -238,6 +265,7 @@ export class GetPosTraceabilityInventoryService {
     return {
       branchId,
       productId,
+      businessDate: getBusinessDate(session.tenant.timezone),
       locations,
       lots,
       serials,

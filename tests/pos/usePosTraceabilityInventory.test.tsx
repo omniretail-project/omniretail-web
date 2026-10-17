@@ -54,6 +54,7 @@ function inventory(productId = ids.product, branchId = ids.branch): PosTraceabil
   return {
     branchId,
     productId,
+    businessDate: "2026-10-16",
     locations: [],
     lots: [],
     serials: [],

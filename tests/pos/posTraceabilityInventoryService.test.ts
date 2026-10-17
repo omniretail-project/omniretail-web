@@ -138,6 +138,7 @@ describe("GetPosTraceabilityInventoryService", () => {
       }),
     ]);
     expect(result.serials.map((serial) => serial.serialNumber)).toEqual(["SER-001", "SER-002"]);
+    expect(result.businessDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(result.combinations).toEqual([
       expect.objectContaining({
         location: expect.objectContaining({ id: ids.location }),
