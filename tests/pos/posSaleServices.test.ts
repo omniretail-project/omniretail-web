@@ -678,19 +678,19 @@ describe("GetPosProductsService en modo API", () => {
     });
   });
 
-  it.each([0, -2])("rechaza un factor de conversion invalido: %s", async (factor) => {
+  it("aplica una conversion valida y conserva disponibilidad en la unidad de venta", async () => {
     const products = [
-      product(31, {
+      product(26, {
         saleUnitId: otherUnit,
         tracking: { stock: true, lot: true, serial: false, expiration: false },
       }),
-      product(32),
-      product(33),
-      product(34),
-      product(35),
+      product(27),
+      product(28),
+      product(29),
+      product(30),
     ];
     const { repositories } = catalogRepositories(products, [
-      { productId: null, fromUnitId: otherUnit, toUnitId: unitId, factor },
+      { productId: products[0]!.id, fromUnitId: otherUnit, toUnitId: unitId, factor: 2 },
     ]);
 
     const result = await new GetPosProductsService(repositories).execute({
@@ -699,9 +699,100 @@ describe("GetPosProductsService en modo API", () => {
     });
 
     expect(result.find((item) => item.productId === products[0]!.id)).toMatchObject({
-      availableQuantity: 0,
-      saleUnitToBaseFactor: 0,
+      availableQuantity: 2.5,
+      saleUnitToBaseFactor: 2,
       requiresTraceabilitySelection: true,
+      isAvailableForSale: true,
+    });
+  });
+
+  it.each([0, -2, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rechaza un factor de conversion invalido: %s",
+    async (factor) => {
+      const products = [
+        product(31, {
+          saleUnitId: otherUnit,
+          tracking: { stock: true, lot: true, serial: false, expiration: false },
+        }),
+        product(32),
+        product(33),
+        product(34),
+        product(35),
+      ];
+      const { repositories } = catalogRepositories(products, [
+        { productId: null, fromUnitId: otherUnit, toUnitId: unitId, factor },
+      ]);
+
+      const result = await new GetPosProductsService(repositories).execute({
+        tenantId: ids.tenant,
+        branchId: ids.branch,
+      });
+
+      expect(result.find((item) => item.productId === products[0]!.id)).toMatchObject({
+        availableQuantity: 0,
+        saleUnitToBaseFactor: 0,
+        requiresTraceabilitySelection: true,
+        isAvailableForSale: false,
+      });
+    },
+  );
+
+  it("conserva una conversion finita cuya cantidad se validara al preparar trazabilidad", async () => {
+    const products = [
+      product(36, {
+        saleUnitId: otherUnit,
+        tracking: { stock: true, lot: true, serial: false, expiration: false },
+      }),
+      product(37),
+      product(38),
+      product(39),
+      product(40),
+    ];
+    const { repositories } = catalogRepositories(products, [
+      { productId: products[0]!.id, fromUnitId: otherUnit, toUnitId: unitId, factor: 1.0001 },
+    ]);
+
+    const result = await new GetPosProductsService(repositories).execute({
+      tenantId: ids.tenant,
+      branchId: ids.branch,
+    });
+
+    expect(result.find((item) => item.productId === products[0]!.id)).toMatchObject({
+      saleUnitToBaseFactor: 1.0001,
+      requiresTraceabilitySelection: true,
+      isAvailableForSale: true,
+    });
+  });
+
+  it("mantiene bloqueadas configuraciones fisicas incompatibles", async () => {
+    const products = [
+      product(41, {
+        tracking: { stock: true, lot: false, serial: false, expiration: true },
+      }),
+      product(42, {
+        productType: ProductType.kit,
+        tracking: { stock: true, lot: true, serial: false, expiration: false },
+      }),
+      product(43),
+      product(44),
+      product(45),
+    ];
+    const { repositories } = catalogRepositories(products, []);
+
+    const result = await new GetPosProductsService(repositories).execute({
+      tenantId: ids.tenant,
+      branchId: ids.branch,
+    });
+    const byId = new Map(result.map((item) => [item.productId, item]));
+
+    expect(byId.get(products[0]!.id)).toMatchObject({
+      requiresTraceabilitySelection: false,
+      requiresUnsupportedTraceability: true,
+      isAvailableForSale: false,
+    });
+    expect(byId.get(products[1]!.id)).toMatchObject({
+      requiresTraceabilitySelection: false,
+      requiresUnsupportedTraceability: true,
       isAvailableForSale: false,
     });
   });

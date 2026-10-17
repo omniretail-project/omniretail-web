@@ -557,6 +557,48 @@ describe("usePosTerminal", () => {
       expect(result.current.ticketItems).toEqual([]);
       expect(result.current.ticketError).toContain("todavía no soporta");
     });
+
+    it("rechaza una cantidad base que supera la precision contractual", async () => {
+      const overPrecision = {
+        ...traceableProduct,
+        requiresSerial: false,
+        saleUnitToBaseFactor: 1.0001,
+      };
+      const { result } = await renderTerminalWithProducts([overPrecision]);
+
+      act(() => result.current.addProduct(overPrecision));
+
+      expect(result.current.traceabilityRequest).toBeNull();
+      expect(result.current.ticketItems).toEqual([]);
+      expect(result.current.ticketError).toContain("maximo tres decimales");
+    });
+
+    it("invalida el ticket al cambiar de tenant o usuario", async () => {
+      const view = await renderTerminalWithProducts([product]);
+      act(() => view.result.current.addProduct(product));
+      expect(view.result.current.ticketItems).toHaveLength(1);
+
+      const otherTenant = id(94);
+      mocks.session = {
+        ...mocks.session,
+        user: { id: ids.user, tenantId: otherTenant },
+      };
+      mocks.branch = {
+        currentBranch: { id: ids.branch, tenantId: otherTenant, name: "Centro" },
+        loading: false,
+      };
+      view.rerender();
+      await waitFor(() => expect(view.result.current.ticketItems).toEqual([]));
+
+      act(() => view.result.current.addProduct(product));
+      expect(view.result.current.ticketItems).toHaveLength(1);
+      mocks.session = {
+        ...mocks.session,
+        user: { id: id(95), tenantId: otherTenant },
+      };
+      view.rerender();
+      await waitFor(() => expect(view.result.current.ticketItems).toEqual([]));
+    });
   });
 
   it("ante un resultado incierto conserva el confirmationId para reintentar sin duplicar", async () => {
