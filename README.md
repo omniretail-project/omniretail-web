@@ -76,3 +76,11 @@ npm run build
 ## Flujo Git
 
 Trabajar en ramas `feature/*`, mantener PR pequenos y ejecutar `npm run lint` y `npm run build` antes de solicitar revision. Las zonas comunes (`core/`, `infrastructure/`, `shared/`, `config/`, `styles/`) requieren coordinacion cuando el cambio afecte a mas de un modulo.
+
+## AI-assisted development
+
+El proyecto admite herramientas de programacion asistida por IA sin repetir toda la arquitectura en cada prompt. El contexto neutral esta en `docs/AI_CONTEXT.md` y las decisiones funcionales en `docs/SOURCE_OF_TRUTH.md`.
+
+- Codex: leer `AGENTS.md`.
+- Claude Code: leer `CLAUDE.md`.
+- Playbooks portables: ver `.ai/skills/`.

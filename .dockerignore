@@ -1,0 +1,18 @@
+# Contexto de build minimo: sin dependencias locales, builds previos, secretos ni archivos sueltos.
+.git
+.github
+.ai
+.atl
+.next
+node_modules
+coverage
+docs
+reference
+*.md
+*.txt
+*.tsbuildinfo
+hort
+tatus
+.env
+.env.*
+!.env.example

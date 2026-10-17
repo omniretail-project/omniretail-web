@@ -19,3 +19,13 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  body {
+    background: white;
+  }
+}

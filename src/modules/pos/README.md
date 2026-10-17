@@ -2,20 +2,30 @@
 
 Responsable: Riquelme
 
-## Alcance
+## Territorio del modulo
 
-Este modulo contendra la terminal de punto de venta, flujos visuales de venta y operaciones de caja cuando sean definidos.
+Este modulo desarrolla su funcionalidad propia sin duplicar contratos compartidos.
 
-## No colocar aqui
+## Contracts que consume
 
-- Contratos compartidos de ventas, pagos, productos o clientes.
-- Acceso directo a LocalStorage desde paginas o componentes.
-- Componentes visuales globales.
-- Pasarelas de pago reales o integraciones externas.
+ProductRepository, InventoryRepository, SalesRepository, PaymentRepository, OrderRepository,
+CashShiftRepository, CashMovementRepository, SaleReversalRepository
 
-Los contratos compartidos de `core/` no deben duplicarse. LocalStorage no debe ser utilizado directamente por las pantallas; posteriormente se accedera mediante Repository / Infrastructure. `shared/` contiene componentes globales.
+## Reglas
 
-## Plantilla futura
+- No duplicar entities de `core/`.
+- No acceder directamente a LocalStorage.
+- Usar repositories desde `RepositoryProvider`.
+- Usar `shared/` para componentes globales.
+- Crear DTO, Mappers y Services propios dentro del modulo cuando empiece cada feature.
+- Los servicios de caja protegen permisos y branch scope; repositories protegen integridad y tenant.
+- `CashMovement` es la fuente canonica del efectivo esperado para evitar doble conteo de ventas.
+- Returns/anulaciones consumen el read model y los servicios de aplicacion POS; React no consulta
+  repositorios ni deriva elegibilidad, refund, cantidades retornables o estado final.
+- `pos.returns.read` autoriza explicitamente la consulta de ventas para preparar una devolucion;
+  `pos.returns.create` y `pos.sales.void` protegen las operaciones mutables correspondientes.
+
+## Estructura futura
 
 ```text
 pos/

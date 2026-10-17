@@ -1,45 +1,33 @@
 # Guia de contribucion
 
-1. `main` debe permanecer estable.
+Flujo oficial:
 
-2. Cada funcionalidad debe desarrollarse en una rama `feature/*`.
+```text
+main
+-> development
+-> feature/*
+-> development
+-> production
+```
 
-Ejemplos:
+- `main`: rama inicial base. No recibe PR durante el desarrollo.
+- `development`: rama de integracion.
+- `feature/*`: nace desde `development` y hace PR hacia `development`.
+- `production`: se crea o usa al final para despliegue.
 
-- `feature/auth-login`
-- `feature/storefront-home`
-- `feature/inventory-stock`
-- `feature/purchasing-orders`
-- `feature/pos-terminal`
-- `feature/logistics-picking`
+Antes de abrir PR:
 
-3. No utilizar ramas gigantes llamadas `maria`, `andy`, `jose`, `melbyn` o `riquelme`.
-
-4. Los PR deben ser pequenos y representar una funcionalidad concreta.
-
-5. Antes de crear PR:
-
-- actualizar la rama con `main`
+- actualizar la rama con `development`
 - ejecutar `npm run lint`
 - ejecutar `npm run build`
 - probar funcionalmente la feature
 
-6. Las carpetas `core/`, `infrastructure/`, `shared/`, `config/` y `styles/` son zonas comunes. No deben modificarse sin coordinacion cuando el cambio afecte a mas de un modulo.
+Zonas comunes:
 
-7. No duplicar entities.
+- `core/`
+- `infrastructure/`
+- `shared/`
+- `config/`
+- `styles/`
 
-Ejemplo incorrecto:
-
-- `modules/storefront/Product.ts`
-- `modules/inventory/Product.ts`
-- `modules/pos/Product.ts`
-
-Posteriormente existira un unico contrato oficial:
-
-- `core/entities/Product.ts`
-
-8. No acceder directamente a LocalStorage desde componentes o paginas. Posteriormente se accedera mediante Repository / Infrastructure.
-
-9. No crear componentes visuales globales dentro de modulos.
-
-10. Si un componente solamente pertenece a un modulo, debe permanecer dentro de ese modulo.
+Los cambios importantes en zonas comunes requieren coordinacion. No duplicar entities, no acceder directamente a LocalStorage desde modulos y no crear componentes visuales globales dentro de un modulo.

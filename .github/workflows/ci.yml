@@ -1,0 +1,176 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [development, main]
+  push:
+    branches: [development, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ===========================================================================
+  # Step 1: tipos, lint, contratos y build de produccion.
+  # ===========================================================================
+  build-test:
+    name: Tipos, lint, contratos y build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: "[Step 1] Validar TypeScript"
+        run: npx tsc --noEmit --incremental false
+
+      - name: "[Step 1] Lint"
+        run: npm run lint
+
+      - name: "[Step 1] Pruebas unitarias con cobertura"
+        run: npm test
+
+      - name: "[Step 1] Verificar contratos de aplicacion"
+        run: |
+          npx --yes --package=tsx tsx scripts/verify-storefront-public-config-contracts.ts
+          npx --yes --package=tsx tsx scripts/verify-customer-storefront-integration.ts
+          npx --yes --package=tsx tsx scripts/verify-ecommerce-payment-reservation.ts
+          npx --yes --package=tsx tsx scripts/verify-order-recipient-phone-shared.ts
+          npx --yes --package=tsx tsx scripts/verify-catalog-media.ts
+          npx --yes --package=tsx tsx scripts/verify-hardware-demo-catalog.ts
+          npx --yes --package=tsx tsx scripts/verify-tenant-isolation-foundation.ts
+          npx --yes --package=tsx tsx scripts/verify-storefront-second-purchase.ts
+          npx --yes --package=tsx tsx scripts/verify-api-logistics-dispatch.ts
+          npx --yes --package=tsx tsx scripts/verify-api-pos.ts
+
+      - name: "[Step 1] Build de produccion"
+        run: npm run build
+
+      - name: Revisar espacios en blanco del diff
+        if: github.event_name == 'pull_request'
+        run: git diff --check "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+
+  # ===========================================================================
+  # Step 2: analisis estatico con SonarQube Cloud.
+  # ===========================================================================
+  sonar:
+    name: SonarQube Cloud
+    needs: build-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+    steps:
+      - name: SonarQube Cloud omitido
+        if: env.SONAR_TOKEN == '' || vars.SONAR_ORGANIZATION == '' || vars.SONAR_PROJECT_KEY == ''
+        run: echo "::warning title=SonarQube::Faltan SONAR_TOKEN (secret) o SONAR_ORGANIZATION / SONAR_PROJECT_KEY (variables). Se omite el analisis."
+
+      - name: Checkout
+        if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # Sonar necesita el historial completo para detectar codigo nuevo.
+
+      - name: Configurar Node.js 22
+        if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
+        run: npm ci
+
+      - name: Generar cobertura LCOV para SonarQube Cloud
+        if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
+        run: npm test
+
+      - name: "[Step 2] Analisis con SonarQube Cloud"
+        if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        with:
+          args: >
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.qualitygate.wait=${{ vars.SONAR_QUALITY_GATE_BLOCKING == 'true' }}
+
+  # ===========================================================================
+  # Imagen Docker: valida que el Dockerfile construya, sin publicar nada (eso lo hace cd.yml en main).
+  # ===========================================================================
+  docker-build:
+    name: Docker build (sin push)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Construir imagen
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: false
+          tags: omniretail-web:ci
+          build-args: |
+            NEXT_PUBLIC_API_MODE=${{ vars.NEXT_PUBLIC_API_MODE || 'api' }}
+            NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+            NEXT_PUBLIC_STOREFRONT_SLUG=${{ vars.NEXT_PUBLIC_STOREFRONT_SLUG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ===========================================================================
+  # Step 3: revision del PR con IA (Gemini). Comenta en el PR; nunca bloquea.
+  # ===========================================================================
+  ai-review:
+    name: Revision con IA (Gemini)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: "[Step 3] Revisar diff con Gemini"
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PROJECT_CONTEXT: Frontend Next.js 16 (App Router) + React 19 + TypeScript, arquitectura modular por dominio, storefront multi-tenant y panel administrativo.
+        run: node .github/scripts/ai-review.mjs

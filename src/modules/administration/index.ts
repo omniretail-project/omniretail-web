@@ -1,0 +1,13 @@
+export { BusinessConfigPage } from "@/modules/administration/pages/BusinessConfigPage";
+export { CustomersPage } from "@/modules/administration/pages/CustomersPage";
+export { EcommerceOrdersPage } from "@/modules/administration/pages/EcommerceOrdersPage";
+export { CashShiftsPage } from "@/modules/administration/pages/CashShiftsPage";
+export { DashboardPage } from "@/modules/administration/pages/DashboardPage";
+export { ReportsPage } from "@/modules/administration/pages/ReportsPage";
+export { EcommerceConfigPage } from "@/modules/administration/pages/EcommerceConfigPage";
+export { BranchesPage } from "@/modules/administration/pages/BranchesPage";
+export { RolesPage } from "@/modules/administration/pages/RolesPage";
+export { EmployeesPage } from "@/modules/administration/pages/EmployeesPage";
+export { PlanSubscriptionPage } from "@/modules/administration/pages/PlanSubscriptionPage";
+export { BankAccountsPage } from "@/modules/administration/pages/BankAccountsPage";
+export { SuppliersPage } from "@/modules/administration/pages/SuppliersPage";

@@ -2,20 +2,23 @@
 
 Responsable: Melbyn
 
-## Alcance
+## Territorio del modulo
 
-Este modulo contendra recepcion de mercaderia, verificacion visual y entradas derivadas de compras cuando sean definidas.
+Este modulo desarrolla su funcionalidad propia sin duplicar contratos compartidos.
 
-## No colocar aqui
+## Contracts que consume
 
-- Contratos compartidos de recepciones, compras o inventario.
-- Acceso directo a LocalStorage desde paginas o componentes.
-- Componentes visuales globales.
-- Logica completa de compras, inventario o logistica fuera de su responsabilidad.
+ReceiptRepository, InventoryRepository, PurchaseOrderRepository
 
-Los contratos compartidos de `core/` no deben duplicarse. LocalStorage no debe ser utilizado directamente por las pantallas; posteriormente se accedera mediante Repository / Infrastructure. `shared/` contiene componentes globales.
+## Reglas
 
-## Plantilla futura
+- No duplicar entities de `core/`.
+- No acceder directamente a LocalStorage.
+- Usar repositories desde `RepositoryProvider`.
+- Usar `shared/` para componentes globales.
+- Crear DTO, Mappers y Services propios dentro del modulo cuando empiece cada feature.
+
+## Estructura futura
 
 ```text
 receiving/

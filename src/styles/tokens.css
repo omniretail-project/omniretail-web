@@ -1,4 +1,20 @@
 :root {
+  /* Public marketing palette. Keep operational tokens above untouched. */
+  --mkt-primary: #0e2340;
+  --mkt-primary-light: #24558a;
+  --mkt-accent: #2f67e7;
+  --mkt-accent-hover: #1d53cc;
+  --mkt-accent-light: #eff4ff;
+  --mkt-sidebar: #456f99;
+  --mkt-bg: #fff4d6;
+  --mkt-bg-alt: #fff8e8;
+  --mkt-surface: #ffffff;
+  --mkt-text: #10233f;
+  --mkt-muted: #667a99;
+  --mkt-border: #9db8ff;
+  --mkt-border-light: #d6e4ff;
+  --mkt-success: #059669;
+  --mkt-error: #dc2626;
   --color-app-background: #fff2d0;
   --color-surface: #ffffff;
   --color-structure: #3e668f;
@@ -8,7 +24,7 @@
   --color-title: #315d8c;
   --color-text: #23364d;
   --color-text-muted: #7488a6;
-  --color-border: #a8b8f2;
+  --color-border: #cbd5e1;
   --color-success: #22a06b;
   --color-warning: #e0a11b;
   --color-danger: #d64545;

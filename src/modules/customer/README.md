@@ -2,20 +2,23 @@
 
 Responsable: Andy
 
-## Alcance
+## Territorio del modulo
 
-Este modulo contendra funcionalidades orientadas a clientes, perfiles, historial visual y datos de cliente cuando los contratos sean definidos.
+Este modulo desarrolla su funcionalidad propia sin duplicar contratos compartidos.
 
-## No colocar aqui
+## Contracts que consume
 
-- Contratos compartidos de clientes.
-- Acceso directo a LocalStorage desde paginas o componentes.
-- Componentes visuales globales.
-- Funcionalidades de catalogo, inventario o POS.
+CustomerRepository, SavedPaymentMethodRepository, OrderRepository
 
-Los contratos compartidos de `core/` no deben duplicarse. LocalStorage no debe ser utilizado directamente por las pantallas; posteriormente se accedera mediante Repository / Infrastructure. `shared/` contiene componentes globales.
+## Reglas
 
-## Plantilla futura
+- No duplicar entities de `core/`.
+- No acceder directamente a LocalStorage.
+- Usar repositories desde `RepositoryProvider`.
+- Usar `shared/` para componentes globales.
+- Crear DTO, Mappers y Services propios dentro del modulo cuando empiece cada feature.
+
+## Estructura futura
 
 ```text
 customer/

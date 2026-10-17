@@ -2,20 +2,33 @@
 
 Responsable: Melbyn
 
-## Alcance
+## Territorio del modulo
 
-Este modulo contendra consultas y gestion visual de existencias, movimientos y niveles de stock cuando sean definidos.
+Este modulo desarrolla su funcionalidad propia sin duplicar contratos compartidos.
 
-## No colocar aqui
+## Contracts que consume
 
-- Contratos compartidos de producto, stock o movimiento.
-- Acceso directo a LocalStorage desde paginas o componentes.
-- Componentes visuales globales.
-- Logica de compras, recepcion, POS o logistica que pertenezca a sus modulos.
+InventoryRepository, InventoryTransferRequestRepository, ProductRepository
 
-Los contratos compartidos de `core/` no deben duplicarse. LocalStorage no debe ser utilizado directamente por las pantallas; posteriormente se accedera mediante Repository / Infrastructure. `shared/` contiene componentes globales.
+## Reglas
 
-## Plantilla futura
+- No duplicar entities de `core/`.
+- No acceder directamente a LocalStorage.
+- Usar repositories desde `RepositoryProvider`.
+- Usar `shared/` para componentes globales.
+- Crear DTO, Mappers y Services propios dentro del modulo cuando empiece cada feature.
+
+## Inventario y alertas
+
+Implementado en esta rama:
+
+- Panel `/inventario/alertas` con KPIs, busqueda, filtros por sucursal/categoria/estado, tabla de existencias y panel contextual.
+- Existencia y reservado desde `InventoryBalance`; disponible desde el calculo canonico que respeta reservas y trazabilidad. Minimo y reposicion provienen de `ProductInventorySettings`.
+- Caducidad desde `StockLot.expirationDate` con regla local de proximidad de 30 dias.
+- Ajustes de entrada, salida/merma y conteo exacto mediante `InventoryRepository.registerMovement`.
+- Solicitudes de traslado entre sucursales: crear y rechazar no reservan stock ni crean Picking; aceptar aprueba la solicitud y crea atómicamente Transfer, reserva y Picking. El stock físico sale únicamente en Dispatch.
+
+## Estructura futura
 
 ```text
 inventory/
