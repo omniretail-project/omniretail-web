@@ -44,6 +44,7 @@ export default defineConfig({
         "src/modules/pos/components/SaleTicket.tsx",
         "src/modules/pos/hooks/usePosCashShift.ts",
         "src/modules/pos/hooks/usePosReturns.ts",
+        "src/modules/pos/hooks/usePosTraceabilityInventory.ts",
         "src/modules/pos/hooks/posProductsCache.ts",
         "src/modules/pos/hooks/usePosTerminal.ts",
         "src/modules/pos/hooks/usePosSalesHistory.ts",
