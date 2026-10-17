@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
-import { callBackend, serviceUnavailable, SESSION_COOKIE } from "@/app/api/_lib/backend";
+import { callBackend, isSameOrigin, serviceUnavailable, SESSION_COOKIE } from "@/app/api/_lib/backend";
 import {
   JSON_BODY_MAX_BYTES,
   MULTIPART_BODY_MAX_BYTES,
@@ -71,7 +71,7 @@ async function proxy(request: NextRequest, context: RouteContext, method: Method
   const path = backendPath((await context.params).path, request.nextUrl.search);
   if (!path) return notFound(request);
 
-  if (method !== "GET" && request.headers.get("Origin") !== request.nextUrl.origin) {
+  if (method !== "GET" && !isSameOrigin(request)) {
     return apiError(request, 403, "Forbidden", "FORBIDDEN", "Origen no permitido.");
   }
 

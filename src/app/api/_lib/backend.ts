@@ -231,9 +231,31 @@ export function apiErrorResponse(
   );
 }
 
+/**
+ * Origen publico del frontend. Detras de Caddy, `request.url` es el que ve el contenedor
+ * (`http://...`), no el del navegador (`https://dominio`), asi que en produccion se fija con
+ * `APP_ORIGIN`. Sin la variable (desarrollo local, sin proxy) se usa el de la propia peticion.
+ * Un `APP_ORIGIN` mal formado devuelve null: el chequeo falla cerrado.
+ */
+function expectedOrigin(request: Request): string | null {
+  const configured = process.env.APP_ORIGIN;
+  if (!configured) return new URL(request.url).origin;
+  try {
+    return new URL(configured).origin;
+  } catch {
+    return null;
+  }
+}
+
+/** true si el `Origin` del navegador es el del propio frontend (CSRF en metodos que modifican). */
+export function isSameOrigin(request: Request): boolean {
+  const expected = expectedOrigin(request);
+  return expected !== null && request.headers.get("Origin") === expected;
+}
+
 /** Mismo chequeo que el puente `/api/backend` para los metodos que modifican. */
 export function sameOriginOrForbidden(request: Request): NextResponse | null {
-  if (request.headers.get("Origin") === new URL(request.url).origin) return null;
+  if (isSameOrigin(request)) return null;
   return apiErrorResponse(request, 403, "Forbidden", "FORBIDDEN", "Origen no permitido.");
 }
 
