@@ -13,8 +13,10 @@ import {
 import type { Role, User } from "@/core/entities";
 import { isBranchIdInUserScope } from "@/core/scopes/userBranchAccess";
 import type { DataEventPayloadFor } from "@/core/types/events.types";
+import { subscribeSessionExpired } from "@/infrastructure/api/sessionExpiredSignal";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
+import { sessionExpiredLoginHref } from "@/modules/auth/application/services/sessionExpiredLoginHref";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 
 interface CurrentSessionContextValue {
@@ -83,6 +85,7 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
   const currentUserRoleIdRef = useRef<string | undefined>(undefined);
   const currentUserIdRef = useRef<string | undefined>(undefined);
   const currentSessionIdRef = useRef<string | undefined>(undefined);
+  const expiringRef = useRef(false);
 
   const reload = useCallback(async () => {
     const version = ++reloadVersion.current;
@@ -151,6 +154,22 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
       }
     },
     [reload],
+  );
+
+  // 401 a mitad de uso (sesion vencida, revocada o cerrada en otra pestaña). Sin usuario resuelto
+  // no hay sesion que expirar (visitante de la tienda, pantalla de login): se ignora. Varias
+  // peticiones pueden fallar a la vez: solo la primera limpia y redirige. La navegacion es completa
+  // para ganarle a la redireccion de RequireSession y descartar en memoria los datos del usuario.
+  useEffect(
+    () =>
+      subscribeSessionExpired(() => {
+        if (!currentUserIdRef.current || expiringRef.current) return;
+        expiringRef.current = true;
+        const redirect = () => window.location.replace(sessionExpiredLoginHref(window.location.pathname));
+        // clearLocalSession no deberia lanzar; si lanza, se redirige igual y sin rechazo suelto.
+        void repositories.auth.clearLocalSession().then(redirect, redirect);
+      }),
+    [repositories],
   );
 
   useDataEvent("auth.changed", handleIdentityChanged);
