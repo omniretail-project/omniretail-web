@@ -28,6 +28,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Configurar Node.js 22
         uses: actions/setup-node@v7
@@ -63,9 +64,50 @@ jobs:
       - name: "[Step 1] Build de produccion"
         run: npm run build
 
-      - name: Revisar espacios en blanco del diff
+      - name: Revisar espacios en blanco del diff del PR
         if: github.event_name == 'pull_request'
-        run: git diff --check "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          sha_pattern='^[0-9a-f]{40}$'
+
+          if [[ ! "$BASE_SHA" =~ $sha_pattern || ! "$HEAD_SHA" =~ $sha_pattern ]]; then
+            echo "::error title=Diff::El evento no contiene SHA validos para el Pull Request."
+            exit 1
+          fi
+
+          git cat-file -e "${BASE_SHA}^{commit}"
+          git cat-file -e "${HEAD_SHA}^{commit}"
+          git diff --check "$BASE_SHA" "$HEAD_SHA" --
+
+      - name: Revisar espacios en blanco del diff del push
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          sha_pattern='^[0-9a-f]{40}$'
+          zero_sha='0000000000000000000000000000000000000000'
+
+          if [[ ! "$BEFORE_SHA" =~ $sha_pattern || ! "$HEAD_SHA" =~ $sha_pattern ]]; then
+            echo "::error title=Diff::El evento no contiene SHA validos para el push."
+            exit 1
+          fi
+
+          git cat-file -e "${HEAD_SHA}^{commit}"
+
+          if [[ "$BEFORE_SHA" == "$zero_sha" ]]; then
+            empty_tree="$(git hash-object -t tree -w /dev/null)"
+            git diff --check "$empty_tree" "$HEAD_SHA" --
+          else
+            git cat-file -e "${BEFORE_SHA}^{commit}"
+            git diff --check "$BEFORE_SHA" "$HEAD_SHA" --
+          fi
 
   # ===========================================================================
   # Step 2: analisis estatico con SonarQube Cloud.
@@ -73,45 +115,63 @@ jobs:
   sonar:
     name: SonarQube Cloud
     needs: build-test
+    # Los secretos no se entregan a forks. Esos PR quedan explicitamente fuera del
+    # analisis; en eventos internos la configuracion faltante falla el job.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
 
     steps:
-      - name: SonarQube Cloud omitido
-        if: env.SONAR_TOKEN == '' || vars.SONAR_ORGANIZATION == '' || vars.SONAR_PROJECT_KEY == ''
-        run: echo "::warning title=SonarQube::Faltan SONAR_TOKEN (secret) o SONAR_ORGANIZATION / SONAR_PROJECT_KEY (variables). Se omite el analisis."
+      - name: Validar configuracion obligatoria de SonarQube Cloud
+        shell: bash
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set -euo pipefail
+          missing=()
+
+          [[ -n "${SONAR_TOKEN:-}" ]] || missing+=("SONAR_TOKEN")
+          [[ -n "${SONAR_ORGANIZATION:-}" ]] || missing+=("SONAR_ORGANIZATION")
+          [[ -n "${SONAR_PROJECT_KEY:-}" ]] || missing+=("SONAR_PROJECT_KEY")
+
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error title=SonarQube::Falta configuracion obligatoria: ${missing[*]}"
+            exit 1
+          fi
 
       - name: Checkout
-        if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
         uses: actions/checkout@v7
         with:
           fetch-depth: 0 # Sonar necesita el historial completo para detectar codigo nuevo.
+          persist-credentials: false
 
       - name: Configurar Node.js 22
-        if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
         uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
 
       - name: Instalar dependencias
-        if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
         run: npm ci
 
       - name: Generar cobertura LCOV para SonarQube Cloud
-        if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
         run: npm test
 
       - name: "[Step 2] Analisis con SonarQube Cloud"
-        if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
         uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
-            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
-            -Dsonar.qualitygate.wait=${{ vars.SONAR_QUALITY_GATE_BLOCKING == 'true' }}
+            -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=600
 
   # ===========================================================================
   # Imagen Docker: valida que el Dockerfile construya, sin publicar nada (eso lo hace cd.yml en main).
@@ -124,6 +184,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Configurar Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -146,7 +208,10 @@ jobs:
   # ===========================================================================
   ai-review:
     name: Revision con IA (Gemini)
-    if: github.event_name == 'pull_request'
+    # Un fork no recibe secretos ni permisos de escritura sobre el PR.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -158,6 +223,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Configurar Node.js 22
         uses: actions/setup-node@v7
