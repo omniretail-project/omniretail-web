@@ -31,7 +31,7 @@ export interface PasswordPolicy {
 }
 
 const SHARED_PASSWORD_POLICY = {
-  MAX_LENGTH: 24,
+  MAX_LENGTH: 64, // igual que PasswordPolicy.MAX_LENGTH del backend
   ALLOW_UNICODE: true,
   ALLOW_SPACES: false,
   REQUIRE_UPPERCASE: true,
