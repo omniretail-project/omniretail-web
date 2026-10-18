@@ -376,6 +376,12 @@ export class MockInventoryTransferRepository
           entry.tenantId === current.tenantId && entry.branchId === current.destinationBranchId &&
           entry.status === LocationStatus.active);
         if (!location) throw new Error("Transfer receipt destination location is unavailable");
+        const assignedLocationId = db.productInventorySettings.find((entry) =>
+          entry.tenantId === current.tenantId && entry.branchId === current.destinationBranchId &&
+          entry.productId === transferItem.productId)?.defaultLocationId;
+        if (assignedLocationId !== location.id) {
+          throw new Error("Transfer receipt location must match the product operational location");
+        }
         const movements = outMovements.filter((entry) => entry.productId === transferItem.productId);
         if (movements.reduce((sum, entry) => sum + entry.quantity, 0) !==
           transferItem.dispatchedQuantity) {

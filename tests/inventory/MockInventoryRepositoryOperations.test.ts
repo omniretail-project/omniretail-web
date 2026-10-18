@@ -22,6 +22,7 @@ import {
   PLAIN_PRODUCT_ID,
   recordInventoryEvents,
   SERIAL_PRODUCT_ID,
+  UNASSIGNED_PRODUCT_ID,
 } from "./mockInventoryFixtures";
 
 const TRACEABILITY_ERROR = "Traceable stock must be mutated through a traceability-aware workflow.";
@@ -105,18 +106,84 @@ describe("MockInventoryRepository movements", () => {
     expect(productBalances(scenario, PLAIN_PRODUCT_ID)[0].quantity).toBe(9);
   });
 
-  it("keeps stock without location in its own balance", async () => {
+  it("never creates a legacy NULL balance automatically for an assigned product", async () => {
     const scenario = createInventoryScenario();
     await scenario.repository.registerMovement(movementInput(scenario));
 
-    await scenario.repository.registerMovement(
-      movementInput(scenario, { quantity: 2, toLocationId: undefined }),
-    );
+    await expect(
+      scenario.repository.registerMovement(
+        movementInput(scenario, { quantity: 2, toLocationId: undefined }),
+      ),
+    ).rejects.toMatchObject({ code: "INVENTORY_LOCATION_REQUIRED" });
 
     const balances = productBalances(scenario, PLAIN_PRODUCT_ID);
-    expect(balances).toHaveLength(2);
-    expect(balances.find((balance) => balance.locationId === undefined)?.quantity).toBe(2);
-    expect(balances.find((balance) => balance.locationId === LOCATION_A_ID)?.quantity).toBe(5);
+    expect(balances).toHaveLength(1);
+    expect(balances[0]).toMatchObject({ locationId: LOCATION_A_ID, quantity: 5 });
+  });
+
+  it("rejects movements outside the assigned operational location without side effects", async () => {
+    const scenario = createInventoryScenario();
+    const events = recordInventoryEvents(scenario.eventBus);
+
+    await expect(
+      scenario.repository.registerMovement(movementInput(scenario, { toLocationId: LOCATION_B_ID })),
+    ).rejects.toMatchObject({ code: "INVENTORY_LOCATION_MISMATCH" });
+
+    expect(productBalances(scenario, PLAIN_PRODUCT_ID)).toEqual([]);
+    expect(events).toEqual([]);
+  });
+
+  it("does not let a product without assignment operate stock", async () => {
+    const scenario = createInventoryScenario();
+
+    await expect(
+      scenario.repository.registerMovement(
+        movementInput(scenario, { productId: UNASSIGNED_PRODUCT_ID }),
+      ),
+    ).rejects.toMatchObject({ code: "INVENTORY_LOCATION_NOT_ASSIGNED" });
+    await expect(
+      scenario.repository.registerMovement(
+        movementInput(scenario, { productId: UNASSIGNED_PRODUCT_ID, toLocationId: undefined }),
+      ),
+    ).rejects.toMatchObject({ code: "INVENTORY_LOCATION_NOT_ASSIGNED" });
+
+    expect(productBalances(scenario, UNASSIGNED_PRODUCT_ID)).toEqual([]);
+  });
+
+  it("only operates an existing legacy NULL balance of a product without assignment", async () => {
+    const scenario = createInventoryScenario();
+    addBalance(scenario.store, {
+      id: "balance-legacy",
+      tenantId: scenario.tenantId,
+      branchId: scenario.branchId,
+      productId: UNASSIGNED_PRODUCT_ID,
+      quantity: 4,
+    });
+
+    const exit = await scenario.repository.registerMovement(
+      movementInput(scenario, {
+        productId: UNASSIGNED_PRODUCT_ID,
+        type: InventoryMovementType.out,
+        quantity: 1,
+        toLocationId: undefined,
+      }),
+    );
+
+    expect(exit).toMatchObject({ quantityBefore: 4, quantityAfter: 3 });
+    expect(productBalances(scenario, UNASSIGNED_PRODUCT_ID)).toHaveLength(1);
+  });
+
+  it("rejects an inactive assigned location", async () => {
+    const scenario = createInventoryScenario();
+    scenario.store.mutate((database) => {
+      const location = database.storageLocations.find((item) => item.id === LOCATION_A_ID);
+      if (location) location.status = LocationStatus.inactive;
+    });
+
+    await expect(scenario.repository.registerMovement(movementInput(scenario))).rejects.toMatchObject({
+      code: "INVENTORY_ASSIGNED_LOCATION_INACTIVE",
+    });
+    expect(productBalances(scenario, PLAIN_PRODUCT_ID)).toEqual([]);
   });
 
   it("only appends movements and leaves the previous history untouched", async () => {
@@ -579,7 +646,7 @@ describe("MockInventoryRepository settings validation", () => {
     return {
       tenantId: scenario.tenantId,
       branchId: scenario.branchId,
-      productId: PLAIN_PRODUCT_ID,
+      productId: UNASSIGNED_PRODUCT_ID,
       minStock: 1,
       ...overrides,
     };

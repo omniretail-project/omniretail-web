@@ -768,7 +768,7 @@ export class MockSaleConfirmationRepository
               : { ...balance, quantity: plannedQuantity };
           }),
           locations: db.storageLocations,
-          preferredLocationId: settings?.defaultLocationId,
+          assignedLocationId: settings?.defaultLocationId ?? null,
         });
       } catch {
         throw new Error(`Stock insuficiente para ${product.name}.`);

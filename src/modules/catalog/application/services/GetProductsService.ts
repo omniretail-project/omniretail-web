@@ -8,6 +8,7 @@ import {
   SalesChannel,
 } from "@/core/enums";
 import { getBranchAvailableQuantity } from "@/core/inventory/stockAvailability";
+import { createAssignedLocationResolver } from "@/shared/application/services/assignedLocationResolver";
 import { getProductMediaSource, selectPrimaryProductMedia } from "@/core/media/catalogImage";
 import { calculateEffectivePrice } from "@/core/pricing";
 import type { ProductPageParams } from "@/core/repositories/ProductRepository";
@@ -201,6 +202,9 @@ export class GetProductsService {
     const locations = params.branchId
       ? await this.repositories.inventory.getLocations(params.branchId)
       : [];
+    const resolveAssignedLocation = params.branchId
+      ? createAssignedLocationResolver(this.repositories.inventory, params.branchId)
+      : null;
     const mediaEntries = await Promise.all(
       products.map(
         async (product) =>
@@ -266,6 +270,8 @@ export class GetProductsService {
                   productId: product.id,
                   balances,
                   locations,
+                  // Solo cuenta la ubicacion operativa asignada de la sucursal consultada.
+                  assignedLocationId: (await resolveAssignedLocation?.(product.id)) ?? null,
                 })
               : undefined,
         };

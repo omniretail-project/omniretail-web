@@ -124,14 +124,7 @@ export class InventoryRegularizationService {
     return this.repositories.inventoryAdjustments.regularizeLocationBalance(input);
   }
 
-  private ensureApiMode() {
-    if (this.repositories.inventoryStockDataSource !== "api") {
-      throw new InventoryServiceError(REGULARIZATION_API_ONLY_MESSAGE);
-    }
-  }
-
   private async authorizeRead(branchId: string) {
-    this.ensureApiMode();
     const { tenantId, user, permissions } = await resolveInventoryContext(this.repositories);
     ensureCanReadStock(permissions);
     await ensureTenantCanUseInventory(this.repositories, tenantId);
@@ -141,7 +134,6 @@ export class InventoryRegularizationService {
 
   private async authorizeExecute(input: RegularizeLocationBalanceInput) {
     try {
-      this.ensureApiMode();
       const { tenantId, user, permissions } = await resolveInventoryContext(this.repositories);
       ensureCanCreateAdjustment(permissions);
       // La asignacion inicial modifica la configuracion del producto: exige ademas actualizarlo.

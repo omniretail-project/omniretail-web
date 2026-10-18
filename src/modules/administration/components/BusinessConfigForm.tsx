@@ -82,12 +82,6 @@ const capabilityOptions: Array<{
     requiresInventory: true,
   },
   {
-    key: "supportsMultipleLocations",
-    label: "Múltiples ubicaciones",
-    description: "Distribuye existencias entre sucursales, bodegas o ubicaciones internas.",
-    requiresInventory: true,
-  },
-  {
     key: "supportsUnitsAndPackaging",
     label: "Unidades y empaques",
     description: "Permite vender o comprar productos en distintas presentaciones.",

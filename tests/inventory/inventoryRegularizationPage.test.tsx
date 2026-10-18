@@ -551,11 +551,10 @@ describe("InventoryRegularizationPage states", () => {
     expect(third.container.textContent).not.toContain("NullPointerException");
   });
 
-  it("explains the local-mode limitation without showing the workflow", () => {
+  it("does not gate the workflow by data source: local mode uses the same screen", () => {
     mocks.state = baseState({ apiMode: false });
     render(<InventoryRegularizationPage />);
 
-    expect(screen.getByText("Esta función no está disponible en modo local")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Regularizar ubicación" })).toBeNull();
+    expect(screen.queryByText("Esta función no está disponible en modo local")).toBeNull();
   });
 });

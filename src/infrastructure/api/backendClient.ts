@@ -27,6 +27,11 @@
  * Errores: `BackendRequestError` con `status`, `code` y `fields` del ApiError del backend.
  */
 
+import {
+  isOperationalLocationErrorCode,
+  OPERATIONAL_LOCATION_ERROR_MESSAGES,
+} from "@/core/inventory/operationalLocationErrors";
+
 const GENERIC_ERROR_MESSAGE = "No fue posible completar la solicitud. Intenta más tarde.";
 
 export type BackendQuery = Record<string, string | number | boolean | undefined>;
@@ -48,6 +53,8 @@ export class BackendRequestError extends Error {
     readonly status: number,
     readonly code?: string,
     readonly fields?: Record<string, string>,
+    /** Mensaje original del backend cuando "message" es una traduccion para el usuario. */
+    readonly backendMessage?: string,
   ) {
     super(message);
     this.name = "BackendRequestError";
@@ -67,12 +74,25 @@ function toQueryString(query: BackendQuery | undefined): string {
 async function toRequestError(response: Response): Promise<BackendRequestError> {
   try {
     const body = (await response.json()) as { message?: unknown; code?: unknown; fields?: unknown };
-    return new BackendRequestError(
-      typeof body.message === "string" && body.message ? body.message : GENERIC_ERROR_MESSAGE,
-      response.status,
-      typeof body.code === "string" ? body.code : undefined,
-      body.fields && typeof body.fields === "object" ? (body.fields as Record<string, string>) : undefined,
-    );
+    const serverMessage =
+      typeof body.message === "string" && body.message ? body.message : GENERIC_ERROR_MESSAGE;
+    const code = typeof body.code === "string" ? body.code : undefined;
+    const fields =
+      body.fields && typeof body.fields === "object"
+        ? (body.fields as Record<string, string>)
+        : undefined;
+    // Politica de ubicacion operativa: mensaje traducido para ajustes, recepcion, POS, traslados y
+    // storefront. El status, el codigo y el texto original del backend se conservan.
+    if (isOperationalLocationErrorCode(code)) {
+      return new BackendRequestError(
+        OPERATIONAL_LOCATION_ERROR_MESSAGES[code],
+        response.status,
+        code,
+        fields,
+        serverMessage,
+      );
+    }
+    return new BackendRequestError(serverMessage, response.status, code, fields);
   } catch {
     return new BackendRequestError(GENERIC_ERROR_MESSAGE, response.status);
   }

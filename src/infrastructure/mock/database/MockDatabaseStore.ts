@@ -5,7 +5,6 @@ import {
   InventoryTransferReason,
   InventoryTransferStatus,
   InventoryTransferRequestStatus,
-  LocationStatus,
   PaymentMethod,
   PlanStatus,
   PromotionType,
@@ -104,6 +103,8 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
     database.businessCapabilities ?? base.businessCapabilities
   ).map((config) => ({
     ...config,
+    // Contrato: ubicaciones operativas derivan del control de inventario (true/true o false/false).
+    supportsMultipleLocations: config.supportsInventory,
     allowedPosPaymentMethods: config.allowedPosPaymentMethods ??
       normalized.ecommerceConfigs
         .find((item) => item.tenantId === config.tenantId)
@@ -174,6 +175,7 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   normalized.inventoryReservations = database.inventoryReservations ?? [];
   normalized.inventoryReservationConsumeOperations =
     database.inventoryReservationConsumeOperations ?? [];
+  normalized.inventoryLocationRegularizations = database.inventoryLocationRegularizations ?? [];
   normalized.pickingAssignmentReleases = database.pickingAssignmentReleases ?? [];
   normalized.pickingIncidents = database.pickingIncidents ?? [];
   normalized.packings = database.packings ?? [];
@@ -616,14 +618,6 @@ function normalizePersistedProductInventorySettings(
   const product = normalized.products.find((item) => item.id === settings.productId);
   const branch = normalized.branches.find((item) => item.id === settings.branchId);
   const createdAt = settings.createdAt ?? new Date().toISOString();
-  const defaultLocation = settings.defaultLocationId
-    ? normalized.storageLocations.find((item) => item.id === settings.defaultLocationId)
-    : null;
-  const validDefaultLocation =
-    defaultLocation &&
-    defaultLocation.tenantId === (settings.tenantId ?? product?.tenantId) &&
-    defaultLocation.branchId === settings.branchId &&
-    defaultLocation.status === LocationStatus.active;
 
   return {
     id:
@@ -639,7 +633,10 @@ function normalizePersistedProductInventorySettings(
     minStock: Math.max(0, settings.minStock ?? 0),
     reorderPoint:
       typeof settings.reorderPoint === "number" ? Math.max(0, settings.reorderPoint) : undefined,
-    defaultLocationId: validDefaultLocation ? settings.defaultLocationId : undefined,
+    // La asignacion persistida se conserva aunque hoy sea invalida (ubicacion inactiva, archivada
+    // o de otra sucursal): es evidencia que se debe corregir explicitamente, nunca se borra aqui.
+    // Las operaciones de stock la rechazan mediante la politica de ubicacion operativa.
+    defaultLocationId: settings.defaultLocationId ?? undefined,
     createdAt,
     updatedAt: settings.updatedAt ?? createdAt,
   };
