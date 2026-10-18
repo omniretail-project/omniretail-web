@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { SESSION_POLICY } from "@/config/session-policy";
 import { UserType } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { employeeActivityStore } from "@/infrastructure/storage/employeeActivityStore";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 
-export const EMPLOYEE_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+/** Sale de SESSION_POLICY (fuente canonica, mismo valor que el backend): no repetir el numero. */
+export const EMPLOYEE_INACTIVITY_TIMEOUT_MS = SESSION_POLICY.employee.inactivityExpirationMinutes * 60 * 1000;
 
 /** La actividad se guarda como maximo cada 10 s: scroll/pointerdown se disparan sin parar. */
 export const EMPLOYEE_ACTIVITY_WRITE_INTERVAL_MS = 10 * 1000;
@@ -27,12 +29,12 @@ export function storedActivityForSession(
 }
 
 /**
- * Protege el área operativa cerrando la sesión tras 30 minutos sin actividad.
+ * Protege el área operativa cerrando la sesión tras el tiempo de inactividad de SESSION_POLICY.
  * Solo se monta dentro de las rutas privadas de empleados y administradores.
  *
  * La ultima actividad se comparte entre pestañas (`employeeActivityStore`): la actividad en una
- * cuenta para todas, y al montar o volver a la pestaña se cierra la sesion si pasaron mas de 30
- * minutos aunque la pestaña haya estado cerrada. Cerrar por inactividad borra la marca, y las
+ * cuenta para todas, y al montar o volver a la pestaña se cierra la sesion si se supero ese tiempo
+ * aunque la pestaña haya estado cerrada. Cerrar por inactividad borra la marca, y las
  * demas pestañas cierran tambien.
  */
 export function EmployeeInactivityTimeout() {

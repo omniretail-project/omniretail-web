@@ -24,7 +24,7 @@ export const SESSION_POLICY = {
   },
   employee: {
     allowRememberMe: false, // employees never get "Recordarme", per 4.13
-    inactivityExpirationMinutes: 30,
+    inactivityExpirationMinutes: 60, // igual que el backend; evita cortar la sesion durante una demo en vivo
     maxShiftDurationHours: 8,
   },
 } as const;

@@ -40,6 +40,7 @@ import {
 
 const MINUTE = 60 * 1000;
 const NOW = new Date("2026-10-18T15:00:00.000Z").getTime();
+const TIMEOUT = EMPLOYEE_INACTIVITY_TIMEOUT_MS;
 
 function storedStamp(): string | null {
   return window.localStorage.getItem(EMPLOYEE_LAST_ACTIVITY_STORAGE_KEY);
@@ -75,7 +76,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   vi.setSystemTime(NOW);
   window.localStorage.clear();
-  state.sessionCreatedAt = new Date(NOW - 2 * 60 * MINUTE).toISOString();
+  state.sessionCreatedAt = new Date(NOW - 3 * TIMEOUT).toISOString();
   state.getSession.mockReset();
   state.getSession.mockImplementation(async () => ({ id: "session-1", createdAt: state.sessionCreatedAt }));
   state.getCurrentSessionId.mockReset();
@@ -94,8 +95,8 @@ afterEach(() => {
 });
 
 describe("EmployeeInactivityTimeout con la marca compartida entre pestañas", () => {
-  it("al montar cierra la sesion si la ultima actividad guardada tiene mas de 30 minutos", async () => {
-    window.localStorage.setItem(EMPLOYEE_LAST_ACTIVITY_STORAGE_KEY, String(NOW - 31 * MINUTE));
+  it("al montar cierra la sesion si la ultima actividad guardada supera el tiempo de inactividad", async () => {
+    window.localStorage.setItem(EMPLOYEE_LAST_ACTIVITY_STORAGE_KEY, String(NOW - TIMEOUT - MINUTE));
 
     await mount();
 
@@ -103,11 +104,11 @@ describe("EmployeeInactivityTimeout con la marca compartida entre pestañas", ()
     expect(storedStamp()).toBeNull();
   });
 
-  it("con actividad reciente guardada solo cierra cuando se cumplen los 30 minutos desde esa marca", async () => {
+  it("con actividad reciente guardada solo cierra cuando se cumple el tiempo de inactividad desde esa marca", async () => {
     window.localStorage.setItem(EMPLOYEE_LAST_ACTIVITY_STORAGE_KEY, String(NOW - 5 * MINUTE));
 
     await mount();
-    await advance(25 * MINUTE - 1000);
+    await advance(TIMEOUT - 5 * MINUTE - 1000);
     expect(state.logout).not.toHaveBeenCalled();
 
     await advance(1000);
@@ -116,7 +117,7 @@ describe("EmployeeInactivityTimeout con la marca compartida entre pestañas", ()
 
   it("ignora una marca anterior al inicio de la sesion y empieza a contar desde ahora", async () => {
     state.sessionCreatedAt = new Date(NOW - MINUTE).toISOString();
-    window.localStorage.setItem(EMPLOYEE_LAST_ACTIVITY_STORAGE_KEY, String(NOW - 3 * 60 * MINUTE));
+    window.localStorage.setItem(EMPLOYEE_LAST_ACTIVITY_STORAGE_KEY, String(NOW - 3 * TIMEOUT));
 
     await mount();
 
@@ -126,10 +127,11 @@ describe("EmployeeInactivityTimeout con la marca compartida entre pestañas", ()
 
   it("la actividad en otra pestaña aplaza el cierre", async () => {
     await mount();
-    await advance(20 * MINUTE);
+    await advance(TIMEOUT - 10 * MINUTE);
 
     otherTabWrites(String(Date.now()));
-    await advance(20 * MINUTE);
+    // Sin esa actividad la sesion ya se habria cerrado aqui.
+    await advance(TIMEOUT - 10 * MINUTE);
     expect(state.logout).not.toHaveBeenCalled();
 
     await advance(10 * MINUTE);
@@ -157,7 +159,7 @@ describe("EmployeeInactivityTimeout con la marca compartida entre pestañas", ()
   it("al volver a la pestaña cierra la sesion si la marca compartida ya vencio", async () => {
     await mount();
     // Simula una pestaña congelada en segundo plano: el reloj avanza pero su temporizador no corre.
-    vi.setSystemTime(NOW + 31 * MINUTE);
+    vi.setSystemTime(NOW + TIMEOUT + MINUTE);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
 
     act(() => {
@@ -189,12 +191,12 @@ describe("EmployeeInactivityTimeout con la marca compartida entre pestañas", ()
           finishSession = () => resolve({ id: "session-1", createdAt: state.sessionCreatedAt });
         }),
     );
-    window.localStorage.setItem(EMPLOYEE_LAST_ACTIVITY_STORAGE_KEY, String(NOW - 31 * MINUTE));
+    window.localStorage.setItem(EMPLOYEE_LAST_ACTIVITY_STORAGE_KEY, String(NOW - TIMEOUT - MINUTE));
 
     render(<EmployeeInactivityTimeout />);
     await advance(EMPLOYEE_ACTIVITY_WRITE_INTERVAL_MS);
     window.dispatchEvent(new Event("pointerdown"));
-    expect(storedStamp()).toBe(String(NOW - 31 * MINUTE));
+    expect(storedStamp()).toBe(String(NOW - TIMEOUT - MINUTE));
 
     finishSession();
     await advance(0);
@@ -213,11 +215,17 @@ describe("EmployeeInactivityTimeout con la marca compartida entre pestañas", ()
     });
 
     await mount();
-    await advance(EMPLOYEE_INACTIVITY_TIMEOUT_MS - 1000);
+    await advance(TIMEOUT - 1000);
     expect(state.logout).not.toHaveBeenCalled();
 
     await advance(1000);
     expectSessionClosed();
+  });
+});
+
+describe("EMPLOYEE_INACTIVITY_TIMEOUT_MS", () => {
+  it("es de 60 minutos, igual que el backend", () => {
+    expect(TIMEOUT).toBe(60 * MINUTE);
   });
 });
 
