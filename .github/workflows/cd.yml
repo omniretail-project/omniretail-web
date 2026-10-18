@@ -213,6 +213,6 @@ jobs:
             export DOCKER_CONFIG
             trap 'rm -rf "$DOCKER_CONFIG"' EXIT
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            # Valida la vigencia con el lock tomado, fija la etiqueta, espera el healthcheck y hace rollback si falla.
+            # Con el lock unico del VPS (compartido con el CD del backend): valida la vigencia, descarga, fija la
+            # etiqueta, espera el healthcheck, hace rollback si falla y limpia imagenes. Un commit obsoleto no toca nada.
             GITHUB_API_TOKEN="$GHCR_TOKEN" sh scripts/deploy-service.sh web "$DEPLOY_TAG"
-            docker image prune -f
