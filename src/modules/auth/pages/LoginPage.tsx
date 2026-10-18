@@ -2,9 +2,14 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { DEMO_QUICK_LOGINS, getMarketingSiteUrl, isPublicDemo } from "@/config/demo-mode";
 import { getGoogleClientId } from "@/config/google-auth";
 import { UserType } from "@/core/enums";
+import {
+  SESSION_EXPIRED_PARAM,
+  SESSION_EXPIRED_VALUE,
+} from "@/modules/auth/application/services/sessionExpiredLoginHref";
 import { GoogleSignInButton } from "@/modules/auth/components/GoogleSignInButton";
 import { ResendVerificationPrompt } from "@/modules/auth/components/ResendVerificationPrompt";
 import { useLogin } from "@/modules/auth/hooks/useLogin";
@@ -118,6 +123,9 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
     cancelMfaChallenge,
   } = useLogin(expectedUserType);
   const { showToast } = useToast();
+  const searchParams = useSearchParams();
+  // Llega desde CurrentSessionProvider cuando el backend rechazo la sesion a mitad de uso.
+  const sessionExpired = searchParams?.get(SESSION_EXPIRED_PARAM) === SESSION_EXPIRED_VALUE;
   const routes = useOptionalStorefrontRoutes();
   const demo = isPublicDemo();
   // Accesos rapidos solo en la demo y solo para el login de personal.
@@ -248,6 +256,8 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
             />
           ) : formError ? (
             <InlineAlert title={formError} tone="danger" />
+          ) : sessionExpired ? (
+            <InlineAlert title="Tu sesión expiró. Inicia sesión de nuevo." tone="warning" />
           ) : null}
 
           <FormField error={fieldErrors.email} id="login-email" label="Correo electrónico">
