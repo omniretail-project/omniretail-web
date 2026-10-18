@@ -191,6 +191,17 @@ export default defineConfig({
         "src/modules/auth/components/ResendVerificationPrompt.tsx",
         "src/modules/auth/hooks/useResendVerification.ts",
         "src/modules/auth/pages/RegisterPage.tsx",
+        // Sesion expirada a mitad de uso e inactividad entre pestañas.
+        "src/infrastructure/api/backendClient.ts",
+        "src/infrastructure/api/sessionExpiredSignal.ts",
+        "src/infrastructure/storage/employeeActivityStore.ts",
+        "src/modules/auth/application/services/sessionExpiredLoginHref.ts",
+        "src/modules/auth/components/EmployeeInactivityTimeout.tsx",
+        "src/modules/auth/providers/CurrentSessionProvider.tsx",
+        // Guard de sesion en el servidor, 404 y heartbeat de sesion.
+        "src/proxy.ts",
+        "src/app/not-found.tsx",
+        "src/infrastructure/api/sessionHeartbeat.ts",
       ],
     },
   },

@@ -26,6 +26,7 @@
  * ```
  * Errores: `BackendRequestError` con `status`, `code` y `fields` del ApiError del backend.
  */
+import { notifySessionExpired } from "@/infrastructure/api/sessionExpiredSignal";
 
 import {
   isOperationalLocationErrorCode,
@@ -128,6 +129,9 @@ export async function backendFetch<T>(path: string, init: BackendFetchInit = {})
     throw new BackendRequestError(GENERIC_ERROR_MESSAGE, 0);
   }
 
+  // 401: la sesion ya no es valida (el puente ya borro la cookie). CurrentSessionProvider cierra la
+  // sesion local y redirige; el caller igual recibe el error.
+  if (response.status === 401) notifySessionExpired();
   if (!response.ok) throw await toRequestError(response);
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
