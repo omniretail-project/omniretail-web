@@ -235,22 +235,35 @@ export function apiErrorResponse(
  * Origen publico del frontend. Detras de Caddy, `request.url` es el que ve el contenedor
  * (`http://...`), no el del navegador (`https://dominio`), asi que en produccion se fija con
  * `APP_ORIGIN`. Sin la variable (desarrollo local, sin proxy) se usa el de la propia peticion.
- * Un `APP_ORIGIN` mal formado devuelve null: el chequeo falla cerrado.
+ * Solo se aceptan origenes http/https: un valor mal formado, con otro esquema (`file:`, `data:`,
+ * `javascript:`...) u opaco (`"null"`) devuelve null y el chequeo falla cerrado.
  */
 function expectedOrigin(request: Request): string | null {
-  const configured = process.env.APP_ORIGIN;
-  if (!configured) return new URL(request.url).origin;
+  return httpOrigin(process.env.APP_ORIGIN || request.url);
+}
+
+const ALLOWED_ORIGIN_PROTOCOLS = new Set(["http:", "https:"]);
+
+/** Origen de una URL http/https, o null si no es valida, usa otro esquema o es opaca. */
+function httpOrigin(value: string): string | null {
+  let url: URL;
   try {
-    return new URL(configured).origin;
+    url = new URL(value);
   } catch {
     return null;
   }
+  if (!ALLOWED_ORIGIN_PROTOCOLS.has(url.protocol) || url.origin === "null") return null;
+  return url.origin;
 }
 
-/** true si el `Origin` del navegador es el del propio frontend (CSRF en metodos que modifican). */
+/**
+ * true si el `Origin` del navegador es el del propio frontend (CSRF en metodos que modifican). Un
+ * `Origin: null` (iframe con sandbox, `file:`, redireccion entre origenes) nunca se acepta.
+ */
 export function isSameOrigin(request: Request): boolean {
   const expected = expectedOrigin(request);
-  return expected !== null && request.headers.get("Origin") === expected;
+  const origin = request.headers.get("Origin");
+  return expected !== null && origin !== null && origin !== "null" && origin === expected;
 }
 
 /** Mismo chequeo que el puente `/api/backend` para los metodos que modifican. */
