@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  getDemoContractUrl,
+  getDemoInformationRequestUrl,
   getMarketingSiteUrl,
   getPublicDemoUrl,
   isPublicDemo,
@@ -35,12 +35,12 @@ describe("demo urls", () => {
     vi.stubEnv("NEXT_PUBLIC_MARKETING_URL", "https://marjym.example/");
     vi.stubEnv("NEXT_PUBLIC_DEMO_URL", "");
     expect(getMarketingSiteUrl()).toBe("https://marjym.example");
-    expect(getDemoContractUrl()).toBe("https://marjym.example/contratar");
+    expect(getDemoInformationRequestUrl()).toBe("https://marjym.example/solicitar-informacion");
     expect(getPublicDemoUrl()).toBe("");
   });
 
-  it("has no contract url without marketing url", () => {
+  it("has no information request url without marketing url", () => {
     vi.stubEnv("NEXT_PUBLIC_MARKETING_URL", "");
-    expect(getDemoContractUrl()).toBe("");
+    expect(getDemoInformationRequestUrl()).toBe("");
   });
 });

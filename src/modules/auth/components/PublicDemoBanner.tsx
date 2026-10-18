@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { getDemoContractUrl, getSalesContactUrl, isPublicDemo } from "@/config/demo-mode";
+import { getDemoInformationRequestUrl, getSalesContactUrl, isPublicDemo } from "@/config/demo-mode";
 import { useDemoReset } from "@/infrastructure/providers/useDemoReset";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { DemoBanner } from "@/shared/components/DemoBanner";
@@ -32,7 +32,7 @@ export function PublicDemoBanner() {
     <>
       <DemoBanner
         contactUrl={getSalesContactUrl() || undefined}
-        contractUrl={getDemoContractUrl() || undefined}
+        informationRequestUrl={getDemoInformationRequestUrl() || undefined}
         onReset={() => setConfirming(true)}
         resetting={status === "resetting" || status === "waiting-other-tabs"}
       />

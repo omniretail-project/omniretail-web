@@ -209,9 +209,25 @@ async function verifyIncidentTypeDefaultsAndNormalization() {
   const customerSelfServicePermissions = permissionsConfig
     .filter((permission) => permission.module === "customer" || permission.module === "storefront")
     .map((permission) => permission.key);
-  const legacyAdmin = seededSnapshot.roles.find((role) => role.id === "role-admin");
-  assert.ok(legacyAdmin, "el admin de sistema del seed debe existir");
-  legacyAdmin.permissions = [...legacyAdmin.permissions, ...customerSelfServicePermissions];
+  const employeePermissions = permissionsConfig
+    .filter((permission) => permission.module !== "customer" && permission.module !== "storefront")
+    .map((permission) => permission.key);
+  const demoAdmin = seededSnapshot.roles.find((role) => role.id === "role-admin");
+  const demoTenant = seededSnapshot.tenants.find((tenant) => tenant.id === "tenant-demo");
+  assert.ok(demoAdmin, "el admin de sistema del seed debe existir");
+  assert.ok(demoTenant, "el Tenant del seed debe existir");
+  seededSnapshot.tenants.push({
+    ...demoTenant,
+    id: "tenant-legacy-onboarded",
+    slug: "legacy-onboarded",
+    name: "Tenant Legacy Onboarded",
+  });
+  seededSnapshot.roles.push({
+    ...demoAdmin,
+    id: "legacy-onboarded-system-admin",
+    tenantId: "tenant-legacy-onboarded",
+    permissions: [...employeePermissions, ...customerSelfServicePermissions],
+  });
   seededSnapshot.roles.push({
     id: "custom-administrator-with-customer-permissions",
     tenantId: "tenant-demo",
@@ -245,12 +261,26 @@ async function verifyIncidentTypeDefaultsAndNormalization() {
     seededSnapshot.incidentTypes[1],
     "la normalización debe preservar tipos personalizados",
   );
-  const normalizedAdmin = normalizedOnce.roles.find((role) => role.id === "role-admin");
-  assert.ok(normalizedAdmin, "el Administrador de sistema debe conservarse");
+  const normalizedDemoAdmin = normalizedOnce.roles.find((role) => role.id === "role-admin");
+  assert.ok(normalizedDemoAdmin, "el Administrador especial del seed demo debe conservarse");
+  assert.deepEqual(
+    new Set(normalizedDemoAdmin.permissions),
+    new Set(permissionsConfig.map((permission) => permission.key)),
+    "el Administrador especial del seed demo debe conservar el catálogo canónico completo",
+  );
+  const normalizedAdmin = normalizedOnce.roles.find(
+    (role) => role.id === "legacy-onboarded-system-admin",
+  );
+  assert.ok(normalizedAdmin, "el Administrador de sistema aprovisionado debe conservarse");
+  assert.deepEqual(
+    new Set(normalizedAdmin.permissions),
+    new Set(employeePermissions),
+    "la normalización debe restaurar exactamente los permisos canónicos de empleado",
+  );
   assert.equal(
     customerSelfServicePermissions.some((permission) => normalizedAdmin.permissions.includes(permission)),
     false,
-    "la normalización debe retirar autoservicio Customer/Storefront del Administrador de sistema",
+    "la normalización debe retirar autoservicio Customer/Storefront del Administrador aprovisionado",
   );
   const customAdministrator = normalizedOnce.roles.find(
     (role) => role.id === "custom-administrator-with-customer-permissions",

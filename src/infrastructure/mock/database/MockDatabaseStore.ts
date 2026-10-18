@@ -201,6 +201,14 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   normalized.roles = (database.roles ?? base.roles).map((role) => {
     const isCanonicalSystemAdmin =
       role.isSystem && role.name === SYSTEM_ADMIN_ROLE_NAME && role.branchScope === "all";
+    const isDemoBootstrapAdmin = role.id === "role-admin" && role.tenantId === "tenant-demo";
+    const canonicalAdminPermissions = permissionsConfig
+      .filter(
+        (permission) =>
+          isDemoBootstrapAdmin ||
+          (permission.module !== "customer" && permission.module !== "storefront"),
+      )
+      .map((permission) => permission.key);
     const packingPermissions =
       role.id === "role-warehouse"
         ? ["logistics.packing.read", "logistics.packing.prepare", "logistics.packing.finalize"]
@@ -208,7 +216,7 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
     return {
       ...role,
       permissions: isCanonicalSystemAdmin
-        ? permissionsConfig.map((permission) => permission.key)
+        ? canonicalAdminPermissions
         : [...new Set([...role.permissions, ...packingPermissions])],
       status: role.status ?? RoleStatus.active,
     };

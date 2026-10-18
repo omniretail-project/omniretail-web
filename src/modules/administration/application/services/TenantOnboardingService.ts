@@ -35,8 +35,8 @@ interface NormalizedTenantOnboardingInput {
  *
  * Responsabilidad de ESTE service (Application, política/orquestación): validar el input,
  * comprobar disponibilidad de slug/email, resolver el Plan, calcular el catálogo canónico de
- * permisos del rol admin (`permissionsConfig.map(p => p.key)`, MISMA fuente que
- * `DEMO_ADMIN_ROLE_PERMISSIONS` en el seed -- nunca un catálogo duplicado a mano) y los defaults
+ * permisos operativos del rol admin (derivados de `permissionsConfig`, sin permisos de la
+ * identidad Customer/Storefront y sin un catálogo duplicado a mano) y los defaults
  * de negocio (moneda/zona horaria). La persistencia atómica real vive en
  * `repositories.tenantOnboarding.onboard(...)` (Infrastructure) -- ver su docstring para por qué
  * no puede hacerse encadenando `tenants.create()` + `branches.create()` + ... desde aquí.
