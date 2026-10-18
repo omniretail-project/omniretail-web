@@ -198,6 +198,10 @@ export default defineConfig({
         "src/modules/auth/application/services/sessionExpiredLoginHref.ts",
         "src/modules/auth/components/EmployeeInactivityTimeout.tsx",
         "src/modules/auth/providers/CurrentSessionProvider.tsx",
+        // Guard de sesion en el servidor, 404 y heartbeat de sesion.
+        "src/proxy.ts",
+        "src/app/not-found.tsx",
+        "src/infrastructure/api/sessionHeartbeat.ts",
       ],
     },
   },
