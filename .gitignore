@@ -16,6 +16,17 @@
 # local UX references
 /reference/ModuloBodega/
 
+# accidental root-level diagnostics
+/base.txt
+/branch.txt
+/head.txt
+/diff_name_status.txt
+/diff_output.txt
+/diff_stat.txt
+/status.txt
+/hort
+/tatus
+
 # next.js
 /.next/
 /.next-demo/
