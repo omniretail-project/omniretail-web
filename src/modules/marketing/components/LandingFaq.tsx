@@ -25,8 +25,8 @@ export default function LandingFaq() {
       answer: "No. MARJYM funciona 100% en la nube, por lo que puedes acceder desde cualquier navegador web sin necesidad de instalar programas en tu computadora."
     },
     {
-      question: "¿Se realiza un cobro automático al contratar?",
-      answer: "No. El proceso de contratación no realiza ningún cargo automático a tu tarjeta en este momento. Podrás configurar tus métodos de pago más adelante de forma segura."
+      question: "¿Cómo inicio con MARJYM?",
+      answer: "Completa el formulario de solicitud de información. Nuestro equipo se pondrá en contacto contigo para entender tu operación y preparar una propuesta personalizada. Enviar el formulario no crea ninguna cuenta ni realiza ningún cobro."
     }
   ];
 

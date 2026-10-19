@@ -7,6 +7,7 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import type { StorefrontProductDetailDto } from "@/modules/storefront/application/dto/StorefrontProductDetailDto";
 import { getProductMediaSource, sortProductMediaForDisplay } from "@/core/media/catalogImage";
 import { GetStorefrontPublishedProductService } from "@/modules/storefront/application/services/GetStorefrontPublishedProductService";
+import { createAssignedLocationResolver } from "@/shared/application/services/assignedLocationResolver";
 import { ensurePublicStorefrontTenant } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
 
 export class GetStorefrontProductDetailService {
@@ -75,26 +76,42 @@ export class GetStorefrontProductDetailService {
     );
     const at = new Date().toISOString();
 
-    const availability = branches
-      .filter((branch) => branch.tenantId === tenantId && branch.type !== BranchType.warehouse)
-      .map((branch) => ({
-        branchId: branch.id,
-        branchName: branch.name,
-        address: branch.address,
-        available:
-          getAvailability({
-            product,
-            kitComponents,
-            productsById,
-            tenantId,
+    const availability = await Promise.all(
+      branches
+        .filter((branch) => branch.tenantId === tenantId && branch.type !== BranchType.warehouse)
+        .map(async (branch) => {
+          // Solo cuenta la ubicacion operativa asignada de cada producto en esa sucursal.
+          const resolveAssignedLocation = createAssignedLocationResolver(
+            this.repositories.inventory,
+            branch.id,
+          );
+          const assignedLocationIds = new Map<string, string | null>();
+          await Promise.all(
+            [product.id, ...kitComponents.map((component) => component.componentProductId)].map(
+              async (id) => assignedLocationIds.set(id, await resolveAssignedLocation(id)),
+            ),
+          );
+          return {
             branchId: branch.id,
-            balances,
-            lots,
-            serials,
-            locations,
-            at,
-          }) > 0,
-      }));
+            branchName: branch.name,
+            address: branch.address,
+            available:
+              getAvailability({
+                product,
+                kitComponents,
+                productsById,
+                tenantId,
+                branchId: branch.id,
+                balances,
+                lots,
+                serials,
+                locations,
+                assignedLocationIds,
+                at,
+              }) > 0,
+          };
+        }),
+    );
 
     return { ...detail, availability };
   }
@@ -110,6 +127,7 @@ function getAvailability({
   lots,
   serials,
   locations,
+  assignedLocationIds,
   at,
 }: {
   product: StorefrontProductDetailDto["product"];
@@ -121,6 +139,7 @@ function getAvailability({
   lots: Parameters<typeof getCanonicalProductAvailability>[0]["lots"];
   serials: Parameters<typeof getCanonicalProductAvailability>[0]["serials"];
   locations: Parameters<typeof getCanonicalProductAvailability>[0]["locations"];
+  assignedLocationIds: ReadonlyMap<string, string | null>;
   at: string;
 }): number {
   if (product.productType === ProductType.physical) {
@@ -132,6 +151,7 @@ function getAvailability({
       lots,
       serials,
       locations,
+      assignedLocationId: assignedLocationIds.get(product.id) ?? null,
       at,
     });
   }
@@ -148,6 +168,7 @@ function getAvailability({
             lots,
             serials,
             locations,
+            assignedLocationId: assignedLocationIds.get(componentProduct.id) ?? null,
             at,
           })
         : 0;

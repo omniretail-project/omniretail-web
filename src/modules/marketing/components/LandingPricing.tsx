@@ -46,10 +46,10 @@ export default function LandingPricing() {
               ))}
             </ul>
             <Link
-              href="/contratar"
+              href="/solicitar-informacion"
               className="inline-flex h-12 w-full items-center justify-center rounded-lg bg-[var(--mkt-accent)] px-8 text-base font-semibold text-white shadow transition-colors hover:bg-[var(--mkt-accent-hover)]"
             >
-              Contratar MARJYM
+              Solicitar una propuesta
             </Link>
           </div>
 

@@ -38,7 +38,7 @@ export const administrationNavigation = [
       },
       {
         id: "administration-plan",
-        label: "Plan y suscripción",
+        label: "Mi plan y módulos",
         href: "/administracion/plan",
         // Solo lectura a propósito -- esta foundation no expone mutaciones de Plan/Subscription
         // (upgrade/downgrade/addons quedan fuera de este PR), así que no existe un

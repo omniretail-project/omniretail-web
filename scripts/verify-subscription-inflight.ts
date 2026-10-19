@@ -10,15 +10,15 @@ import {
   MockAuditLogRepository, MockBranchRepository, MockBusinessConfigRepository,
   MockCustomerRepository, MockDispatchRepository, MockInventoryRepository,
   MockNotificationRepository, MockOrderRepository, MockPaymentRepository,
-  MockPickingRepository, MockPlanRepository, MockProductRepository,
+  MockPackingRepository, MockPickingRepository, MockPlanRepository, MockProductRepository,
   MockRoleRepository, MockTenantRepository, MockTenantSubscriptionRepository,
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
-import { UpdateTenantSubscriptionService } from "@/modules/administration/application/services/UpdateTenantSubscriptionService";
 import { getCurrentCustomerOrderDetail, getCurrentCustomerOrders } from "@/modules/customer/application/services/orderService";
 import { DispatchApplicationService } from "@/modules/logistics/application/services/DispatchApplicationService";
+import { PackingApplicationService } from "@/modules/logistics/application/services/PackingApplicationService";
 import { PickingApplicationService } from "@/modules/logistics/application/services/PickingApplicationService";
 import { CreateStorefrontCheckoutService } from "@/modules/storefront/application/services/CreateStorefrontCheckoutService";
 import { GetPublicStorefrontConfigService } from "@/modules/storefront/application/services/GetPublicStorefrontConfigService";
@@ -61,6 +61,7 @@ async function main() {
   let actorUserId = "user-admin";
   const orders = new MockOrderRepository(store, events);
   const picking = new MockPickingRepository(store, events);
+  const packings = new MockPackingRepository(store, events);
   const repositories = {
     auth: {
       getCurrentSessionId: async () => `session-${actorUserId}`,
@@ -74,6 +75,7 @@ async function main() {
     inventory: new MockInventoryRepository(store, events),
     notifications: new MockNotificationRepository(store, events),
     orders,
+    packings,
     payments: new MockPaymentRepository(store, events),
     picking,
     plans: new MockPlanRepository(store, events),
@@ -101,12 +103,19 @@ async function main() {
   const pickingOrder = await picking.create({ tenantId, branchId, orderId: order.id, priority: PickingPriority.normal });
   actorUserId = "user-warehouse";
   const pickingService = new PickingApplicationService(repositories);
+  const packingService = new PackingApplicationService(repositories);
   const dispatchService = new DispatchApplicationService(repositories);
   await pickingService.assign(branchId, pickingOrder.id);
 
+  // El aprovisionamiento comercial ya no es autoservicio. La fixture representa un cambio
+  // externo ya persistido para verificar que se bloqueen compras nuevas sin romper el
+  // cumplimiento logístico de la orden preexistente.
   actorUserId = "user-admin";
-  const update = new UpdateTenantSubscriptionService(repositories);
-  await update.execute(tenantId, ["advanced_reports"], ["admin.plans.read", "admin.plans.manage"], actorUserId);
+  store.mutate((db) => {
+    const subscription = db.tenantSubscriptions.find((item) => item.tenantId === tenantId);
+    assert.ok(subscription);
+    subscription.addonCodes = ["advanced_reports"];
+  });
   assert(!(await entitlements.execute(tenantId)).effectiveCapabilities.includes(SaasCapabilityKey.ecommerce));
   assert.equal((await new GetPublicStorefrontConfigService(repositories).execute(publicStorefrontSlug)).storeEnabled, false);
   assert((await entitlements.execute("tenant-other")).effectiveCapabilities.includes(SaasCapabilityKey.ecommerce));
@@ -132,7 +141,42 @@ async function main() {
     pickingOrderId: pickingOrder.id, pickingLineId: line.pickingLineId,
     pickedQuantity: line.requiredQuantity, operationId: "inflight-pick-1",
   });
-  assert.equal((await pickingService.complete(branchId, pickingOrder.id)).orderStatus, OrderStatus.ready_for_dispatch);
+  assert.equal((await pickingService.complete(branchId, pickingOrder.id)).orderStatus, OrderStatus.packing);
+  await assert.rejects(() => dispatchService.confirm(branchId, {
+    orderId: order.id, operationId: "dispatch-before-packing-finalized",
+  }));
+  const packingQueueItem = (await packingService.getQueue(branchId))
+    .find((item) => item.orderId === order.id);
+  assert.ok(packingQueueItem, "completar picking debe crear el Packing de la orden");
+  let packingResult = await packingService.savePreparation(branchId, {
+    packingId: packingQueueItem.packingId,
+    operationId: "inflight-packing-prepare",
+    expectedVersion: packingQueueItem.version,
+    checklist: {
+      packageProtectionChecked: true,
+      documentIncludedChecked: true,
+      recipientVerifiedChecked: true,
+    },
+    totalWeight: 1,
+    packageCount: 1,
+  });
+  const generatedLabel = await packingService.generateLabel(branchId, {
+    packingId: packingQueueItem.packingId,
+    operationId: "inflight-packing-label",
+    expectedVersion: packingResult.packing.version,
+  });
+  assert.ok(generatedLabel.packing.labelGenerationId);
+  packingResult = await packingService.registerLabelPrint(branchId, {
+    packingId: packingQueueItem.packingId,
+    labelGenerationId: generatedLabel.packing.labelGenerationId,
+    operationId: "inflight-packing-print",
+    expectedVersion: generatedLabel.packing.version,
+  });
+  assert.equal((await packingService.finalize(branchId, {
+    packingId: packingQueueItem.packingId,
+    operationId: "inflight-packing-finalize",
+    expectedVersion: packingResult.packing.version,
+  })).orderStatus, OrderStatus.ready_for_dispatch);
   assert((await dispatchService.getPreparedQueue(branchId)).some((item) => item.orderId === order.id));
   assert.equal((await dispatchService.getPreparedDetail(branchId, order.id)).orderId, order.id);
   await assert.rejects(() => dispatchService.confirm("branch-norte", { orderId: order.id, operationId: "wrong-branch" }));

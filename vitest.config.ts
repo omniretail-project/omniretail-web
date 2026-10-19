@@ -205,6 +205,25 @@ export default defineConfig({
         // Descarga unificada del comprobante del storefront (PR de carrito y correo).
         "src/app/api/public/[slug]/receipt/[token]/route.ts",
         "src/modules/storefront/application/services/StorefrontReceiptPdfService.ts",
+        // Lote 1 PR #191: archivos con pruebas existentes que no estaban instrumentados.
+        "src/modules/catalog/components/OperationalLocationField.tsx",
+        "src/modules/information-request/pages/InformationRequestPage.tsx",
+        "src/modules/information-request/components/CaptchaWidget.tsx",
+        "src/shared/application/services/assignedLocationResolver.ts",
+        "src/modules/inventory/application/services/GetInventoryTransferHistoryService.ts",
+        "src/modules/administration/pages/PlanSubscriptionPage.tsx",
+        "src/modules/information-request/application/dto/InformationRequestDto.ts",
+        // Solicitudes comerciales de informacion (landing).
+        "src/app/api/public/contact-requests/route.ts",
+        "src/modules/information-request/application/services/SubmitInformationRequestService.ts",
+        "src/modules/information-request/hooks/useInformationRequest.ts",
+        "src/modules/information-request/validation/informationRequest.schema.ts",
+        // Ubicaciones operativas de inventario (disponibilidad, bloqueo y regularizacion mock).
+        "src/core/inventory/stockAvailability.ts",
+        "src/core/inventory/operationalCapabilities.ts",
+        "src/core/inventory/operationalLocationErrors.ts",
+        "src/modules/catalog/hooks/useProductLocationLock.ts",
+        "src/infrastructure/mock/repositories/mockLocationRegularization.ts",
       ],
     },
   },

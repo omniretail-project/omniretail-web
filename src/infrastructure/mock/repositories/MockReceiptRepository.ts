@@ -237,6 +237,18 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
               `Receipt line location must be active and match the receipt tenant and branch: ${line.id}`,
             );
           }
+          // Recibir solo en la ubicacion operativa asignada, no en cualquiera de la sucursal.
+          const assigned = db.productInventorySettings.find(
+            (item) =>
+              item.tenantId === receipt.tenantId &&
+              item.branchId === receipt.branchId &&
+              item.productId === line.productId,
+          )?.defaultLocationId;
+          if (assigned !== line.locationId) {
+            throw new Error(
+              `Receipt line location must match the product operational location: ${line.id}`,
+            );
+          }
         } else if (line.locationId) {
           throw new Error(`Receipt line location must be empty: ${line.id}`);
         }
