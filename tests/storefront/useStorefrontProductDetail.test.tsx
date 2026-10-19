@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   getProduct: vi.fn(),
-  subscribe: vi.fn(() => () => undefined),
+  listeners: new Map<string, (event: { tenantId?: string }) => void>(),
+  subscribe: vi.fn((eventName: string, listener: (event: { tenantId?: string }) => void) => {
+    state.listeners.set(eventName, listener);
+    return () => state.listeners.delete(eventName);
+  }),
   tenant: {
     tenantId: "tenant-1",
     tenantSlug: "ferreteria",
@@ -93,5 +97,35 @@ describe("useStorefrontProductDetail", () => {
     const { result } = renderHook(() => useStorefrontProductDetail("missing"));
 
     await waitFor(() => expect(result.current.error).toBe("El producto no está disponible."));
+  });
+
+  it("recarga el detalle cuando cambia el producto de la misma tienda", async () => {
+    state.getProduct.mockReset().mockResolvedValue({
+      id: "product-1",
+      sku: "MAR-001",
+      name: "Martillo",
+      salePrice: 75,
+      categoryId: "category-1",
+      saleUnitId: "unit-1",
+      saleUnitName: "Unidad",
+      salesPriceTiers: [],
+    });
+    const { result } = renderHook(() => useStorefrontProductDetail("product-1"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const initialCalls = state.getProduct.mock.calls.length;
+
+    state.listeners.get("product.changed")?.({ tenantId: "tenant-1" });
+    await waitFor(() => expect(state.getProduct).toHaveBeenCalledTimes(initialCalls + 1));
+
+    state.listeners.get("inventory.changed")?.({ tenantId: "other-tenant" });
+  });
+
+  it("muestra un mensaje cuando la consulta del API falla", async () => {
+    state.getProduct.mockReset().mockRejectedValue(new Error("network"));
+    const { result } = renderHook(() => useStorefrontProductDetail("product-1"));
+
+    await waitFor(() => expect(result.current.error).toBe(
+      "No se pudo cargar el producto. Intenta nuevamente.",
+    ));
   });
 });

@@ -5,14 +5,17 @@ const state = vi.hoisted(() => ({
   addProduct: vi.fn().mockResolvedValue(true),
   showToast: vi.fn(),
   availableQuantity: 4,
+  loading: false,
+  error: null as string | null,
+  reload: vi.fn(),
 }));
 
 vi.mock("@/modules/storefront/hooks/useStorefrontProductDetail", () => ({
   useStorefrontProductDetail: () => ({
-    loading: false,
-    error: null,
-    reload: vi.fn(),
-    data: {
+    loading: state.loading,
+    error: state.error,
+    reload: state.reload,
+    data: state.loading || state.error ? null : {
       product: {
         id: "product-1",
         sku: "MAR-001",
@@ -103,5 +106,43 @@ describe("ProductDetailPage", () => {
 
     await vi.waitFor(() => expect(state.addProduct).toHaveBeenCalledWith("product-1", 2));
     expect(state.showToast).toHaveBeenCalledWith(expect.objectContaining({ tone: "success" }));
+  });
+
+  it("restaura una cantidad vacía y permite ajustar con los botones", () => {
+    render(<ProductDetailPage productId="product-1" />);
+    const quantityInput = screen.getByRole("textbox", { name: "Cantidad a ordenar" });
+
+    fireEvent.change(quantityInput, { target: { value: "" } });
+    fireEvent.blur(quantityInput);
+    expect(quantityInput).toHaveValue("1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Aumentar cantidad" }));
+    expect(quantityInput).toHaveValue("2");
+    fireEvent.click(screen.getByRole("button", { name: "Reducir cantidad" }));
+    expect(quantityInput).toHaveValue("1");
+  });
+
+  it("muestra los estados de carga y error, permitiendo reintentar", () => {
+    state.loading = true;
+    const { rerender } = render(<ProductDetailPage productId="product-1" />);
+    expect(screen.getByText("Cargando producto...")).toBeInTheDocument();
+
+    state.loading = false;
+    state.error = "No se pudo cargar el producto.";
+    rerender(<ProductDetailPage productId="product-1" />);
+    expect(screen.getByText("No se pudo cargar el producto.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(state.reload).toHaveBeenCalled();
+
+    state.error = null;
+  });
+
+  it("muestra el aviso cuando el carrito rechaza la cantidad", async () => {
+    state.addProduct.mockReset().mockResolvedValue(false);
+    render(<ProductDetailPage productId="product-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Agregar al carrito" }));
+
+    await vi.waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    state.addProduct.mockResolvedValue(true);
   });
 });
