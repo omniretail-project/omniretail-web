@@ -328,6 +328,61 @@ describe("useLogisticsHistory en modo mock", () => {
     expect(mocks.execute.mock.calls.length).toBe(calls);
     expect(mocks.searchApi).not.toHaveBeenCalled();
   });
+
+  it("'+ Agregar guía' usa el servicio local cuando no está en modo API", async () => {
+    mocks.repositories = { dispatchReadDataSource: "mock" };
+    mocks.getPreparedDetail.mockResolvedValue({
+      orderId: "order-9",
+      orderReference: "WEB-LOCAL",
+      createdAt: "2026-10-09T15:00:00.000Z",
+      orderStatus: OrderStatus.ready_for_dispatch,
+      recipientName: "Carlos",
+      recipientPhone: "5555-1111",
+      address: null,
+      notificationContact: { emailMode: "not_applicable" },
+      transportMode: TransportMode.pickup,
+      pickingOrderId: "picking-local",
+      pickingStatus: PickingStatus.completed,
+      pickingCompletedAt: "2026-10-09T15:00:00.000Z",
+      packingId: "packing-local",
+      packingStatus: PackingStatus.finalized,
+      packingFinalizedAt: "2026-10-09T16:00:00.000Z",
+      packageCount: 1,
+      totalWeight: 1,
+      labelCode: "LBL-LOCAL",
+    });
+    mocks.confirm.mockResolvedValue({});
+    const ready = item(9, {
+      operationalStatus: OrderStatus.ready_for_dispatch,
+      packingId: "packing-local",
+      packingFinalizedAt: "2026-10-09T16:00:00.000Z",
+    });
+    const { result } = await renderHistory();
+
+    await act(async () => result.current.openDispatch(ready));
+
+    expect(mocks.getPreparedDetail).toHaveBeenCalledWith("branch-1", "order-9");
+    expect(mocks.getApiPreparedDetail).not.toHaveBeenCalled();
+
+    let confirmed = false;
+    await act(async () => {
+      confirmed = await result.current.confirmDispatch({
+        valid: true,
+        errors: {},
+        carrierName: "Mensajería Local",
+        trackingNumber: "TRK-LOCAL",
+      });
+    });
+
+    expect(confirmed).toBe(true);
+    expect(mocks.confirm).toHaveBeenCalledWith("branch-1", {
+      orderId: "order-9",
+      operationId: expect.any(String),
+      carrierName: "Mensajería Local",
+      trackingNumber: "TRK-LOCAL",
+    });
+    expect(mocks.confirmApiOrder).not.toHaveBeenCalled();
+  });
 });
 
 describe("componentes del historial", () => {
