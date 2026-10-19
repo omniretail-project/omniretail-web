@@ -23,6 +23,13 @@ interface BackendProduct {
   inStock?: boolean;
   /** Disponible (cantidad - reservado); `null` si el producto no controla inventario (servicios). */
   availableQuantity?: number | null;
+  attributes?: Array<{ name: string; value: string }> | null;
+  availability?: Array<{
+    branchId: string;
+    branchName: string;
+    address?: string | null;
+    available: boolean;
+  }> | null;
 }
 
 function toImageSource(url?: string | null) {
@@ -60,6 +67,13 @@ function toProduct(product: BackendProduct): StorefrontDiscoveryProductDto {
     availableQuantity: toAvailableQuantity(product),
     saleUnitId: product.saleUnitId ?? "",
     saleUnitName: product.saleUnitName ?? "",
+    attributes: product.attributes ?? [],
+    availability: product.availability?.map((branch) => ({
+      branchId: branch.branchId,
+      branchName: branch.branchName,
+      address: branch.address ?? undefined,
+      available: branch.available,
+    })),
   };
 }
 

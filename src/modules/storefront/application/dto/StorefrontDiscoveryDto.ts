@@ -28,6 +28,15 @@ export interface StorefrontDiscoveryProductDto {
   availableQuantity: number | null;
   saleUnitId: string;
   saleUnitName: string;
+  /** Solo viene en el detalle público del producto. */
+  attributes?: Array<{ name: string; value: string }>;
+  /** Solo viene en el detalle público del producto. */
+  availability?: Array<{
+    branchId: string;
+    branchName: string;
+    address?: string;
+    available: boolean;
+  }>;
 }
 
 export interface StorefrontDiscoveryDto {
