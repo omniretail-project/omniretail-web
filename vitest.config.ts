@@ -221,6 +221,7 @@ export default defineConfig({
         // Detalle público: atributos y disponibilidad por sucursal.
         "src/modules/storefront/application/services/ApiStorefrontCatalogService.ts",
         "src/modules/storefront/hooks/useStorefrontProductDetail.ts",
+        "src/modules/storefront/pages/ProductDetailPage.tsx",
         "src/modules/storefront/components/StorefrontHeader.tsx",
         "src/modules/storefront/providers/StorefrontCartProvider.tsx",
         "src/modules/storefront/pages/OrderConfirmationPage.tsx",
