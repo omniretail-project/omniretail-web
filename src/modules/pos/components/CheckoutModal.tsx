@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { PHONE_POLICY } from "@/config/contact-policy";
 import type { BankAccountType } from "@/core/entities";
 import type {
   CardTerminalOutcome,
@@ -25,6 +26,10 @@ const accountTypeLabels: Record<BankAccountType, string> = {
   monetary: "Monetaria",
   savings: "Ahorro",
 };
+
+function sanitizePhoneInput(phone: string): string {
+  return phone.replace(/\D/g, "").slice(0, PHONE_POLICY.DIGITS);
+}
 
 interface CheckoutModalProps {
   open: boolean;
@@ -317,8 +322,11 @@ export function CheckoutModal({
                 <Input
                   id="delivery-phone"
                   inputMode="numeric"
+                  maxLength={PHONE_POLICY.DIGITS}
                   onChange={(event) =>
-                    onDeliveryAddressChange({ recipientPhone: event.target.value })
+                    onDeliveryAddressChange({
+                      recipientPhone: sanitizePhoneInput(event.target.value),
+                    })
                   }
                   value={checkout.deliveryAddress?.recipientPhone ?? ""}
                 />
@@ -425,9 +433,11 @@ export function CheckoutModal({
                 <Input
                   id="pickup-phone"
                   inputMode="numeric"
-                  maxLength={8}
+                  maxLength={PHONE_POLICY.DIGITS}
                   onChange={(event) =>
-                    onStorePickupContactChange({ recipientPhone: event.target.value })
+                    onStorePickupContactChange({
+                      recipientPhone: sanitizePhoneInput(event.target.value),
+                    })
                   }
                   value={checkout.storePickupContact?.recipientPhone ?? ""}
                 />

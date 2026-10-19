@@ -4,6 +4,7 @@ import { DeliveryMethod, TransportMode } from "@/core/enums";
 import type { SaleTicketItemDto } from "@/modules/pos/application/dto/SaleTicketDto";
 import type { CheckoutDto } from "@/modules/pos/application/dto/CheckoutDto";
 import { CheckoutModal } from "@/modules/pos/components/CheckoutModal";
+import { validateCheckout } from "@/modules/pos/validation/checkout.validation";
 
 const checkout: CheckoutDto = {
   documentType: "ticket",
@@ -43,7 +44,135 @@ const traceableItem: SaleTicketItemDto = {
   requiresUnsupportedTraceability: false,
 };
 
+type PhoneDeliveryMethod =
+  | DeliveryMethod.store_pickup
+  | DeliveryMethod.home_delivery;
+
+const phoneDeliveryMethods: PhoneDeliveryMethod[] = [
+  DeliveryMethod.store_pickup,
+  DeliveryMethod.home_delivery,
+];
+
+function checkoutWithPhone(
+  deliveryMethod: PhoneDeliveryMethod,
+  recipientPhone: string,
+): CheckoutDto {
+  return {
+    ...checkout,
+    deliveryMethod,
+    transportMode:
+      deliveryMethod === DeliveryMethod.store_pickup
+        ? TransportMode.customer
+        : TransportMode.third_party,
+    storePickupContact:
+      deliveryMethod === DeliveryMethod.store_pickup
+        ? { recipientName: "Ana", recipientPhone }
+        : undefined,
+    deliveryAddress:
+      deliveryMethod === DeliveryMethod.home_delivery
+        ? {
+            recipientName: "Ana",
+            recipientPhone,
+            line1: "Calle 1",
+            city: "Guatemala",
+            country: "Guatemala",
+          }
+        : undefined,
+  };
+}
+
+function renderPhoneField(
+  deliveryMethod: PhoneDeliveryMethod,
+) {
+  const onDeliveryAddressChange = vi.fn();
+  const onStorePickupContactChange = vi.fn();
+  render(
+    <CheckoutModal
+      appliedAmount={50}
+      availablePaymentModes={[]}
+      bankAccounts={[]}
+      bankAccountsError={null}
+      bankAccountsLoading={false}
+      cashShiftError={null}
+      cashShiftLoading={false}
+      cashShiftRegisterCode="POS-01"
+      checkout={checkoutWithPhone(deliveryMethod, "")}
+      confirmationError={null}
+      confirmationLoading={false}
+      currentBranchName="Centro"
+      differenceAmount={0}
+      discountTotal={0}
+      errors={{}}
+      hasCurrentBranchAccess
+      hasOpenCashShift
+      hasOperationalBlock={false}
+      hasPosSalesPermission
+      hasUnsupportedTraceability={false}
+      message={null}
+      open
+      paymentMethodsError={null}
+      paymentMethodsLoading={false}
+      readyToConfirm={false}
+      subtotal={50}
+      total={50}
+      validated={false}
+      onCheckoutChange={vi.fn()}
+      onClose={vi.fn()}
+      onConfirm={vi.fn()}
+      onDeliveryAddressChange={onDeliveryAddressChange}
+      onDocumentTypeChange={vi.fn()}
+      onInvoiceDataChange={vi.fn()}
+      onPaymentModeChange={vi.fn()}
+      onProcessCardPayment={vi.fn()}
+      onReset={vi.fn()}
+      onStorePickupContactChange={onStorePickupContactChange}
+      onValidate={vi.fn()}
+    />,
+  );
+  return { onDeliveryAddressChange, onStorePickupContactChange };
+}
+
 describe("CheckoutModal modalidad de entrega", () => {
+  it.each(phoneDeliveryMethods)("limita y normaliza el teléfono de %s", (deliveryMethod) => {
+    const callbacks = renderPhoneField(deliveryMethod);
+    const phone = screen.getByRole("textbox", { name: "Teléfono *" });
+
+    expect(phone).toHaveAttribute("inputmode", "numeric");
+    expect(phone).toHaveAttribute("maxlength", "8");
+    fireEvent.change(phone, { target: { value: "1234567890" } });
+
+    const activeCallback =
+      deliveryMethod === DeliveryMethod.store_pickup
+        ? callbacks.onStorePickupContactChange
+        : callbacks.onDeliveryAddressChange;
+    const inactiveCallback =
+      deliveryMethod === DeliveryMethod.store_pickup
+        ? callbacks.onDeliveryAddressChange
+        : callbacks.onStorePickupContactChange;
+    expect(activeCallback).toHaveBeenLastCalledWith({ recipientPhone: "12345678" });
+
+    fireEvent.change(phone, { target: { value: "12ab34" } });
+    expect(activeCallback).toHaveBeenLastCalledWith({ recipientPhone: "1234" });
+    expect(inactiveCallback).not.toHaveBeenCalled();
+  });
+
+  it.each(phoneDeliveryMethods)("exige exactamente ocho dígitos para %s", (deliveryMethod) => {
+    const invalidCases = [
+      ["1234567", "El teléfono debe tener exactamente 8 dígitos."],
+      ["123456789", "El teléfono debe tener exactamente 8 dígitos."],
+      ["1234abcd", "El teléfono solo puede contener números."],
+    ] as const;
+    for (const [invalidPhone, expectedError] of invalidCases) {
+      const result = validateCheckout(checkoutWithPhone(deliveryMethod, invalidPhone), 50);
+      expect(result.isValid).toBe(false);
+      expect(result.errors.recipientPhone).toBe(expectedError);
+    }
+
+    const valid = validateCheckout(checkoutWithPhone(deliveryMethod, "55550101"), 50);
+    expect(valid.errors.recipientPhone).toBeUndefined();
+    expect(valid.isValid).toBe(true);
+  });
+
   it("muestra la opción inicial vacía y comunica su validación", () => {
     const onCheckoutChange = vi.fn();
     render(
