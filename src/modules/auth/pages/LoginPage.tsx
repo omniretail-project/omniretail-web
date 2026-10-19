@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { CUSTOMER_PASSWORD_POLICY, EMPLOYEE_PASSWORD_POLICY } from "@/config/auth-policy";
 import {
   DEMO_QUICK_LOGINS,
   getDemoInformationRequestUrl,
@@ -133,6 +134,9 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
   // Llega desde CurrentSessionProvider cuando el backend rechazo la sesion a mitad de uso.
   const sessionExpired = searchParams?.get(SESSION_EXPIRED_PARAM) === SESSION_EXPIRED_VALUE;
   const routes = useOptionalStorefrontRoutes();
+  const passwordMaxLength = (
+    expectedUserType === UserType.customer ? CUSTOMER_PASSWORD_POLICY : EMPLOYEE_PASSWORD_POLICY
+  ).MAX_LENGTH;
   const demo = isPublicDemo();
   // Accesos rapidos solo en la demo y solo para el login de personal.
   const showDemoQuickLogins = demo && expectedUserType === UserType.employee;
@@ -283,6 +287,7 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
               autoComplete="current-password"
               disabled={isSubmitting}
               id="login-password"
+              maxLength={passwordMaxLength}
               onChange={(event) => setPassword(event.target.value)}
               value={password}
             />
