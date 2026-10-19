@@ -12,6 +12,8 @@ const nextConfig: NextConfig = {
   },
   // Sin source maps del navegador en produccion: el codigo original no queda publicado.
   productionBrowserSourceMaps: false,
+  // Sin la cabecera `X-Powered-By: Next.js`: no se anuncia el framework a quien escanea el sitio.
+  poweredByHeader: false,
 };
 
 export default nextConfig;

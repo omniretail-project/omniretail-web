@@ -16,6 +16,11 @@ import type {
 } from "@/core/repositories";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+import {
+  applyMockRegularization,
+  getMockRegularizationOptions,
+  previewMockRegularization,
+} from "@/infrastructure/mock/repositories/mockLocationRegularization";
 
 export class MockInventoryAdjustmentRepository
   extends BaseMockRepository
@@ -51,17 +56,46 @@ export class MockInventoryAdjustmentRepository
     throw new Error("El conteo fisico trazable no esta disponible en modo mock.");
   }
 
-  // La regularizacion de balances heredados solo existe contra el backend; sin fallback silencioso.
-  async getLocationRegularizationOptions(): Promise<never> {
-    throw new Error("La regularizacion de ubicaciones no esta disponible en modo mock.");
+  // Regularizacion explicita del saldo heredado en el store Mock (nunca automatica).
+  async getLocationRegularizationOptions(
+    input: Parameters<InventoryAdjustmentRepository["getLocationRegularizationOptions"]>[0],
+  ) {
+    return this.read((db) => getMockRegularizationOptions(db, input));
   }
 
-  async previewLocationRegularization(): Promise<never> {
-    throw new Error("La regularizacion de ubicaciones no esta disponible en modo mock.");
+  async previewLocationRegularization(
+    input: Parameters<InventoryAdjustmentRepository["previewLocationRegularization"]>[0],
+  ) {
+    return this.read((db) => previewMockRegularization(db, input));
   }
 
-  async regularizeLocationBalance(): Promise<never> {
-    throw new Error("La regularizacion de ubicaciones no esta disponible en modo mock.");
+  async regularizeLocationBalance(
+    input: Parameters<InventoryAdjustmentRepository["regularizeLocationBalance"]>[0],
+  ) {
+    // Transaccion atomica: balances, reservas, movimiento, asignacion e idempotencia o nada.
+    const outcome = this.store.transact((db) =>
+      applyMockRegularization(db, input, {
+        id: (prefix) => this.id(prefix),
+        now: () => this.now(),
+      }),
+    );
+    if (outcome.changed) {
+      this.emit("inventory.changed", {
+        entityId: outcome.result.movementId,
+        tenantId: outcome.tenantId,
+        branchId: outcome.result.branchId,
+        productId: outcome.result.productId,
+        action: "created",
+        metadata: { entity: "LocationRegularization" },
+      });
+      this.emit("stock.changed", {
+        tenantId: outcome.tenantId,
+        branchId: outcome.result.branchId,
+        productId: outcome.result.productId,
+        action: "updated",
+      });
+    }
+    return outcome.result;
   }
 
   async getById(id: string) {

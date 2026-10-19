@@ -12,8 +12,8 @@ const LIMITS = ADMIN_FIELD_LIMITS.bankAccount;
 const ACCOUNT_NUMBER_SEPARATORS = /[\s-]/g;
 /**
  * El contrato todavía no define IBAN ni reglas por banco/país. Para esta primera capa se exige
- * solo dígitos, preservando ceros iniciales, y se aplica un máximo prudente documentado para
- * evitar entradas excesivas hasta que backend confirme reglas bancarias definitivas.
+ * solo dígitos, preservando ceros iniciales, con un máximo de 12 dígitos definido por el negocio
+ * (`ADMIN_FIELD_LIMITS.bankAccount.accountNumber`) hasta que backend confirme reglas bancarias.
  */
 const ACCOUNT_NUMBER_FORMAT = /^\d+$/;
 
@@ -78,7 +78,9 @@ export function validateBankAccountInput(dto: BankAccountInputDto, mode: "create
     );
   }
   if (accountNumberProvided && normalizedAccountNumber.length > LIMITS.accountNumber) {
-    throw new AdministrationServiceError("El número de cuenta no puede exceder 24 dígitos.");
+    throw new AdministrationServiceError(
+      `El número de cuenta no puede exceder ${LIMITS.accountNumber} dígitos.`,
+    );
   }
 
   const alias = dto.alias.trim();

@@ -62,6 +62,12 @@ export class RegisterSaleInventoryMovementsService {
         input.sale.branchId,
       );
       const locations = await this.repositories.inventory.getLocations(input.sale.branchId);
+      const assignedLocationId = settings?.defaultLocationId ?? null;
+      if (item.sourceLocationId && item.sourceLocationId !== assignedLocationId) {
+        throw new Error(
+          `La ubicación de salida de ${product.name} no corresponde a su ubicación operativa asignada.`,
+        );
+      }
       const allocations = planInventoryAllocation({
         tenantId: input.sale.tenantId,
         branchId: input.sale.branchId,
@@ -74,14 +80,8 @@ export class RegisterSaleInventoryMovementsService {
             : { ...balance, quantity: plannedQuantity };
         }),
         locations,
-        preferredLocationId: item.sourceLocationId ?? settings?.defaultLocationId,
+        assignedLocationId,
       });
-      if (
-        item.sourceLocationId &&
-        allocations.some((allocation) => allocation.locationId !== item.sourceLocationId)
-      ) {
-        throw new Error(`Stock insuficiente para ${product.name} en la ubicacion indicada.`);
-      }
       if (allocations.length === 0) {
         throw new Error(`Stock insuficiente para ${product.name}.`);
       }

@@ -10,7 +10,10 @@ import type {
   LogisticsHistoryItemDto,
   LogisticsHistoryQueryDto,
 } from "@/modules/logistics/application/dto/LogisticsHistoryDto";
-import type { PreparedOrderDetailDto } from "@/modules/logistics/application/dto/DispatchReadModelDto";
+import type {
+  PreparedDispatchDetailDto,
+  PreparedOrderDetailDto,
+} from "@/modules/logistics/application/dto/DispatchReadModelDto";
 import { DispatchApplicationService } from "@/modules/logistics/application/services/DispatchApplicationService";
 import { GetLogisticsHistoryService } from "@/modules/logistics/application/services/GetLogisticsHistoryService";
 import type { DispatchShipmentValidationResult } from "@/modules/logistics/validation/dispatch.validation";
@@ -234,7 +237,13 @@ export function useLogisticsHistory() {
       setDispatchError(null);
       setDispatchLoading(true);
       try {
-        const nextDetail = await dispatchService.getPreparedDetail(branchId, item.orderId);
+        // En modo API el pedido y su despacho viven en el backend (el repositorio local no los tiene).
+        const nextDetail =
+          repositories.dispatchReadDataSource === "api"
+            ? toHistoryPreparedDetail(
+                await dispatchService.getApiPreparedDetail(branchId, item.orderId),
+              )
+            : await dispatchService.getPreparedDetail(branchId, item.orderId);
         if (
           sequence !== dispatchSequenceRef.current ||
           activeBranchIdRef.current !== branchId ||
@@ -251,7 +260,7 @@ export function useLogisticsHistory() {
         if (sequence === dispatchSequenceRef.current) setDispatchLoading(false);
       }
     },
-    [canConfirmDispatch, currentBranch, dispatchService, hasBranchAccess],
+    [canConfirmDispatch, currentBranch, dispatchService, hasBranchAccess, repositories],
   );
 
   const closeDispatch = useCallback(() => {
@@ -281,12 +290,20 @@ export function useLogisticsHistory() {
       setDispatchSubmitting(true);
       setDispatchError(null);
       try {
-        await dispatchService.confirm(branchId, {
-          orderId,
-          operationId: dispatchOperationIdRef.current,
-          carrierName: validation.carrierName,
-          trackingNumber: validation.trackingNumber,
-        });
+        if (repositories.dispatchReadDataSource === "api") {
+          await dispatchService.confirmApiOrder(branchId, orderId, {
+            operationId: dispatchOperationIdRef.current,
+            ...(validation.carrierName ? { carrierName: validation.carrierName } : {}),
+            ...(validation.trackingNumber ? { trackingNumber: validation.trackingNumber } : {}),
+          });
+        } else {
+          await dispatchService.confirm(branchId, {
+            orderId,
+            operationId: dispatchOperationIdRef.current,
+            carrierName: validation.carrierName,
+            trackingNumber: validation.trackingNumber,
+          });
+        }
         if (
           activeBranchIdRef.current !== branchId ||
           dispatchOrderIdRef.current !== orderId
@@ -310,7 +327,7 @@ export function useLogisticsHistory() {
         setDispatchSubmitting(false);
       }
     },
-    [canConfirmDispatch, currentBranch, dispatchDetail, dispatchService, reload],
+    [canConfirmDispatch, currentBranch, dispatchDetail, dispatchService, reload, repositories],
   );
 
   useEffect(() => {
@@ -485,4 +502,37 @@ function toDateBoundary(value: string, endOfDay: boolean) {
 
 function toMessage(cause: unknown, fallback: string) {
   return cause instanceof Error && cause.message ? cause.message : fallback;
+}
+
+/**
+ * Adapta el detalle preparado del backend al modelo del modal de Historial. El backend solo lo entrega
+ * con el empaque finalizado, así que el picking ya está completado.
+ */
+export function toHistoryPreparedDetail(detail: PreparedDispatchDetailDto): PreparedOrderDetailDto {
+  return {
+    orderId: detail.orderId,
+    orderReference: detail.orderReference,
+    createdAt: detail.createdAt,
+    recipientName: detail.recipientName ?? detail.address?.recipientName ?? "",
+    recipientPhone: detail.recipientPhone ?? detail.address?.recipientPhone ?? null,
+    address: detail.address
+      ? {
+          recipientName: detail.address.recipientName ?? detail.recipientName ?? "",
+          recipientPhone: detail.address.recipientPhone ?? detail.recipientPhone ?? null,
+          line1: detail.address.line1 ?? "",
+          line2: detail.address.line2,
+          city: detail.address.city ?? "",
+          stateOrDepartment: detail.address.stateOrDepartment,
+          postalCode: detail.address.postalCode,
+          country: detail.address.country ?? "",
+          references: detail.address.references,
+        }
+      : null,
+    transportMode: detail.transportMode,
+    notificationContact: detail.notificationContact,
+    pickingOrderId: detail.pickingOrderId,
+    pickingCompletedAt: detail.pickingCompletedAt,
+    orderStatus: detail.orderStatus,
+    pickingStatus: "completed",
+  };
 }

@@ -15,7 +15,7 @@ export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { t
   const { result: providerResult } = useStorefrontCheckoutConfirmation();
   const { data: persistedResult, loading: loadingPersistedResult } =
     useStorefrontOrderConfirmation(routeTrackingToken);
-  const { config } = usePublicTenant();
+  const { config, tenantSlug } = usePublicTenant();
   // A result in memory is fast, but it is only valid for the token in this
   // route. A refresh/direct link reconstructs the same narrow view securely.
   const result = providerResult &&
@@ -192,10 +192,7 @@ export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { t
           <button
             className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3 font-bold text-[var(--color-text)] transition hover:bg-slate-50"
             onClick={() =>
-              void downloadStorefrontReceiptPdf({
-                storeName: config?.storeName ?? "Tienda",
-                result,
-              })
+              void downloadStorefrontReceiptPdf({ tenantSlug, trackingToken: result.trackingToken })
             }
             type="button"
           >

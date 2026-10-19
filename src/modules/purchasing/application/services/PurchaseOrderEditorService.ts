@@ -7,6 +7,7 @@ import type {
   User,
 } from "@/core/entities";
 import { ProductType, PurchaseOrderStatus } from "@/core/enums";
+import { selectOperationalBalances } from "@/core/inventory/stockAvailability";
 import type { PurchaseOrderItemInput } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import {
@@ -596,10 +597,20 @@ export class PurchaseOrderEditorService {
   }
 
   private async getMockInventorySnapshot(product: Product, branchId: string) {
-    const [balances, settings] = await Promise.all([
+    const [allBalances, settings, locations] = await Promise.all([
       this.repositories.inventory.getBalanceByProduct(product.id, branchId),
       this.repositories.inventory.getProductInventorySettings(product.id, branchId),
+      this.repositories.inventory.getLocations(branchId),
     ]);
+    // Existencia operativa: solo la ubicacion asignada (o el saldo heredado sin ubicacion).
+    const balances = selectOperationalBalances({
+      tenantId: product.tenantId,
+      branchId,
+      productId: product.id,
+      balances: allBalances,
+      locations,
+      assignedLocationId: settings?.defaultLocationId ?? null,
+    });
     const stockQuantity = balances.reduce((sum, balance) => sum + balance.quantity, 0);
     const reservedQuantity = balances.reduce((sum, balance) => sum + balance.reservedQuantity, 0);
     const availableQuantity = stockQuantity - reservedQuantity;

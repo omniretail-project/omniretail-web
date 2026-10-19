@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   logout: vi.fn(),
   clearLocalSession: vi.fn(),
   routerReplace: vi.fn(),
+  pingSession: vi.fn(),
 }));
 
 vi.mock("@/infrastructure/providers/RepositoryProvider", () => {
@@ -26,6 +27,7 @@ vi.mock("@/modules/auth/hooks/useCurrentSession", () => {
   const session = { user: { id: "user-1", type: "employee" }, sessionId: "session-1" };
   return { useCurrentSession: () => session };
 });
+vi.mock("@/infrastructure/api/sessionHeartbeat", () => ({ pingSession: state.pingSession }));
 vi.mock("next/navigation", () => {
   const router = { replace: state.routerReplace };
   return { useRouter: () => router };
@@ -34,6 +36,7 @@ vi.mock("next/navigation", () => {
 import {
   EMPLOYEE_ACTIVITY_WRITE_INTERVAL_MS,
   EMPLOYEE_INACTIVITY_TIMEOUT_MS,
+  EMPLOYEE_SESSION_HEARTBEAT_MS,
   EmployeeInactivityTimeout,
   storedActivityForSession,
 } from "@/modules/auth/components/EmployeeInactivityTimeout";
@@ -86,11 +89,14 @@ beforeEach(() => {
   state.clearLocalSession.mockReset();
   state.clearLocalSession.mockResolvedValue(undefined);
   state.routerReplace.mockReset();
+  state.pingSession.mockReset();
+  state.pingSession.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   window.localStorage.clear();
 });
 
@@ -220,6 +226,78 @@ describe("EmployeeInactivityTimeout con la marca compartida entre pestañas", ()
 
     await advance(1000);
     expectSessionClosed();
+  });
+});
+
+describe("EmployeeInactivityTimeout: heartbeat de sesion (modo api)", () => {
+  const HEARTBEAT = EMPLOYEE_SESSION_HEARTBEAT_MS;
+
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_API_MODE", "api");
+  });
+
+  /** Actividad real cada 10 s durante `ms` (teclear en un formulario largo). */
+  async function typeDuring(ms: number) {
+    for (let elapsed = 0; elapsed < ms; elapsed += 10 * 1000) {
+      window.dispatchEvent(new Event("keydown"));
+      await advance(10 * 1000);
+    }
+  }
+
+  it("con actividad continua llama como maximo una vez cada 5 minutos", async () => {
+    await mount();
+
+    await typeDuring(HEARTBEAT - 10 * 1000);
+    expect(state.pingSession).not.toHaveBeenCalled();
+
+    await typeDuring(20 * MINUTE);
+    // Pings a los 5, 10, 15 y 20 minutos de actividad.
+    expect(state.pingSession).toHaveBeenCalledTimes(4);
+  });
+
+  it("deja al menos 5 minutos entre dos llamadas", async () => {
+    await mount();
+    const pingAt: number[] = [];
+    state.pingSession.mockImplementation(async () => {
+      pingAt.push(Date.now());
+    });
+
+    await typeDuring(30 * MINUTE);
+
+    expect(pingAt.length).toBeGreaterThan(0);
+    pingAt.forEach((at, index) => {
+      const previous = index === 0 ? NOW : pingAt[index - 1];
+      expect(at - previous).toBeGreaterThanOrEqual(HEARTBEAT);
+    });
+  });
+
+  it("sin actividad no llama, y la inactividad real cierra la sesion", async () => {
+    await mount();
+
+    await advance(TIMEOUT);
+
+    expect(state.pingSession).not.toHaveBeenCalled();
+    expectSessionClosed();
+  });
+
+  it("la actividad de otra pestaña no hace ping en esta", async () => {
+    await mount();
+
+    for (let i = 1; i <= 4; i += 1) {
+      await advance(HEARTBEAT);
+      otherTabWrites(String(Date.now()));
+    }
+
+    expect(state.pingSession).not.toHaveBeenCalled();
+  });
+
+  it("en modo mock no llama nunca", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_MODE", "mock");
+    await mount();
+
+    await typeDuring(20 * MINUTE);
+
+    expect(state.pingSession).not.toHaveBeenCalled();
   });
 });
 

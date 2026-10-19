@@ -14,7 +14,7 @@ export interface TenantOnboardingInputDto {
   adminEmail: string;
   adminPasswordMock: string;
   planId: string;
-  /** Optional for existing internal callers; public contracting always supplies it. */
+  /** Opcional para callers internos; el repository aplica sus defaults técnicos al omitirse. */
   businessPreset?: BusinessPreset;
   defaultCurrency?: "GTQ" | "USD";
   timezone?: string;

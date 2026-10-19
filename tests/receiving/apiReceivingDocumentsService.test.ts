@@ -81,6 +81,7 @@ function createHarness(
     inventoryTransfersDataSource?: "api" | "mock";
     product?: Product | null;
     branches?: Array<{ id: string; tenantId: string; name: string }>;
+    permissions?: string[];
   } = {},
 ) {
   const user: User = {
@@ -113,7 +114,7 @@ function createHarness(
         id: user.roleId,
         tenantId,
         status: RoleStatus.active,
-        permissions: ["receiving.receipts.read"],
+        permissions: options.permissions ?? ["receiving.receipts.read", "receiving.receipts.confirm"],
         branchScope: "selected",
       })),
     },
@@ -190,6 +191,18 @@ describe("ReceivingDocumentsService transfer API", () => {
 
     expect(result.documents).toEqual([]);
     expect(inventoryTransfers.query).not.toHaveBeenCalled();
+  });
+
+  it("skips transfers without transfer or receiving-confirm permission and keeps the purchase-order queue", async () => {
+    const { service, repositories, inventoryTransfers } = createHarness({
+      permissions: ["receiving.receipts.read"],
+    });
+
+    const result = await service.execute(destinationBranchId);
+
+    expect(result.documents).toEqual([]);
+    expect(inventoryTransfers.query).not.toHaveBeenCalled();
+    expect(repositories.purchaseOrders.getPageScoped).toHaveBeenCalledTimes(4);
   });
 
   it("keeps a transfer visible when its product or source branch is no longer available", async () => {

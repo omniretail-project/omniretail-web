@@ -1,6 +1,6 @@
 import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DeliveryMethod, OrderStatus } from "@/core/enums";
+import { DeliveryMethod, OrderStatus, PackingStatus, PickingStatus, TransportMode } from "@/core/enums";
 import type {
   LogisticsHistoryItemDto,
   LogisticsHistoryPageDto,
@@ -29,8 +29,12 @@ const mocks = vi.hoisted(() => ({
     loading: false,
     error: null as string | null,
   },
-  repositories: {},
+  repositories: {} as { dispatchReadDataSource?: "api" | "mock" },
   execute: vi.fn(),
+  getApiPreparedDetail: vi.fn(),
+  confirmApiOrder: vi.fn(),
+  getPreparedDetail: vi.fn(),
+  confirm: vi.fn(),
   searchApi: vi.fn(),
   getDetail: vi.fn(),
   getApiDetail: vi.fn(),
@@ -47,7 +51,20 @@ vi.mock("@/shared/navigation/PrivateHeader/ActiveBranchProvider", () => ({
 }));
 vi.mock("@/shared/hooks/useDataEvent", () => ({ useDataEvent: () => undefined }));
 vi.mock("@/modules/logistics/application/services/DispatchApplicationService", () => ({
-  DispatchApplicationService: class {},
+  DispatchApplicationService: class {
+    getApiPreparedDetail(branchId: string, orderId: string) {
+      return mocks.getApiPreparedDetail(branchId, orderId);
+    }
+    confirmApiOrder(branchId: string, orderId: string, command: unknown) {
+      return mocks.confirmApiOrder(branchId, orderId, command);
+    }
+    getPreparedDetail(branchId: string, orderId: string) {
+      return mocks.getPreparedDetail(branchId, orderId);
+    }
+    confirm(branchId: string, command: unknown) {
+      return mocks.confirm(branchId, command);
+    }
+  },
 }));
 vi.mock("@/modules/logistics/application/services/GetLogisticsHistoryService", () => ({
   GetLogisticsHistoryService: class {
@@ -117,6 +134,76 @@ describe("useLogisticsHistory en modo API", () => {
     };
     mocks.searchApi.mockResolvedValue(page([item(1), item(2)], { totalItems: 25, totalPages: 3 }));
     mocks.getApiDetail.mockResolvedValue({ summary: item(1), items: [] });
+    mocks.repositories = { dispatchReadDataSource: "api" };
+  });
+
+  it("'+ Agregar guía' lee el detalle preparado y confirma el despacho contra el backend", async () => {
+    mocks.getApiPreparedDetail.mockResolvedValue({
+      orderId: "order-7",
+      orderReference: "WEB-7",
+      createdAt: "2026-10-09T15:00:00.000Z",
+      orderStatus: OrderStatus.ready_for_dispatch,
+      recipientName: null,
+      recipientPhone: null,
+      address: {
+        recipientName: "Ana",
+        recipientPhone: "5555-0000",
+        line1: "Calle 1",
+        line2: null,
+        city: null,
+        stateOrDepartment: null,
+        postalCode: null,
+        country: "GT",
+        references: null,
+      },
+      notificationContact: { emailMode: "not_applicable" },
+      transportMode: TransportMode.third_party,
+      pickingOrderId: "picking-7",
+      pickingStatus: PickingStatus.completed,
+      pickingCompletedAt: "2026-10-09T15:00:00.000Z",
+      packingId: "packing-7",
+      packingStatus: PackingStatus.finalized,
+      packingFinalizedAt: "2026-10-09T16:00:00.000Z",
+      packageCount: 1,
+      totalWeight: 2,
+      labelCode: "LBL-7",
+    });
+    mocks.confirmApiOrder.mockResolvedValue({});
+    const ready = item(7, {
+      operationalStatus: OrderStatus.ready_for_dispatch,
+      packingId: "packing-7",
+      packingFinalizedAt: "2026-10-09T16:00:00.000Z",
+    });
+    const { result } = await renderHistory();
+
+    await act(async () => result.current.openDispatch(ready));
+
+    expect(mocks.getApiPreparedDetail).toHaveBeenCalledWith("branch-1", "order-7");
+    expect(mocks.getPreparedDetail).not.toHaveBeenCalled();
+    expect(result.current.dispatchDetail).toMatchObject({
+      orderId: "order-7",
+      recipientName: "Ana",
+      address: { line1: "Calle 1", city: "", country: "GT" },
+      pickingStatus: "completed",
+    });
+
+    let confirmed = false;
+    await act(async () => {
+      confirmed = await result.current.confirmDispatch({
+        valid: true,
+        errors: {},
+        carrierName: "Cargo Express",
+        trackingNumber: "TRK-1",
+      });
+    });
+
+    expect(confirmed).toBe(true);
+    expect(mocks.confirmApiOrder).toHaveBeenCalledWith("branch-1", "order-7", {
+      operationId: expect.any(String),
+      carrierName: "Cargo Express",
+      trackingNumber: "TRK-1",
+    });
+    expect(mocks.confirm).not.toHaveBeenCalled();
   });
 
   it("carga la primera página del backend y expone el total del servidor", async () => {
@@ -240,6 +327,61 @@ describe("useLogisticsHistory en modo mock", () => {
     expect(result.current.pagination).toMatchObject({ mode: "client", totalItems: 1, totalPages: 1 });
     expect(mocks.execute.mock.calls.length).toBe(calls);
     expect(mocks.searchApi).not.toHaveBeenCalled();
+  });
+
+  it("'+ Agregar guía' usa el servicio local cuando no está en modo API", async () => {
+    mocks.repositories = { dispatchReadDataSource: "mock" };
+    mocks.getPreparedDetail.mockResolvedValue({
+      orderId: "order-9",
+      orderReference: "WEB-LOCAL",
+      createdAt: "2026-10-09T15:00:00.000Z",
+      orderStatus: OrderStatus.ready_for_dispatch,
+      recipientName: "Carlos",
+      recipientPhone: "5555-1111",
+      address: null,
+      notificationContact: { emailMode: "not_applicable" },
+      transportMode: TransportMode.customer,
+      pickingOrderId: "picking-local",
+      pickingStatus: PickingStatus.completed,
+      pickingCompletedAt: "2026-10-09T15:00:00.000Z",
+      packingId: "packing-local",
+      packingStatus: PackingStatus.finalized,
+      packingFinalizedAt: "2026-10-09T16:00:00.000Z",
+      packageCount: 1,
+      totalWeight: 1,
+      labelCode: "LBL-LOCAL",
+    });
+    mocks.confirm.mockResolvedValue({});
+    const ready = item(9, {
+      operationalStatus: OrderStatus.ready_for_dispatch,
+      packingId: "packing-local",
+      packingFinalizedAt: "2026-10-09T16:00:00.000Z",
+    });
+    const { result } = await renderHistory();
+
+    await act(async () => result.current.openDispatch(ready));
+
+    expect(mocks.getPreparedDetail).toHaveBeenCalledWith("branch-1", "order-9");
+    expect(mocks.getApiPreparedDetail).not.toHaveBeenCalled();
+
+    let confirmed = false;
+    await act(async () => {
+      confirmed = await result.current.confirmDispatch({
+        valid: true,
+        errors: {},
+        carrierName: "Mensajería Local",
+        trackingNumber: "TRK-LOCAL",
+      });
+    });
+
+    expect(confirmed).toBe(true);
+    expect(mocks.confirm).toHaveBeenCalledWith("branch-1", {
+      orderId: "order-9",
+      operationId: expect.any(String),
+      carrierName: "Mensajería Local",
+      trackingNumber: "TRK-LOCAL",
+    });
+    expect(mocks.confirmApiOrder).not.toHaveBeenCalled();
   });
 });
 

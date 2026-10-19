@@ -56,8 +56,14 @@ export function getSalesContactUrl(): string {
   return normalizeUrl(process.env.NEXT_PUBLIC_SALES_CONTACT_URL);
 }
 
-/** Destino de "Contratar MARJYM" dentro de la demo: la landing real. */
-export function getDemoContractUrl(): string {
+/** Ruta del formulario comercial ("Solicitar informacion"), la misma en la landing real. */
+export const INFORMATION_REQUEST_PATH = "/solicitar-informacion";
+
+/**
+ * Destino de "Solicitar informacion" dentro de la demo: el formulario de la landing real. La demo
+ * nunca envia solicitudes: solo enlaza a otro sitio. Vacio si la landing no esta configurada.
+ */
+export function getDemoInformationRequestUrl(): string {
   const marketingUrl = getMarketingSiteUrl();
-  return marketingUrl ? `${marketingUrl}/contratar` : "";
+  return marketingUrl ? `${marketingUrl}${INFORMATION_REQUEST_PATH}` : "";
 }

@@ -172,7 +172,8 @@ describe("ConfirmSaleService en modo API", () => {
       }),
     );
 
-    expect(raw.bankAccounts.getById).toHaveBeenCalledWith(ids.bankAccount);
+    expect(raw.bankAccounts.getActiveByTenant).toHaveBeenCalledWith(ids.tenant);
+    expect(raw.bankAccounts.getById).not.toHaveBeenCalled();
     expect(posApi.confirmSale.mock.calls[0]?.[0].payments).toEqual([
       expect.objectContaining({ method: PaymentMethod.cash, amount: 20 }),
       expect.objectContaining({ method: PaymentMethod.card, amount: 30, reference: "AUTH-123456" }),
@@ -216,7 +217,7 @@ describe("ConfirmSaleService en modo API", () => {
     expect(cashOnly.posApi.confirmSale).not.toHaveBeenCalled();
 
     const badAccount = createPosRepositories();
-    badAccount.raw.bankAccounts.getById.mockResolvedValueOnce(null);
+    badAccount.raw.bankAccounts.getActiveByTenant.mockResolvedValueOnce([]);
     await expect(
       new ConfirmSaleService(badAccount.repositories).execute(
         confirmInput({

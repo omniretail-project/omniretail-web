@@ -81,16 +81,16 @@ independientes; cualquiera ausente deja el canal comercial no disponible.
 `plans`/`tenantSubscriptions` directo. Si la resolucion falla, `entitlements` queda `null` y
 `hasCapability`/`getLimit` devuelven `false`/`undefined`; un fallo aca NUNCA dispara logout ni
 redirige (Authentication y Entitlement son capas distintas). La suscripción comercial usa Plan
-Básico obligatorio (Q199/mes, sin cupos de empleados ni sucursales), E-commerce + Entregas (Q129/mes) y
-Reportes avanzados (Q99/mes). Los complementos persisten en `TenantSubscription.addonCodes`; el
-resolver compone sus capabilities con las del plan base. El acceso exige entitlement Y permiso
-de rol. La facturación es simulada: un snapshot por ciclo mensual y tenant, sin cobros, impuestos,
-prorrateos ni factura fiscal. `UpdateTenantSubscriptionService` cambia los complementos y propaga por
-`tenant-subscription.changed` -- solo dentro de la misma pestana: DataEventBus es in-memory, no
-cross-tab. La capacidad comercial `ecommerce` bloquea nuevas compras cuando el complemento se
-desactiva; no bloquea el cumplimiento de Orders anteriores. Picking, Packing, Dispatch y
-seguimiento histórico conservan autorización por sesión, tenant, sucursal, permiso y propiedad
-del recurso según corresponda. `delivery` no debe utilizarse como veto global de Logistics.
+Básico obligatorio (Q199/mes, sin cupos de empleados ni sucursales), E-commerce + Entregas
+(Q129/mes) y Reportes avanzados (Q99/mes). Los complementos persisten en
+`TenantSubscription.addonCodes`; el resolver compone sus capabilities con las del plan base. El
+acceso exige entitlement Y permiso de rol. `/administracion/plan` es de solo lectura: no existen
+contratación automática, cambio de plan por el cliente ni facturación simulada en el frontend;
+los cambios se solicitan al equipo MARJYM por el canal configurado. La capacidad comercial
+`ecommerce` bloquea nuevas compras cuando el complemento deja de estar aprovisionado, pero no el
+cumplimiento de Orders anteriores. Picking, Packing, Dispatch y seguimiento histórico conservan
+autorización por sesión, tenant, sucursal, permiso y propiedad del recurso según corresponda.
+`delivery` no debe utilizarse como veto global de Logistics.
 
 ## Producto
 

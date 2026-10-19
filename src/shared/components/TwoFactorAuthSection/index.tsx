@@ -26,6 +26,8 @@ export interface TwoFactorAuthSectionProps {
   onDisable: (currentPassword: string) => Promise<void>;
   /** Metodos que se muestran deshabilitados como "Próximamente" (lo decide el modulo que lo usa). */
   unavailableMethods?: readonly MfaMethod[];
+  /** Largo maximo del campo "Contraseña actual" al desactivar (lo decide la politica del modulo). */
+  passwordMaxLength?: number;
 }
 
 type WizardStep =
@@ -92,6 +94,7 @@ export function TwoFactorAuthSection({
   onVerify,
   onDisable,
   unavailableMethods = [],
+  passwordMaxLength,
 }: TwoFactorAuthSectionProps) {
   const [step, setStep] = useState<WizardStep>({ name: "idle" });
   const [method, setMethod] = useState<MfaMethod>("totp");
@@ -356,6 +359,7 @@ export function TwoFactorAuthSection({
               autoComplete="current-password"
               disabled={busy}
               id="mfa-disable-password"
+              maxLength={passwordMaxLength}
               onChange={(event) => setDisablePassword(event.target.value)}
               value={disablePassword}
             />

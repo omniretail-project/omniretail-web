@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { isApiMode } from "@/config/api-mode";
 import { SESSION_POLICY } from "@/config/session-policy";
 import { UserType } from "@/core/enums";
+import { pingSession } from "@/infrastructure/api/sessionHeartbeat";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { employeeActivityStore } from "@/infrastructure/storage/employeeActivityStore";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
@@ -13,6 +15,13 @@ export const EMPLOYEE_INACTIVITY_TIMEOUT_MS = SESSION_POLICY.employee.inactivity
 
 /** La actividad se guarda como maximo cada 10 s: scroll/pointerdown se disparan sin parar. */
 export const EMPLOYEE_ACTIVITY_WRITE_INTERVAL_MS = 10 * 1000;
+
+/**
+ * Modo api: con actividad real en esta pestaña se avisa al backend como maximo cada 5 min, para que
+ * no expire la sesion de quien llena un formulario largo. Sin actividad no hay ping, y la
+ * inactividad real si cierra la sesion.
+ */
+export const EMPLOYEE_SESSION_HEARTBEAT_MS = 5 * 60 * 1000;
 
 const activityEvents = ["keydown", "pointerdown", "scroll", "touchstart"] as const;
 
@@ -43,6 +52,7 @@ export function EmployeeInactivityTimeout() {
   const router = useRouter();
   const lastActivityAtRef = useRef(0);
   const lastWriteAtRef = useRef(0);
+  const lastHeartbeatAtRef = useRef(0);
   const sessionStartedAtRef = useRef<number | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closingRef = useRef(false);
@@ -91,11 +101,14 @@ export function EmployeeInactivityTimeout() {
     if (user?.type !== UserType.employee) return;
 
     let active = true;
+    const heartbeatEnabled = isApiMode();
     lastActivityAtRef.current = Date.now();
     // Sin escrituras hasta revisar la marca guardada: la actividad de estos milisegundos no puede
     // pisar una marca vieja que deberia cerrar la sesion.
     lastWriteAtRef.current = Number.POSITIVE_INFINITY;
     sessionStartedAtRef.current = null;
+    // La carga de la pagina ya hablo con el backend: el primer ping espera 5 min de actividad.
+    lastHeartbeatAtRef.current = Date.now();
     closingRef.current = false;
     scheduleTimeout();
 
@@ -129,6 +142,10 @@ export function EmployeeInactivityTimeout() {
       if (now - lastWriteAtRef.current >= EMPLOYEE_ACTIVITY_WRITE_INTERVAL_MS) {
         lastWriteAtRef.current = now;
         employeeActivityStore.write(now);
+      }
+      if (heartbeatEnabled && now - lastHeartbeatAtRef.current >= EMPLOYEE_SESSION_HEARTBEAT_MS) {
+        lastHeartbeatAtRef.current = now;
+        void pingSession();
       }
       scheduleTimeout();
     };

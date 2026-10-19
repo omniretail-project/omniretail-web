@@ -24,12 +24,16 @@ interface ToastContextValue {
 }
 const ToastContext = createContext<ToastContextValue | null>(null);
 const DEFAULT_TOAST_DURATION = 4000;
+// Fondos OPACOS (el tinte se mezcla con blanco): un fondo con alfa deja ver el formulario debajo y
+// resta contraste al texto. El tono se refuerza con un borde izquierdo solido.
 const toneClasses: Record<StatusTone, string> = {
-  neutral: "border-[var(--color-border)] bg-white",
-  info: "border-[var(--color-primary)]/60 bg-[var(--color-primary)]/10",
-  success: "border-[var(--color-success)]/45 bg-white",
-  warning: "border-[var(--color-warning)]/55 bg-[var(--color-warning)]/15",
-  danger: "border-[var(--color-danger)]/45 bg-[var(--color-danger)]/10",
+  neutral: "border-[var(--color-border)] border-l-4 border-l-[var(--color-structure)] bg-white",
+  info: "border-[var(--color-primary)] border-l-4 border-l-[var(--color-structure)] bg-[color-mix(in_srgb,var(--color-primary)_14%,white)]",
+  success: "border-[var(--color-success)] border-l-4 bg-white",
+  warning:
+    "border-[var(--color-warning)] border-l-4 bg-[color-mix(in_srgb,var(--color-warning)_16%,white)]",
+  danger:
+    "border-[var(--color-danger)] border-l-4 bg-[color-mix(in_srgb,var(--color-danger)_10%,white)]",
 };
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -86,17 +90,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="fixed inset-x-4 bottom-4 z-50 space-y-2 sm:left-auto sm:right-4 sm:w-80">
+      <div
+        aria-live="polite"
+        className="pointer-events-none fixed inset-x-4 bottom-4 z-[100] space-y-2 sm:left-auto sm:right-4 sm:w-96"
+      >
         {toasts.map((toast) => (
           <button
-            className={`block w-full rounded-md border p-4 text-left shadow-lg transition hover:border-[var(--color-structure)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] ${toneClasses[toast.tone ?? "neutral"]}`}
+            className={`pointer-events-auto block w-full rounded-md border p-4 text-left shadow-xl transition hover:border-[var(--color-structure)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] ${toneClasses[toast.tone ?? "neutral"]}`}
             key={toast.id}
             onClick={() => dismissToast(toast.id)}
             type="button"
           >
             <strong className="block text-sm text-[var(--color-title)]">{toast.title}</strong>
             {toast.description ? (
-              <span className="mt-1 block text-sm text-[var(--color-text-muted)]">
+              <span className="mt-1 block break-words text-sm leading-5 text-[var(--color-text)]">
                 {toast.description}
               </span>
             ) : null}

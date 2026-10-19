@@ -317,6 +317,28 @@ describe("ReceivingDocumentDetailService transfer API", () => {
     });
   });
 
+  it("lets a warehouse role receive a transfer with receiving confirm and without transfer management", async () => {
+    const { service, inventoryTransfers } = createHarness({
+      permissions: ["receiving.receipts.read", "receiving.receipts.confirm"],
+    });
+
+    const detail = await service.getDocument("transfer", transferId, destinationBranchId);
+    expect(detail.transferReception).toMatchObject({ canReceiveTransfer: true });
+
+    await service.confirm({
+      documentType: "transfer",
+      documentId: transferId,
+      confirmationId: "transfer-confirmation-warehouse",
+      lines: [{ ...detail.lines[0], receivedNow: 2 }],
+      incidents: [],
+    });
+
+    expect(inventoryTransfers.markReceived).toHaveBeenCalledWith(
+      transferId,
+      expect.objectContaining({ confirmationId: "transfer-confirmation-warehouse" }),
+    );
+  });
+
   it("blocks a transfer that is no longer in transit", async () => {
     const { service } = createHarness({ transferStatus: InventoryTransferStatus.received });
 

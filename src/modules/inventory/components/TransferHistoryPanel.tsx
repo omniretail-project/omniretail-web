@@ -152,6 +152,11 @@ export function TransferHistoryPanel({ rows, loading, error, canManageTransfers,
             </section>
             <section className="rounded-xl bg-[var(--color-app-background)] p-3.5">
               <h4 className="text-sm font-bold text-[var(--color-title)]">Movimientos físicos</h4>
+              {selected.movementsLimitation ? (
+                <p className="mt-2 text-xs text-[var(--color-text-muted)]" role="note">
+                  {selected.movementsLimitation}
+                </p>
+              ) : null}
               {selected.movements.length === 0 ? (
                 <p className="mt-3 rounded-lg bg-white p-3 text-sm text-[var(--color-text-muted)]">
                   No hay entradas o salidas registradas.

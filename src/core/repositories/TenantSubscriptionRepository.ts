@@ -2,7 +2,7 @@ import type { SubscriptionInvoice, TenantSubscription } from "@/core/entities";
 
 /**
  * Tenant-scoped -- `getByTenantId` nunca devuelve la Subscription de otro tenant. `update` es la
- * única mutación expuesta hoy y la usa `ChangeTenantPlanService` (cambio de Plan). `create` sigue
+ * única mutación expuesta; hoy ningún servicio de la UI la invoca (plan y add-ons son solo lectura). `create` sigue
  * reservado a seed/onboarding.
  */
 export interface TenantSubscriptionRepository {

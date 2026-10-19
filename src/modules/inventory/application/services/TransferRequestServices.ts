@@ -201,16 +201,19 @@ async function ensureProviderAvailability(
   // En modo API el backend es la fuente autoritativa y reserva de forma transaccional al aprobar.
   // No se consulta el store mock, pues podría rechazar una solicitud válida con saldos obsoletos.
   if (repositories.inventoryStockDataSource === "api") return;
-  const [balances, locations] = await Promise.all([
+  const [balances, locations, settings] = await Promise.all([
     repositories.inventory.getBalances(),
-    repositories.inventory.getLocations(),
+    repositories.inventory.getLocations(branchId),
+    repositories.inventory.getProductInventorySettings(productId, branchId),
   ]);
+  // Solo cuenta el stock de la ubicacion operativa asignada de la sucursal proveedora.
   const available = getBranchAvailableQuantity({
     tenantId,
     branchId,
     productId,
     balances,
     locations,
+    assignedLocationId: settings?.defaultLocationId ?? null,
   });
   if (quantity > available) {
     throw new InventoryServiceError(
