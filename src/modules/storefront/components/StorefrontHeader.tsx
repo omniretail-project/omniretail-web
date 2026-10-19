@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { UserType } from "@/core/enums";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
@@ -19,13 +19,6 @@ export function StorefrontHeader() {
   const routes = useStorefrontRoutes();
   const router = useRouter();
   const [search, setSearch] = useState("");
-  const [cartJustUpdated, setCartJustUpdated] = useState(false);
-  useEffect(() => {
-    if (!lastAddedAt) return;
-    setCartJustUpdated(true);
-    const timeout = window.setTimeout(() => setCartJustUpdated(false), 900);
-    return () => window.clearTimeout(timeout);
-  }, [lastAddedAt]);
   const normalizedSearch = search.trim().toLocaleLowerCase();
   const suggestions = useMemo(() => {
     if (!normalizedSearch) return [];
@@ -82,7 +75,8 @@ export function StorefrontHeader() {
             Carrito{" "}
             <span
               aria-live="polite"
-              className={`ml-1 inline-block rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-xs text-[var(--color-topbar)] transition ${cartJustUpdated ? "scale-125 animate-pulse ring-4 ring-[var(--color-primary)]/35" : "scale-100"}`}
+              className={`ml-1 inline-block rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-xs text-[var(--color-topbar)] transition ${lastAddedAt ? "animate-[bounce_0.9s_ease-in-out_1] ring-4 ring-[var(--color-primary)]/35" : ""}`}
+              key={lastAddedAt ?? "initial"}
             >
               {itemCount}
             </span>
