@@ -218,6 +218,10 @@ export default defineConfig({
         // Descarga unificada del comprobante del storefront (PR de carrito y correo).
         "src/app/api/public/[slug]/receipt/[token]/route.ts",
         "src/modules/storefront/application/services/StorefrontReceiptPdfService.ts",
+        // Detalle público: atributos y disponibilidad por sucursal.
+        "src/modules/storefront/application/services/ApiStorefrontCatalogService.ts",
+        "src/modules/storefront/hooks/useStorefrontProductDetail.ts",
+        "src/modules/storefront/pages/ProductDetailPage.tsx",
         "src/modules/storefront/components/StorefrontHeader.tsx",
         "src/modules/storefront/providers/StorefrontCartProvider.tsx",
         "src/modules/storefront/pages/OrderConfirmationPage.tsx",

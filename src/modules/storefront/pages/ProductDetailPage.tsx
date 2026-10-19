@@ -21,6 +21,7 @@ export function ProductDetailPage({ productId }: { productId: string }) {
   const { products } = useStorefrontDiscovery();
   const { showToast } = useToast();
   const [quantity, setQuantity] = useState(1);
+  const [quantityInput, setQuantityInput] = useState("1");
   const { items: offers } = useStorefrontOffers({ productId, quantity });
   const [addedQuantity, setAddedQuantity] = useState<number | null>(null);
   const [unavailableQuantityModalOpen, setUnavailableQuantityModalOpen] = useState(false);
@@ -78,6 +79,34 @@ export function ProductDetailPage({ productId }: { productId: string }) {
       Boolean(availability?.length) &&
       !availability!.some((branch) => branch.available));
   const notifyUnavailableQuantity = () => setUnavailableQuantityModalOpen(true);
+  const updateQuantity = (nextQuantity: number) => {
+    setQuantity(nextQuantity);
+    setQuantityInput(String(nextQuantity));
+  };
+  const changeQuantityInput = (input: string) => {
+    const digits = input.replace(/\D/g, "");
+    setQuantityInput(digits);
+    if (!digits) return;
+
+    const nextQuantity = Number(digits);
+    if (!Number.isSafeInteger(nextQuantity) || nextQuantity < 1) return;
+    if (
+      availableQuantity !== undefined &&
+      availableQuantity !== null &&
+      quantityAlreadyInCart + nextQuantity > availableQuantity
+    ) {
+      setQuantityInput(String(quantity));
+      notifyUnavailableQuantity();
+      return;
+    }
+    setQuantity(nextQuantity);
+  };
+  const commitQuantityInput = () => {
+    const nextQuantity = Number(quantityInput);
+    if (!quantityInput || !Number.isSafeInteger(nextQuantity) || nextQuantity < 1) {
+      setQuantityInput(String(quantity));
+    }
+  };
   const increaseQuantity = () => {
     if (
       availableQuantity !== undefined &&
@@ -87,7 +116,7 @@ export function ProductDetailPage({ productId }: { productId: string }) {
       notifyUnavailableQuantity();
       return;
     }
-    setQuantity((current) => current + 1);
+    updateQuantity(quantity + 1);
   };
   const addToCart = async () => {
     if (isOutOfStock) return;
@@ -164,12 +193,21 @@ export function ProductDetailPage({ productId }: { productId: string }) {
                   aria-label="Reducir cantidad"
                   className="px-4 text-xl font-bold text-[var(--color-title)] disabled:opacity-40"
                   disabled={quantity <= 1}
-                  onClick={() => setQuantity((current) => Math.max(1, current - 1))}
+                  onClick={() => updateQuantity(Math.max(1, quantity - 1))}
                   type="button"
                 >
                   −
                 </button>
-                <span className="font-black text-[var(--color-text)]">{quantity}</span>
+                <input
+                  aria-label="Cantidad a ordenar"
+                  className="w-14 bg-transparent text-center font-black text-[var(--color-text)] outline-none"
+                  inputMode="numeric"
+                  min="1"
+                  onBlur={commitQuantityInput}
+                  onChange={(event) => changeQuantityInput(event.target.value)}
+                  type="text"
+                  value={quantityInput}
+                />
                 <button
                   aria-label="Aumentar cantidad"
                   className="px-4 text-xl font-bold text-[var(--color-title)] disabled:opacity-40"
