@@ -157,6 +157,7 @@ export function SeguridadPage() {
             autoComplete="current-password"
             disabled={busy}
             id="security-current-password"
+            maxLength={CUSTOMER_PASSWORD_POLICY.MAX_LENGTH}
             onChange={(event) => updatePasswordField("currentPassword", event.target.value)}
             value={form.currentPassword}
           />
@@ -238,6 +239,7 @@ export function SeguridadPage() {
         onBegin={mfaEnrollment.begin}
         onDisable={mfaEnrollment.disable}
         onVerify={mfaEnrollment.verify}
+        passwordMaxLength={CUSTOMER_PASSWORD_POLICY.MAX_LENGTH}
         status={mfaEnrollment.status}
         unavailableMethods={mfaEnrollment.unavailableMethods}
       />
