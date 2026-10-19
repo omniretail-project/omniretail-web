@@ -8,6 +8,7 @@ export * from "./application/services/PackingApplicationService";
 export * from "./application/services/PickingAuthorizationContext";
 export * from "./application/services/DispatchApplicationService";
 export * from "./application/services/DispatchAuthorizationContext";
+export * from "./application/services/StorePickupHandoverApplicationService";
 export * from "./application/services/GetLogisticsItemTraceService";
 export * from "./application/services/GetLogisticsHistoryService";
 export * from "./application/services/LogisticsHistoryAuthorizationContext";
