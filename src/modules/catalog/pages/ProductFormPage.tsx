@@ -4,6 +4,8 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { Product } from "@/core/entities";
 import { ProductType } from "@/core/enums";
+import { OPERATIONAL_LOCATION_ERROR_MESSAGES } from "@/core/inventory/operationalLocationErrors";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { InlineAlert } from "@/shared/components/InlineAlert";
@@ -20,6 +22,31 @@ import { ProductEditorPartialSaveError } from "@/modules/catalog/application/ser
 
 interface ProductFormPageProps {
   mode: "create" | "edit";
+}
+
+const LOCATION_FAILURE_TITLES = {
+  INVENTORY_LOCATION_REQUIRED: "Falta la ubicación operativa",
+  INVENTORY_LOCATION_CHANGE_BLOCKED: "No se puede cambiar la ubicación operativa",
+} as const;
+
+/**
+ * Presenta los rechazos de ubicacion del backend (codigo preservado en BackendRequestError; en un
+ * guardado parcial solo viaja el mensaje ya traducido). Cualquier otro error, incluidos 401 y 403,
+ * conserva su mensaje real.
+ */
+export function describeLocationSaveFailure(error: unknown) {
+  const codes = Object.keys(LOCATION_FAILURE_TITLES) as (keyof typeof LOCATION_FAILURE_TITLES)[];
+  const code =
+    error instanceof BackendRequestError
+      ? codes.find((candidate) => candidate === error.code)
+      : error instanceof ProductEditorPartialSaveError
+        ? codes.find((candidate) =>
+            error.failureMessages.includes(OPERATIONAL_LOCATION_ERROR_MESSAGES[candidate]),
+          )
+        : undefined;
+  return code
+    ? { title: LOCATION_FAILURE_TITLES[code], description: OPERATIONAL_LOCATION_ERROR_MESSAGES[code] }
+    : null;
 }
 
 export function ProductFormPage({ mode }: ProductFormPageProps) {
@@ -39,6 +66,9 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   const mutations = useProductMutations();
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [createdZeroStockProduct, setCreatedZeroStockProduct] = useState<Product | null>(null);
+  // Un producto fisico sin ubicacion operativa no puede recibir existencias: primero se configura.
+  const [createdWithoutOperationalLocation, setCreatedWithoutOperationalLocation] =
+    useState(false);
   const [canonicalReloadRevision, setCanonicalReloadRevision] = useState(0);
 
   // Solo precarga la ruta de Inventario para acortar la siguiente navegacion; no navega: eso
@@ -72,6 +102,7 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
         tone: "success",
       });
       if (!isEdit && product.productType === ProductType.physical && product.tracking.stock) {
+        setCreatedWithoutOperationalLocation(!dtoWithActiveBranch.inventorySettings?.defaultLocationId);
         setCreatedZeroStockProduct(product);
         return;
       }
@@ -79,12 +110,17 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
     } catch (caughtError) {
       if (caughtError instanceof ProductEditorPartialSaveError) {
         mutations.clearError();
-        showToast({
-          title: "Producto guardado parcialmente",
-          description: caughtError.message,
-          tone: "warning",
-          duration: 8000,
-        });
+        const partialLocationFailure = describeLocationSaveFailure(caughtError);
+        showToast(
+          partialLocationFailure
+            ? { ...partialLocationFailure, tone: "danger", duration: 9000 }
+            : {
+                title: "Producto guardado parcialmente",
+                description: caughtError.message,
+                tone: "warning",
+                duration: 8000,
+              },
+        );
         if (isEdit) {
           await editorState.reload();
           setCanonicalReloadRevision((current) => current + 1);
@@ -93,11 +129,16 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
         }
         return;
       }
-      showToast({
-        title: "No se pudo guardar",
-        description: caughtError instanceof Error ? caughtError.message : undefined,
-        tone: "danger",
-      });
+      const locationFailure = describeLocationSaveFailure(caughtError);
+      showToast(
+        locationFailure
+          ? { ...locationFailure, tone: "danger", duration: 9000 }
+          : {
+              title: "No se pudo guardar",
+              description: caughtError instanceof Error ? caughtError.message : undefined,
+              tone: "danger",
+            },
+      );
     } finally {
       editorState.setEventReloadsSuspended(false);
     }
@@ -189,9 +230,21 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
       />
       <ConfirmDialog
         open={Boolean(createdZeroStockProduct)}
-        title="Producto creado. Actualmente no tiene existencia."
-        message={`La existencia pertenece a la sucursal activa (${currentBranch.name}). Registra el inventario inicial con el flujo de ajuste para mantener sus validaciones de lote, serie y vencimiento.`}
-        confirmLabel="Agregar existencia inicial"
+        title={
+          createdWithoutOperationalLocation
+            ? "Producto creado. Falta su ubicación operativa."
+            : "Producto creado. Actualmente no tiene existencia."
+        }
+        message={
+          createdWithoutOperationalLocation
+            ? `El producto no tiene ubicación operativa en la sucursal activa (${currentBranch.name}) y no podrá recibir, reservar ni vender existencias hasta configurarla.`
+            : `La existencia pertenece a la sucursal activa (${currentBranch.name}). Registra el inventario inicial con el flujo de ajuste para mantener sus validaciones de lote, serie y vencimiento.`
+        }
+        confirmLabel={
+          createdWithoutOperationalLocation
+            ? "Configurar ubicación operativa"
+            : "Agregar existencia inicial"
+        }
         onCancel={() => {
           // Al navegar, el desmontaje de la pagina elimina el dialogo (sin cerrarlo antes).
           if (createdZeroStockProduct) {
@@ -201,6 +254,10 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
           setCreatedZeroStockProduct(null);
         }}
         onConfirm={() => {
+          if (createdZeroStockProduct && createdWithoutOperationalLocation) {
+            router.push(`/catalogo/productos/${createdZeroStockProduct.id}/editar`);
+            return;
+          }
           if (createdZeroStockProduct) {
             router.push(
               `/inventario/alertas?productId=${encodeURIComponent(createdZeroStockProduct.id)}&openAdjustment=1`,

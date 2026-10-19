@@ -125,6 +125,17 @@ function createHarness(physicalQuantity: number, reservedQuantity = 0) {
       quantity: physicalQuantity,
       createdAt: now,
     });
+    db.productInventorySettings.push({
+      id: "product-inventory-settings-analgesic-centro",
+      tenantId,
+      branchId,
+      productId: "prod-analgesic",
+      defaultLocationId: "loc-centro-a",
+      minStock: 1,
+      reorderPoint: 2,
+      createdAt: now,
+      updatedAt: now,
+    });
   });
   const eventBus = new DataEventBus();
   const orders = new MockOrderRepository(store, eventBus);

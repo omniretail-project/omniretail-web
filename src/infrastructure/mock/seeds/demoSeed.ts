@@ -938,6 +938,40 @@ const legacyDemoSeedDatabase: MockDatabase = {
       createdAt: now,
       updatedAt: now,
     },
+    // Ubicacion operativa explicita de los productos que ya tienen existencias sembradas: la
+    // disponibilidad usa solo la ubicacion asignada, nunca la deduce de los balances.
+    {
+      id: "product-inventory-settings-screws-centro",
+      tenantId: "tenant-demo",
+      productId: "prod-screws",
+      branchId: "branch-centro",
+      minStock: 20,
+      reorderPoint: 30,
+      defaultLocationId: "loc-centro-a",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "product-inventory-settings-analgesic-centro",
+      tenantId: "tenant-demo",
+      productId: "prod-analgesic",
+      branchId: "branch-centro",
+      minStock: 15,
+      reorderPoint: 20,
+      defaultLocationId: "loc-centro-a",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "product-inventory-settings-sensor-centro",
+      tenantId: "tenant-demo",
+      productId: "prod-sensor-serial-lot",
+      branchId: "branch-centro",
+      minStock: 0,
+      defaultLocationId: "loc-centro-b",
+      createdAt: now,
+      updatedAt: now,
+    },
   ],
   inventoryBalances: [
     {
@@ -1031,6 +1065,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
     },
   ],
   inventoryReservationConsumeOperations: [],
+  inventoryLocationRegularizations: [],
   inventoryAdjustments: [],
   inventoryTransferRequests: [
     {

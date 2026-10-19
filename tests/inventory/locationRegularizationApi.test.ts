@@ -9,9 +9,13 @@ import {
   parseBackendDecimal,
 } from "@/infrastructure/api/repositories/inventoryRegularizationApi.schema";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
-import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { MockInventoryAdjustmentRepository } from "@/infrastructure/mock/repositories/MockInventoryAdjustmentRepository";
-import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
+import {
+  addBalance,
+  createInventoryScenario,
+  LOCATION_A_ID,
+  UNASSIGNED_PRODUCT_ID,
+} from "./mockInventoryFixtures";
 
 const BRANCH = "10000000-0000-4000-8000-000000000001";
 const PRODUCT = "20000000-0000-4000-8000-000000000001";
@@ -21,20 +25,6 @@ const KEY = "40000000-0000-4000-8000-000000000001";
 const REGULARIZATION = "50000000-0000-4000-8000-000000000001";
 const MOVEMENT = "60000000-0000-4000-8000-000000000001";
 const FINGERPRINT = "ab".repeat(32);
-
-class MemoryStorageAdapter extends LocalStorageAdapter {
-  private readonly values = new Map<string, string>();
-  override get<T>(key: string): T | null {
-    const value = this.values.get(key);
-    return value === undefined ? null : (JSON.parse(value) as T);
-  }
-  override set<T>(key: string, value: T): void {
-    this.values.set(key, JSON.stringify(value));
-  }
-  override remove(key: string): void {
-    this.values.delete(key);
-  }
-}
 
 function wirePreview(overrides: Record<string, unknown> = {}) {
   return {
@@ -485,20 +475,80 @@ describe("initial assignment contract", () => {
 });
 
 describe("MockInventoryAdjustmentRepository location regularization", () => {
-  it("fails explicitly instead of simulating the operation", async () => {
-    const repository = new MockInventoryAdjustmentRepository(
-      new MockDatabaseStore(new MemoryStorageAdapter()),
-      new DataEventBus(),
-    );
+  // La cobertura completa (snapshot, idempotencia, atomicidad, bloqueos) vive en
+  // mockLocationRegularization.test.ts; aqui se fija el contrato vigente frente al antiguo bloqueo.
+  function createMockRepository() {
+    const scenario = createInventoryScenario();
+    addBalance(scenario.store, {
+      id: "balance-legacy-contract",
+      tenantId: scenario.tenantId,
+      branchId: scenario.branchId,
+      productId: UNASSIGNED_PRODUCT_ID,
+      quantity: 5,
+    });
+    return {
+      ...scenario,
+      repository: new MockInventoryAdjustmentRepository(scenario.store, scenario.eventBus),
+    };
+  }
 
-    await expect(repository.previewLocationRegularization()).rejects.toThrow(
-      "no esta disponible en modo mock",
-    );
-    await expect(repository.regularizeLocationBalance()).rejects.toThrow(
-      "no esta disponible en modo mock",
-    );
-    await expect(repository.getLocationRegularizationOptions()).rejects.toThrow(
-      "no esta disponible en modo mock",
-    );
+  it("no longer rejects the operation as unavailable: it previews and executes explicitly", async () => {
+    const { repository, store, branchId } = createMockRepository();
+    const before = store.getSnapshot();
+
+    const options = await repository.getLocationRegularizationOptions({
+      branchId,
+      productId: UNASSIGNED_PRODUCT_ID,
+    });
+    const preview = await repository.previewLocationRegularization({
+      branchId,
+      productId: UNASSIGNED_PRODUCT_ID,
+      locationId: LOCATION_A_ID,
+      assign: true,
+    });
+
+    expect(options.locationsEnabled).toBe(true);
+    expect(preview).toMatchObject({ eligible: true, sourceQuantity: 5, assignmentRequired: true });
+    // Consultar opciones y vista previa nunca modifica el store.
+    expect(store.getSnapshot().inventoryBalances).toEqual(before.inventoryBalances);
+    expect(store.getSnapshot().productInventorySettings).toEqual(before.productInventorySettings);
+
+    const result = await repository.regularizeLocationBalance({
+      branchId,
+      productId: UNASSIGNED_PRODUCT_ID,
+      locationId: LOCATION_A_ID,
+      idempotencyKey: KEY,
+      reason: "Regularizacion de prueba",
+      expectedSourceQuantity: preview.sourceQuantity,
+      expectedSourceReservedQuantity: preview.sourceReservedQuantity,
+      expectedDestinationQuantity: preview.destinationQuantity,
+      snapshotFingerprint: preview.snapshotFingerprint,
+      assignDestination: true,
+    });
+
+    expect(result).toMatchObject({ idempotent: false, movedQuantity: 5, assignmentApplied: true });
+  });
+
+  it("rejects a preview with an invalid fingerprint and leaves the store untouched", async () => {
+    const { repository, store, branchId } = createMockRepository();
+    const before = store.getSnapshot();
+
+    await expect(
+      repository.regularizeLocationBalance({
+        branchId,
+        productId: UNASSIGNED_PRODUCT_ID,
+        locationId: LOCATION_A_ID,
+        idempotencyKey: KEY,
+        reason: "Regularizacion de prueba",
+        expectedSourceQuantity: 5,
+        expectedSourceReservedQuantity: 0,
+        expectedDestinationQuantity: 0,
+        snapshotFingerprint: FINGERPRINT,
+        assignDestination: true,
+      }),
+    ).rejects.toMatchObject({ status: 409, code: "INVENTORY_REGULARIZATION_STALE_SNAPSHOT" });
+
+    expect(store.getSnapshot().inventoryBalances).toEqual(before.inventoryBalances);
+    expect(store.getSnapshot().inventoryLocationRegularizations).toEqual([]);
   });
 });

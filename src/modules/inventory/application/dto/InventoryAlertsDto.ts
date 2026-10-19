@@ -60,8 +60,26 @@ export interface InventoryProductRow {
   defaultLocationName: string;
   locationQuantities: Record<string, number>;
   locationAvailableQuantities: Record<string, number>;
-  unlocatedQuantity: number;
-  unlocatedAvailableQuantity: number;
+  /**
+   * Saldo heredado sin ubicacion (locationId NULL) de la sucursal. null = no determinable con los
+   * datos cargados (modo API: /inventory/stock solo trae el balance operativo); nunca se fabrica.
+   */
+  unlocatedQuantity: number | null;
+  unlocatedAvailableQuantity: number | null;
+  /** Existencia fisica total de la sucursal (todos los balances). null = no determinable aun. */
+  physicalQuantity?: number | null;
+  /**
+   * Balance operativo: ubicacion asignada y activa (o saldo heredado si no hay asignacion).
+   * `quantity`, `reservedQuantity` y `availableQuantity` de la fila son estos mismos valores.
+   */
+  operationalQuantity?: number | null;
+  operationalReservedQuantity?: number | null;
+  operationalAvailableQuantity?: number | null;
+  /**
+   * El producto conserva existencias fuera de su balance operativo y necesita una regularizacion
+   * explicita. null = por determinar (solo se conoce al consultar los balances fisicos).
+   */
+  requiresRegularization?: boolean | null;
   /**
    * Solo modo API, tras abrir el ajuste: el producto conserva existencias o reservas fuera de su
    * balance operativo. Entradas y conteos quedan bloqueados porque el saldo seria ambiguo.
@@ -173,7 +191,13 @@ export interface InventoryLookupMaps {
   branches: Map<string, Branch>;
   locations: Map<string, StorageLocation>;
   settingsByProduct: Map<string, ProductInventorySettings | null>;
+  /** Ubicacion operativa por `${branchId}:${productId}`; null = sin asignacion. */
+  assignedLocationIds: Map<string, string | null>;
   lotsByProduct: Map<string, StockLot[]>;
+}
+
+export function assignedLocationKey(branchId: string, productId: string) {
+  return `${branchId}:${productId}`;
 }
 
 export interface AdjustStockDto {

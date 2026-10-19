@@ -15,6 +15,7 @@ import type {
 } from "@/modules/storefront/application/dto/StorefrontDiscoveryDto";
 import { ensurePublicStorefrontTenant } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
 import { fromBaseQuantity } from "@/core/units";
+import { createAssignedLocationResolver } from "@/shared/application/services/assignedLocationResolver";
 
 export class GetStorefrontDiscoveryService {
   constructor(private readonly repositories: RepositoryRegistry) {}
@@ -55,6 +56,9 @@ export class GetStorefrontDiscoveryService {
     );
     const branchId = ecommerceConfig?.defaultBranchId;
     const at = new Date().toISOString();
+    const resolveAssignedLocation = branchId
+      ? createAssignedLocationResolver(this.repositories.inventory, branchId)
+      : null;
     const productsWithMedia = await Promise.all(
       products.map(async (product): Promise<StorefrontDiscoveryProductDto> => {
         const [productMedia, components, salesPriceTiers] = await Promise.all([
@@ -68,6 +72,16 @@ export class GetStorefrontDiscoveryService {
           productMedia.filter((item) => item.tenantId === tenantId),
         );
         const saleUnitId = product.saleUnitId ?? product.baseUnitId;
+        // Solo cuenta la ubicacion operativa asignada de cada producto en la sucursal de la tienda.
+        const assignedLocationIds = new Map<string, string | null>();
+        if (resolveAssignedLocation) {
+          await Promise.all(
+            [product.id, ...components.map((component) => component.componentProductId)].map(
+              async (productId) =>
+                assignedLocationIds.set(productId, await resolveAssignedLocation(productId)),
+            ),
+          );
+        }
         const canonicalAvailable = getAvailableQuantity({
           product,
           components,
@@ -78,6 +92,7 @@ export class GetStorefrontDiscoveryService {
           lots,
           serials,
           locations,
+          assignedLocationIds,
           at,
         });
         const conversions = await this.repositories.units.getConversionsByProductScoped(
@@ -142,6 +157,7 @@ function getAvailableQuantity({
   lots,
   serials,
   locations,
+  assignedLocationIds,
   at,
 }: {
   product: Parameters<typeof getCanonicalProductAvailability>[0]["product"];
@@ -156,6 +172,7 @@ function getAvailableQuantity({
   lots: Parameters<typeof getCanonicalProductAvailability>[0]["lots"];
   serials: Parameters<typeof getCanonicalProductAvailability>[0]["serials"];
   locations: Parameters<typeof getCanonicalProductAvailability>[0]["locations"];
+  assignedLocationIds: ReadonlyMap<string, string | null>;
   at: string;
 }): number | null {
   if (product.productType === ProductType.service || !product.tracking.stock) return null;
@@ -169,6 +186,7 @@ function getAvailableQuantity({
       lots,
       serials,
       locations,
+      assignedLocationId: assignedLocationIds.get(product.id) ?? null,
       at,
     });
   }
@@ -184,6 +202,7 @@ function getAvailableQuantity({
             lots,
             serials,
             locations,
+            assignedLocationId: assignedLocationIds.get(componentProduct.id) ?? null,
             at,
           })
         : 0;

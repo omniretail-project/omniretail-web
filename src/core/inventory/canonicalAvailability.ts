@@ -16,9 +16,12 @@ export function getCanonicalProductAvailability(input: {
   lots: StockLot[];
   serials: SerialNumber[];
   locations: StorageLocation[];
+  /** Ubicacion operativa del producto en la sucursal; null = sin asignacion. */
+  assignedLocationId: string | null;
   at: string;
 }): number {
-  const { product, tenantId, branchId, balances, lots, serials, locations, at } = input;
+  const { product, tenantId, branchId, balances, lots, serials, locations, at, assignedLocationId } =
+    input;
   if (!product.tracking.stock) return 0;
   const effective = balances
     .filter((balance) => balance.productId === product.id)
@@ -64,6 +67,7 @@ export function getCanonicalProductAvailability(input: {
     productId: product.id,
     balances: effective,
     locations,
+    assignedLocationId,
   });
 }
 
