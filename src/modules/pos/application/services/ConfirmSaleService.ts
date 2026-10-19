@@ -545,7 +545,11 @@ export class ConfirmSaleService {
     const transfer = payments.find((payment) => payment.method === PaymentMethod.transfer);
     if (!transfer) return payments;
 
-    const bankAccount = await this.repositories.bankAccounts.getById(transfer.bankAccountId ?? "");
+    // Lectura operacional de cuentas activas (pos.sales.create); el detalle por id es administrativo.
+    const activeAccounts = await this.repositories.bankAccounts.getActiveByTenant(
+      input.currentBranch.tenantId,
+    );
+    const bankAccount = activeAccounts.find((account) => account.id === transfer.bankAccountId);
     if (
       !bankAccount ||
       bankAccount.tenantId !== input.currentBranch.tenantId ||

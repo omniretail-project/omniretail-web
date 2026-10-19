@@ -42,6 +42,7 @@ import type {
   ProductWithStock,
 } from "@/modules/inventory/application/dto/InventoryAlertsDto";
 import {
+  INVENTORY_TRANSFERS_MANAGE_PERMISSION,
   ensureCanReadStock,
   ensureUserCanOperateInventoryBranch,
   resolveInventoryContext,
@@ -134,6 +135,9 @@ export class GetInventoryAlertsService {
     if (this.repositories.inventoryTransfersDataSource !== "api") return [];
     const { tenantId, user, permissions } = await resolveInventoryContext(this.repositories);
     ensureCanReadStock(permissions);
+    // Roles que solo consultan stock (Cajero, Bodeguero) no gestionan solicitudes: el backend respondería
+    // 403 y tumbaría la carga completa de alertas.
+    if (!permissions.includes(INVENTORY_TRANSFERS_MANAGE_PERMISSION)) return [];
     await ensureUserCanOperateInventoryBranch(this.repositories, user, params.branchId);
 
     const [providedRequests, requestedTransfers, branches] = await Promise.all([

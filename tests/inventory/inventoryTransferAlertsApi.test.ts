@@ -110,6 +110,26 @@ describe("GetInventoryAlertsService API transfer requests", () => {
     expect(getRequests).not.toHaveBeenCalled();
   });
 
+  it("loads the alerts page without transfer requests for stock-only roles (Cajero, Bodeguero)", async () => {
+    const getRequests = vi.fn();
+    const service = new GetInventoryAlertsService(
+      repositories({
+        getRequests,
+        permissions: ["inventory.stock.read", "catalog.categories.read"],
+      }) as unknown as RepositoryRegistry,
+    );
+
+    const result = await service.execute({
+      branchId: SOURCE_BRANCH_ID,
+      branchName: "Bodega Central",
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(result.transferRequests).toEqual([]);
+    expect(getRequests).not.toHaveBeenCalled();
+  });
+
   it("includes API transfer requests when execute loads the active branch page", async () => {
     const incoming = request({
       id: "request-through-execute",
@@ -191,11 +211,13 @@ function repositories({
     summary: { activeProducts: 0, lowStock: 0, outOfStock: 0 },
   })),
   inventoryTransfersDataSource = "api",
+  permissions = ["inventory.stock.read", "inventory.transfers.manage"],
 }: {
   getRequests: ReturnType<typeof vi.fn>;
   getStockBatch?: ReturnType<typeof vi.fn>;
   getStockPage?: ReturnType<typeof vi.fn>;
   inventoryTransfersDataSource?: "api" | "mock";
+  permissions?: string[];
 }) {
   const user: User = {
     id: "user-1",
@@ -214,7 +236,7 @@ function repositories({
     tenantId: TENANT_ID,
     name: "Inventario",
     isSystem: false,
-    permissions: ["inventory.stock.read", "inventory.transfers.manage"],
+    permissions,
     branchScope: "selected",
     status: RoleStatus.active,
     createdAt: NOW,

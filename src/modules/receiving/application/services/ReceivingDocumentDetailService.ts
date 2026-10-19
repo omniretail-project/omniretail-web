@@ -133,12 +133,9 @@ export class ReceivingDocumentDetailService {
         ? await this.getPurchaseOrderDocument(tenantId, user, documentId, activeBranchId)
         : await this.getTransferDocument(tenantId, user, documentId, activeBranchId);
     const canConfirm = permissions.includes("receiving.receipts.confirm");
-    const canManageTransfer = permissions.includes("inventory.transfers.manage");
+    // Recibir un traslado es una recepción más: basta receiving.receipts.confirm (Bodeguero).
     const transferReception = content.transferReception
-      ? applyTransferReceptionPermissions(
-          content.transferReception,
-          canConfirm && canManageTransfer,
-        )
+      ? applyTransferReceptionPermissions(content.transferReception, canConfirm)
       : undefined;
     return {
       ...content,
@@ -406,7 +403,7 @@ export class ReceivingDocumentDetailService {
       );
     }
     if (this.repositories.inventoryTransfersDataSource === "api") {
-      return this.confirmApiTransfer(input, tenantId, actorUserId, user, permissions, transfer);
+      return this.confirmApiTransfer(input, tenantId, actorUserId, user, transfer);
     }
     if (!(await this.hasTransferDispatchEvidence(transfer))) {
       throw new ReceivingServiceError("El traslado no tiene una salida de despacho verificable.");
@@ -494,12 +491,10 @@ export class ReceivingDocumentDetailService {
     tenantId: string,
     actorUserId: string,
     user: User,
-    permissions: readonly string[],
     transfer: NonNullable<Awaited<ReturnType<RepositoryRegistry["inventoryTransfers"]["getById"]>>>,
   ): Promise<Receipt> {
-    if (!permissions.includes("inventory.transfers.manage")) {
-      throw new ReceivingServiceError("No dispone de permisos para confirmar traslados.");
-    }
+    // confirmTransfer ya exigió receiving.receipts.confirm; el backend acepta ese permiso para recibir
+    // traslados en una sucursal destino asignada (la bodega recibe sin poder crearlos ni cancelarlos).
     const confirmationId = input.confirmationId.trim();
     if (!confirmationId) {
       throw new ReceivingServiceError("La confirmación de recepción requiere una identidad.");
