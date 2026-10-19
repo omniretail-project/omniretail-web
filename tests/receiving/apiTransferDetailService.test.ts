@@ -323,7 +323,7 @@ describe("ReceivingDocumentDetailService transfer API", () => {
     });
 
     const detail = await service.getDocument("transfer", transferId, destinationBranchId);
-    expect(detail.transferReception).toMatchObject({ canConfirmTransfer: true });
+    expect(detail.transferReception).toMatchObject({ canReceiveTransfer: true });
 
     await service.confirm({
       documentType: "transfer",

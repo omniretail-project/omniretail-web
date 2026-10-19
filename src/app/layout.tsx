@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
+import { isPublicDemo } from "@/config/demo-mode";
 import { RepositoryProvider } from "@/infrastructure/providers/RepositoryProvider";
 import { ToastProvider } from "@/shared/components/Toast";
 import "./globals.css";
@@ -18,6 +19,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "MARJYM",
   description: "Proyecto base del frontend web de MARJYM.",
+  // La demo publica no debe indexarse: la que se posiciona es la landing real.
+  ...(isPublicDemo() ? { robots: { index: false, follow: false } } : {}),
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

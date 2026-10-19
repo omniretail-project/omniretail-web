@@ -81,16 +81,16 @@ independientes; cualquiera ausente deja el canal comercial no disponible.
 `plans`/`tenantSubscriptions` directo. Si la resolucion falla, `entitlements` queda `null` y
 `hasCapability`/`getLimit` devuelven `false`/`undefined`; un fallo aca NUNCA dispara logout ni
 redirige (Authentication y Entitlement son capas distintas). La suscripción comercial usa Plan
-Básico obligatorio (Q199/mes, sin cupos de empleados ni sucursales), E-commerce + Entregas (Q129/mes) y
-Reportes avanzados (Q99/mes). Los complementos persisten en `TenantSubscription.addonCodes`; el
-resolver compone sus capabilities con las del plan base. El acceso exige entitlement Y permiso
-de rol. La facturación es simulada: un snapshot por ciclo mensual y tenant, sin cobros, impuestos,
-prorrateos ni factura fiscal. `UpdateTenantSubscriptionService` cambia los complementos y propaga por
-`tenant-subscription.changed` -- solo dentro de la misma pestana: DataEventBus es in-memory, no
-cross-tab. La capacidad comercial `ecommerce` bloquea nuevas compras cuando el complemento se
-desactiva; no bloquea el cumplimiento de Orders anteriores. Picking, Packing, Dispatch y
-seguimiento histórico conservan autorización por sesión, tenant, sucursal, permiso y propiedad
-del recurso según corresponda. `delivery` no debe utilizarse como veto global de Logistics.
+Básico obligatorio (Q199/mes, sin cupos de empleados ni sucursales), E-commerce + Entregas
+(Q129/mes) y Reportes avanzados (Q99/mes). Los complementos persisten en
+`TenantSubscription.addonCodes`; el resolver compone sus capabilities con las del plan base. El
+acceso exige entitlement Y permiso de rol. `/administracion/plan` es de solo lectura: no existen
+contratación automática, cambio de plan por el cliente ni facturación simulada en el frontend;
+los cambios se solicitan al equipo MARJYM por el canal configurado. La capacidad comercial
+`ecommerce` bloquea nuevas compras cuando el complemento deja de estar aprovisionado, pero no el
+cumplimiento de Orders anteriores. Picking, Packing, Dispatch y seguimiento histórico conservan
+autorización por sesión, tenant, sucursal, permiso y propiedad del recurso según corresponda.
+`delivery` no debe utilizarse como veto global de Logistics.
 
 ## Producto
 
@@ -109,6 +109,11 @@ El seed canonico para instalaciones mock nuevas representa Ferreteria Los Simpso
 `ProductInventorySettings`, y atributos, escalas de precio y relaciones de proveedor usan sus
 contratos propios. Cambiar `demoSeed` nunca autoriza a borrar ni reemplazar automaticamente
 `omniretail.mock.database.v1`; una base local ya persistida conserva los datos del usuario.
+
+La demo publica (`isPublicDemo()`) NO modifica ese seed ni esa llave: aplica una capa propia
+(`publicDemoSeed.ts`: marca "Ferretería Demo", cuentas `@marjym.demo`, actividad de ventas/caja/kardex)
+y persiste en `omniretail.mock.public-demo.database.v1` (sesion en `omniretail.mock.public-demo.session.v1`).
+Fuera de la demo, el modo mock se comporta exactamente como antes.
 
 Catalog / Crear-Editar Producto usa `FileUpload -> procesamiento/preview local -> CatalogImageAssetRepository -> ProductMediaRepository`. El asset se persiste antes de su referencia y se compensa si la referencia falla; reemplazo y borrado eliminan el Blob solo cuando ya no tiene referencias. Con backend real el adapter puede cambiar a `API -> Storage/CDN` sin cambiar el contrato de presentacion.
 

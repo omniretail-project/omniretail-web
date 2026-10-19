@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import {
   callBackend,
-  forwardBackendError,
+  forwardAuthBackendResponse,
   serviceUnavailable,
   SESSION_COOKIE,
 } from "@/app/api/_lib/backend";
@@ -16,6 +16,6 @@ export async function GET() {
   const response = await callBackend("/auth/me", { method: "GET", token });
   if (!response) return serviceUnavailable();
   if (response.status === 401) cookieStore.delete(SESSION_COOKIE);
-  if (!response.ok) return forwardBackendError(response);
+  if (!response.ok) return forwardAuthBackendResponse(response);
   return NextResponse.json(await response.json());
 }

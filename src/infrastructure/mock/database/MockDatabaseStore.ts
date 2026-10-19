@@ -5,7 +5,6 @@ import {
   InventoryTransferReason,
   InventoryTransferStatus,
   InventoryTransferRequestStatus,
-  LocationStatus,
   PaymentMethod,
   PlanStatus,
   PromotionType,
@@ -34,7 +33,7 @@ import { BASE_MONTHLY_QUETZALES } from "@/core/subscription/catalog";
 import { createMockDatabase } from "@/infrastructure/mock/database/createMockDatabase";
 import { synchronizeSupplierLeadTimeDays } from "@/infrastructure/mock/database/supplierLeadTime";
 import type { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
-import { MOCK_DATABASE_STORAGE_KEY } from "@/infrastructure/storage/storageKeys";
+import { getMockDatabaseStorageKey } from "@/infrastructure/storage/storageKeys";
 
 type PersistedCustomerPaymentMethod = Partial<CustomerPaymentMethod> & {
   expiryMonth?: number;
@@ -104,6 +103,8 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
     database.businessCapabilities ?? base.businessCapabilities
   ).map((config) => ({
     ...config,
+    // Contrato: ubicaciones operativas derivan del control de inventario (true/true o false/false).
+    supportsMultipleLocations: config.supportsInventory,
     allowedPosPaymentMethods: config.allowedPosPaymentMethods ??
       normalized.ecommerceConfigs
         .find((item) => item.tenantId === config.tenantId)
@@ -174,6 +175,7 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   normalized.inventoryReservations = database.inventoryReservations ?? [];
   normalized.inventoryReservationConsumeOperations =
     database.inventoryReservationConsumeOperations ?? [];
+  normalized.inventoryLocationRegularizations = database.inventoryLocationRegularizations ?? [];
   normalized.pickingAssignmentReleases = database.pickingAssignmentReleases ?? [];
   normalized.pickingIncidents = database.pickingIncidents ?? [];
   normalized.packings = database.packings ?? [];
@@ -199,6 +201,14 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   normalized.roles = (database.roles ?? base.roles).map((role) => {
     const isCanonicalSystemAdmin =
       role.isSystem && role.name === SYSTEM_ADMIN_ROLE_NAME && role.branchScope === "all";
+    const isDemoBootstrapAdmin = role.id === "role-admin" && role.tenantId === "tenant-demo";
+    const canonicalAdminPermissions = permissionsConfig
+      .filter(
+        (permission) =>
+          isDemoBootstrapAdmin ||
+          (permission.module !== "customer" && permission.module !== "storefront"),
+      )
+      .map((permission) => permission.key);
     const packingPermissions =
       role.id === "role-warehouse"
         ? ["logistics.packing.read", "logistics.packing.prepare", "logistics.packing.finalize"]
@@ -206,7 +216,7 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
     return {
       ...role,
       permissions: isCanonicalSystemAdmin
-        ? permissionsConfig.map((permission) => permission.key)
+        ? canonicalAdminPermissions
         : [...new Set([...role.permissions, ...packingPermissions])],
       status: role.status ?? RoleStatus.active,
     };
@@ -616,14 +626,6 @@ function normalizePersistedProductInventorySettings(
   const product = normalized.products.find((item) => item.id === settings.productId);
   const branch = normalized.branches.find((item) => item.id === settings.branchId);
   const createdAt = settings.createdAt ?? new Date().toISOString();
-  const defaultLocation = settings.defaultLocationId
-    ? normalized.storageLocations.find((item) => item.id === settings.defaultLocationId)
-    : null;
-  const validDefaultLocation =
-    defaultLocation &&
-    defaultLocation.tenantId === (settings.tenantId ?? product?.tenantId) &&
-    defaultLocation.branchId === settings.branchId &&
-    defaultLocation.status === LocationStatus.active;
 
   return {
     id:
@@ -639,7 +641,10 @@ function normalizePersistedProductInventorySettings(
     minStock: Math.max(0, settings.minStock ?? 0),
     reorderPoint:
       typeof settings.reorderPoint === "number" ? Math.max(0, settings.reorderPoint) : undefined,
-    defaultLocationId: validDefaultLocation ? settings.defaultLocationId : undefined,
+    // La asignacion persistida se conserva aunque hoy sea invalida (ubicacion inactiva, archivada
+    // o de otra sucursal): es evidencia que se debe corregir explicitamente, nunca se borra aqui.
+    // Las operaciones de stock la rechazan mediante la politica de ubicacion operativa.
+    defaultLocationId: settings.defaultLocationId ?? undefined,
     createdAt,
     updatedAt: settings.updatedAt ?? createdAt,
   };
@@ -707,7 +712,7 @@ export class MockDatabaseStore {
   private database: MockDatabase;
 
   constructor(private readonly storage: LocalStorageAdapter) {
-    const persisted = this.storage.get<PersistedMockDatabase>(MOCK_DATABASE_STORAGE_KEY);
+    const persisted = this.storage.get<PersistedMockDatabase>(getMockDatabaseStorageKey());
     this.database = normalizeMockDatabase(persisted ?? createMockDatabase());
     this.persist();
   }
@@ -741,7 +746,7 @@ export class MockDatabaseStore {
   }
 
   private persist(): void {
-    this.storage.set(MOCK_DATABASE_STORAGE_KEY, this.database);
+    this.storage.set(getMockDatabaseStorageKey(), this.database);
   }
 }
 

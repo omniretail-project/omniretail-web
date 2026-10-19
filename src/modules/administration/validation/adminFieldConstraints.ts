@@ -29,7 +29,7 @@ export const ADMIN_FIELD_LIMITS = {
     bankName: 80,
     holderName: 120,
     alias: 50,
-    accountNumber: 24,
+    accountNumber: 12,
     transferInstructions: 300,
   },
   ecommerceConfig: {

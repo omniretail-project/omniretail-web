@@ -31,7 +31,7 @@ import {
 } from "@/infrastructure/mock/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
-import { CreatePublicContractService } from "@/modules/contracting/application/services/CreatePublicContractService";
+import { TenantOnboardingService } from "@/modules/administration/application/services/TenantOnboardingService";
 
 const CUSTOMER_VALID_8 = "Abcd1!xy";
 const EMPLOYEE_VALID_12 = "Abcdefgh1!xy";
@@ -159,26 +159,30 @@ async function verifyCustomerRegistration() {
   assert.equal(result.user.type, UserType.customer);
 }
 
-async function verifyContractingAndNoPartialTenant() {
+async function verifyOnboardingAndNoPartialTenant() {
   const { repositories, store } = createHarness();
-  const service = new CreatePublicContractService(repositories);
+  const service = new TenantOnboardingService(repositories);
   const before = store.getSnapshot();
 
   await assert.rejects(
     service.execute({
-      businessName: "Contrato débil",
+      tenantName: "Onboarding débil",
+      tenantSlug: "onboarding-debil",
       adminName: "Admin Débil",
       adminEmail: "weak-admin@example.test",
-      adminPassword: "Marjym2026!",
+      adminPasswordMock: "Marjym2026!",
+      planId: "plan-basic",
     }),
     /entre 12 y 24/,
   );
   await assert.rejects(
     service.execute({
-      businessName: "Contrato email",
+      tenantName: "Onboarding email",
+      tenantSlug: "onboarding-email",
       adminName: "Admin Email",
       adminEmail: "Admin1!@Example.com",
-      adminPassword: "admin1!@example.com",
+      adminPasswordMock: "admin1!@example.com",
+      planId: "plan-basic",
     }),
     /igual al correo electrónico/,
   );
@@ -198,10 +202,12 @@ async function verifyContractingAndNoPartialTenant() {
   }
 
   const created = await service.execute({
-    businessName: "Contrato Seguro",
+    tenantName: "Onboarding Seguro",
+    tenantSlug: "onboarding-seguro-password-policy",
     adminName: "Admin Seguro",
     adminEmail: "strong-admin@example.test",
-    adminPassword: EMPLOYEE_VALID_12,
+    adminPasswordMock: EMPLOYEE_VALID_12,
+    planId: "plan-basic",
   });
   assert.ok(await repositories.tenants.getById(created.tenantId));
 }
@@ -347,14 +353,14 @@ async function verifyLegacyLoginDoesNotRevalidatePolicy() {
 async function main() {
   verifyPolicyMatrix();
   await verifyCustomerRegistration();
-  await verifyContractingAndNoPartialTenant();
+  await verifyOnboardingAndNoPartialTenant();
   await verifyEmployeeActivation();
   await verifyResetPolicies();
   await verifyChangePolicies();
   await verifyLegacyLoginDoesNotRevalidatePolicy();
 
   console.log("PASS password matrix Customer/Employee y password != email");
-  console.log("PASS registration, activation, reset, change y contracting sin residuos");
+  console.log("PASS registration, activation, reset, change y onboarding sin residuos");
   console.log("PASS legacy login sin revalidación de la nueva política");
 }
 

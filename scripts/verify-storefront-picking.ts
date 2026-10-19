@@ -416,6 +416,9 @@ function verifyPersistedAdminBackfill() {
   assert.ok(admin);
   assert.ok(warehouse && demoTenant);
   assert.deepEqual(new Set(admin.permissions), new Set(permissionsConfig.map((permission) => permission.key)));
+  const employeePermissions = permissionsConfig
+    .filter((permission) => permission.module !== "customer" && permission.module !== "storefront")
+    .map((permission) => permission.key);
   const warehousePermissions = [...warehouse.permissions];
   admin.permissions = ["catalog.products.read"];
   for (const suffix of ["a", "b"]) {
@@ -462,7 +465,7 @@ function verifyPersistedAdminBackfill() {
     const tenantAdmin = normalized.roles.find((role) => role.id === `role-admin-backfill-${suffix}`);
     assert.deepEqual(
       new Set(tenantAdmin?.permissions),
-      new Set(permissionsConfig.map((permission) => permission.key)),
+      new Set(employeePermissions),
     );
     assert.ok(tenantAdmin?.permissions.includes("inventory.transfers.manage"));
     assert.ok(tenantAdmin?.permissions.includes("logistics.picking.start"));

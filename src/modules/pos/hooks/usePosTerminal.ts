@@ -45,6 +45,7 @@ import { cleanPosError } from "@/modules/pos/application/services/posServiceCont
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
+import { getCachedPosProducts, invalidatePosProductsCache } from "./posProductsCache";
 
 interface TicketState {
   items: SaleTicketItemDto[];
@@ -177,10 +178,12 @@ export function usePosTerminal() {
     setLoading(true);
     setError(null);
     try {
-      const nextProducts = await productService.execute({
-        tenantId: currentBranch.tenantId,
-        branchId: currentBranch.id,
-      });
+      const nextProducts = await getCachedPosProducts(repositories, requestedContext, () =>
+        productService.execute({
+          tenantId: currentBranch.tenantId,
+          branchId: currentBranch.id,
+        }),
+      );
       if (
         requestId !== productsRequestRef.current ||
         requestedContext !== currentReadContextRef.current
@@ -452,9 +455,10 @@ export function usePosTerminal() {
     reloadScheduledRef.current = true;
     window.queueMicrotask(() => {
       reloadScheduledRef.current = false;
+      invalidatePosProductsCache(repositories, readContextKey);
       void reload();
     });
-  }, [reload]);
+  }, [readContextKey, reload, repositories]);
 
   useDataEvent("product.changed", scheduleReload);
   useDataEvent("promotion.changed", scheduleReload);
@@ -574,6 +578,34 @@ export function usePosTerminal() {
               ? updateTicketItemQuantity(
                   candidate,
                   candidate.quantity - 1,
+                  products.find((product) => product.productId === productId),
+                )
+              : candidate,
+          ),
+        };
+      });
+    },
+    [invalidateCheckoutValidation, products],
+  );
+
+  const setQuantity = useCallback(
+    (productId: string, requestedQuantity: number) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
+      invalidateCheckoutValidation();
+      setTicketState((current) => {
+        const item = current.items.find((candidate) => candidate.productId === productId);
+        if (!item) return current;
+
+        const validationError = validateTicketQuantity(item, requestedQuantity);
+        if (validationError) return { ...current, error: validationError };
+
+        return {
+          error: null,
+          items: current.items.map((candidate) =>
+            candidate.productId === productId
+              ? updateTicketItemQuantity(
+                  candidate,
+                  requestedQuantity,
                   products.find((product) => product.productId === productId),
                 )
               : candidate,
@@ -1162,6 +1194,7 @@ export function usePosTerminal() {
     addProduct,
     increaseQuantity,
     decreaseQuantity,
+    setQuantity,
     removeItem,
     clearTicket,
     ticketItems: ticket.items,

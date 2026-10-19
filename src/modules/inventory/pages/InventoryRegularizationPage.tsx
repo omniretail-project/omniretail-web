@@ -98,7 +98,6 @@ function ErrorAlert({
 export function InventoryRegularizationPage() {
   const regularization = useInventoryRegularization();
   const {
-    apiMode,
     canPreview,
     canExecute,
     canAssign,
@@ -170,21 +169,14 @@ export function InventoryRegularizationPage() {
         </div>
       </header>
 
-      {!apiMode ? (
-        <InlineAlert
-          description={regularization.apiOnlyMessage}
-          title="Esta función no está disponible en modo local"
-          tone="info"
-        />
-      ) : null}
-      {apiMode && !canPreview ? (
+      {!canPreview ? (
         <InlineAlert
           description="Solicita a un administrador el permiso para consultar inventario."
           title="No tienes acceso a esta operación."
         />
       ) : null}
 
-      {apiMode && canPreview ? (
+      {canPreview ? (
         <>
           {locked ? (
             <InlineAlert

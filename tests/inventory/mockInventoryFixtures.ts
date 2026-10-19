@@ -27,6 +27,8 @@ export class MemoryStorageAdapter extends LocalStorageAdapter {
 export const PLAIN_PRODUCT_ID = "product-plain-test";
 export const LOT_PRODUCT_ID = "product-lot-test";
 export const SERIAL_PRODUCT_ID = "product-serial-test";
+/** Producto fisico simple SIN ubicacion operativa asignada (alta administrativa). */
+export const UNASSIGNED_PRODUCT_ID = "product-unassigned-test";
 export const LOCATION_A_ID = "location-a-test";
 export const LOCATION_B_ID = "location-b-test";
 export const ORDER_ID = "order-test";
@@ -59,6 +61,7 @@ export function createInventoryScenario() {
   store.mutate((database) => {
     database.products.push(
       { ...baseProduct, id: PLAIN_PRODUCT_ID, tenantId, sku: "PLAIN-TEST", tracking },
+      { ...baseProduct, id: UNASSIGNED_PRODUCT_ID, tenantId, sku: "UNASSIGNED-TEST", tracking },
       {
         ...baseProduct,
         id: LOT_PRODUCT_ID,
@@ -92,6 +95,17 @@ export function createInventoryScenario() {
         status: LocationStatus.active,
       },
     );
+    // El producto simple opera en la ubicacion A; el no asignado no tiene configuracion.
+    database.productInventorySettings.push({
+      id: "settings-plain-test",
+      tenantId,
+      branchId,
+      productId: PLAIN_PRODUCT_ID,
+      minStock: 0,
+      defaultLocationId: LOCATION_A_ID,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
     database.orders.push({
       ...baseOrder,
       id: ORDER_ID,

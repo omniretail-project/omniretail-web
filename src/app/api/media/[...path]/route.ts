@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { serviceUnavailable } from "@/app/api/_lib/backend";
+import { getBackendBaseUrl, serviceUnavailable } from "@/app/api/_lib/backend";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
@@ -21,29 +21,35 @@ function notFound(request: NextRequest) {
       path: request.nextUrl.pathname,
       timestamp: new Date().toISOString(),
     },
-    { status: 404 },
+    { status: 404, headers: { "X-Content-Type-Options": "nosniff" } },
   );
+}
+
+function unavailableWithNoSniff() {
+  const response = serviceUnavailable();
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  return response;
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
   const path = mediaPath((await context.params).path);
   if (!path) return notFound(request);
 
-  const configuredUrl = process.env.OMNIRETAIL_API_URL;
-  if (!configuredUrl) return serviceUnavailable();
+  const configuredUrl = getBackendBaseUrl();
+  if (!configuredUrl) return unavailableWithNoSniff();
 
   let backendOrigin: string;
   try {
     backendOrigin = new URL(configuredUrl).origin;
   } catch {
-    return serviceUnavailable();
+    return unavailableWithNoSniff();
   }
 
   let response: Response;
   try {
     response = await fetch(`${backendOrigin}${path}`, { cache: "no-store" });
   } catch {
-    return serviceUnavailable();
+    return unavailableWithNoSniff();
   }
 
   const headers = new Headers();
@@ -51,8 +57,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const value = response.headers.get(name);
     if (value) headers.set(name, value);
   }
-  const payload = response.status === 204 ? null : await response.arrayBuffer();
-  return new NextResponse(payload && payload.byteLength > 0 ? payload : null, {
+  headers.set("X-Content-Type-Options", "nosniff");
+  const responseBody =
+    response.status === 204 || response.status === 205 || response.status === 304
+      ? null
+      : response.body;
+  return new NextResponse(responseBody, {
     status: response.status,
     headers,
   });

@@ -21,8 +21,8 @@ import type {
   TrackedInventoryStockItem,
 } from "@/core/repositories";
 import {
-  getAvailableQuantity,
   getBranchAvailableQuantity,
+  selectOperationalBalances,
 } from "@/core/inventory/stockAvailability";
 import { fromBaseQuantity, resolveUnitConversion } from "@/core/units";
 import { canUserOperateBranch } from "@/core/scopes/userBranchAccess";
@@ -41,6 +41,7 @@ import type {
   InventoryTransferRequestRow,
   ProductWithStock,
 } from "@/modules/inventory/application/dto/InventoryAlertsDto";
+import { assignedLocationKey } from "@/modules/inventory/application/dto/InventoryAlertsDto";
 import {
   INVENTORY_TRANSFERS_MANAGE_PERMISSION,
   ensureCanReadStock,
@@ -374,12 +375,32 @@ export class GetInventoryAlertsService {
           ] as const,
       ),
     );
+    // Ubicacion operativa de cada producto en TODAS las sucursales: la disponibilidad comercial
+    // (propia, de otras sucursales y de proveedoras) usa solo esa ubicacion.
+    const assignedEntries = await Promise.all(
+      tenantBranches.flatMap((branch) =>
+        branchProducts.map(async (product) => {
+          const settings =
+            branch.id === branchId
+              ? (settingsEntries.find(([productId]) => productId === product.id)?.[1] ?? null)
+              : await this.repositories.inventory.getProductInventorySettings(
+                  product.id,
+                  branch.id,
+                );
+          return [
+            assignedLocationKey(branch.id, product.id),
+            settings?.defaultLocationId ?? null,
+          ] as const;
+        }),
+      ),
+    );
     const maps: InventoryLookupMaps = {
       branches: new Map(tenantBranches.map((branch) => [branch.id, branch])),
       categories: new Map(categories.map((category) => [category.id, category])),
       units: new Map(units.map((unit) => [unit.id, unit])),
       locations: new Map(tenantLocations.map((location) => [location.id, location])),
       settingsByProduct: new Map(settingsEntries),
+      assignedLocationIds: new Map(assignedEntries),
       lotsByProduct: groupLotsByProduct(lots.filter((lot) => lot.branchId === branchId)),
     };
 
@@ -392,6 +413,9 @@ export class GetInventoryAlertsService {
           productId: product.id,
           balances,
           locations: tenantLocations,
+          assignedLocationId: maps.assignedLocationIds.get(
+            assignedLocationKey(branchId, product.id),
+          ) ?? null,
         }),
       ]),
     );
@@ -684,8 +708,17 @@ function buildApiRow({
     defaultLocationName,
     locationQuantities: {},
     locationAvailableQuantities: {},
-    unlocatedQuantity: item.quantity,
-    unlocatedAvailableQuantity: item.availableQuantity,
+    // /inventory/stock devuelve el balance OPERATIVO (ubicacion asignada, o el saldo heredado si no
+    // hay asignacion): no es el inventario fisico total ni el saldo heredado. Esas cantidades solo
+    // se conocen consultando los balances fisicos (bajo demanda) y hasta entonces son "no
+    // disponibles", nunca un valor fabricado.
+    unlocatedQuantity: null,
+    unlocatedAvailableQuantity: null,
+    physicalQuantity: null,
+    operationalQuantity: item.quantity,
+    operationalReservedQuantity: item.reservedQuantity,
+    operationalAvailableQuantity: item.availableQuantity,
+    requiresRegularization: null,
     // PLACEHOLDER, no fuente autoritativa: /inventory/stock no expone tracking. El tracking real
     // se resuelve on-demand desde el Product detail al abrir el ajuste (AdjustStockGate).
     tracking: { stock: true, lot: false, expiration: false, serial: false },
@@ -821,6 +854,11 @@ function buildTransferRequestRows(
             productId: request.productId,
             branchId: request.sourceBranchId,
             balances,
+            locations: [...maps.locations.values()],
+            assignedLocationId:
+              maps.assignedLocationIds.get(
+                assignedLocationKey(request.sourceBranchId, request.productId),
+              ) ?? null,
           }),
           reason: request.reason,
           notes: request.notes,
@@ -933,8 +971,18 @@ function buildRow(
   const branchBalances = balances.filter(
     (balance) => balance.productId === product.id && balance.branchId === branchId,
   );
-  const quantity = branchBalances.reduce((total, balance) => total + balance.quantity, 0);
-  const reservedQuantity = branchBalances.reduce(
+  const physicalQuantity = branchBalances.reduce((total, balance) => total + balance.quantity, 0);
+  // Existencia operativa: solo la ubicacion asignada y activa (o el saldo heredado sin asignacion).
+  const operationalBalances = selectOperationalBalances({
+    tenantId: product.tenantId,
+    branchId,
+    productId: product.id,
+    balances: branchBalances,
+    locations: [...maps.locations.values()],
+    assignedLocationId: maps.assignedLocationIds.get(assignedLocationKey(branchId, product.id)) ?? null,
+  });
+  const quantity = operationalBalances.reduce((total, balance) => total + balance.quantity, 0);
+  const reservedQuantity = operationalBalances.reduce(
     (total, balance) => total + balance.reservedQuantity,
     0,
   );
@@ -1002,6 +1050,11 @@ function buildRow(
     locationAvailableQuantities: buildLocationAvailableQuantities(branchBalances),
     unlocatedQuantity: buildUnlocatedQuantity(branchBalances),
     unlocatedAvailableQuantity: buildUnlocatedAvailableQuantity(branchBalances),
+    physicalQuantity,
+    operationalQuantity: quantity,
+    operationalReservedQuantity: reservedQuantity,
+    operationalAvailableQuantity: availableQuantity,
+    requiresRegularization: Boolean(settings?.defaultLocationId) && physicalQuantity > quantity,
     tracking: product.tracking,
     availableLots: (maps.lotsByProduct.get(product.id) ?? []).filter((lot) => lot.quantity > 0),
     availableSerials: serials
@@ -1193,6 +1246,8 @@ function buildOtherBranchStocks(
         productId,
         balances,
         locations: [...maps.locations.values()],
+        assignedLocationId:
+          maps.assignedLocationIds.get(assignedLocationKey(branch.id, productId)) ?? null,
       });
       return {
         branchId: branch.id,
@@ -1265,20 +1320,29 @@ function buildAvailableElsewhereAlerts(
   maps: InventoryLookupMaps,
 ): InventoryAlert[] {
   if (row.availableQuantity > 0) return [];
-  const otherBranch = balances.find(
-    (balance) =>
-      balance.productId === row.productId &&
-      balance.branchId !== row.branchId &&
-      getAvailableQuantity(balance) > 0,
+  // Solo cuenta la disponibilidad operativa (ubicacion asignada) de la otra sucursal.
+  const locations = [...maps.locations.values()];
+  const otherBranch = [...maps.branches.values()].find(
+    (branch) =>
+      branch.id !== row.branchId &&
+      getBranchAvailableQuantity({
+        tenantId: branch.tenantId,
+        branchId: branch.id,
+        productId: row.productId,
+        balances,
+        locations,
+        assignedLocationId:
+          maps.assignedLocationIds.get(assignedLocationKey(branch.id, row.productId)) ?? null,
+      }) > 0,
   );
   if (!otherBranch) return [];
   return [
     {
-      id: `elsewhere-${row.branchId}-${row.productId}-${otherBranch.branchId}`,
+      id: `elsewhere-${row.branchId}-${row.productId}-${otherBranch.id}`,
       type: "available_elsewhere",
       productId: row.productId,
       title: row.productName,
-      message: `Hay disponibilidad en ${maps.branches.get(otherBranch.branchId)?.name ?? "otra sucursal"}.`,
+      message: `Hay disponibilidad en ${maps.branches.get(otherBranch.id)?.name ?? "otra sucursal"}.`,
       tone: "info",
     },
   ];

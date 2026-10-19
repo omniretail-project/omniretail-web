@@ -1,79 +1,82 @@
 "use client";
 
-import { useState } from "react";
-import {
-  BASE_MONTHLY_QUETZALES,
-  SUBSCRIPTION_ADDONS,
-  subscriptionTotalQuetzales,
-} from "@/core/subscription/catalog";
+import { getDemoInformationRequestUrl, getSalesContactUrl } from "@/config/demo-mode";
+import { SaasCapabilityKey, SaasLimitKey } from "@/core/enums";
+import { SUBSCRIPTION_ADDONS } from "@/core/subscription/catalog";
 import { useTenantSubscription } from "@/modules/administration/hooks/useTenantSubscription";
 import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { Button } from "@/shared/components/Button";
-import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
-import { useToast } from "@/shared/components/Toast";
 import { formatDate } from "@/shared/utils/formatDate";
 
-const money = (amount: number) => "Q" + amount.toFixed(2);
+type SubscriptionDetails = NonNullable<ReturnType<typeof useTenantSubscription>["details"]>;
+
+export const PLAN_CHANGE_NOTE =
+  "Los módulos habilitados corresponden a la configuración de tu empresa. Para solicitar cambios, contacta con el equipo MARJYM.";
+
+const CAPABILITY_LABELS: Record<SaasCapabilityKey, string> = {
+  [SaasCapabilityKey.inventory]: "Inventario",
+  [SaasCapabilityKey.purchasing]: "Compras",
+  [SaasCapabilityKey.receiving]: "Recepción de mercadería",
+  [SaasCapabilityKey.pos]: "Punto de venta",
+  [SaasCapabilityKey.ecommerce]: "E-commerce",
+  [SaasCapabilityKey.delivery]: "Entregas y despachos",
+  [SaasCapabilityKey.advancedReports]: "Reportes avanzados",
+  [SaasCapabilityKey.traceabilityLots]: "Trazabilidad por lote",
+  [SaasCapabilityKey.traceabilityExpiration]: "Control de vencimiento",
+  [SaasCapabilityKey.traceabilitySerials]: "Números de serie",
+  [SaasCapabilityKey.catalogKits]: "Kits y combinaciones",
+};
+
+const USAGE_LABELS: Array<{ key: SaasLimitKey; label: string }> = [
+  { key: SaasLimitKey.maxEmployees, label: "Usuarios" },
+  { key: SaasLimitKey.maxBranches, label: "Sucursales" },
+];
+
+function UsageTile({
+  label,
+  usage,
+}: Readonly<{ label: string; usage: SubscriptionDetails["usage"][number] | undefined }>) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2.5">
+      <span className="block text-xs text-[var(--color-text-muted)]">{label}</span>
+      <strong className="mt-1 block tabular-nums text-[var(--color-title)]">
+        {usage ? usage.current : "No disponible"}
+        {usage ? (
+          <span className="ml-1 text-xs font-medium text-[var(--color-text-muted)]">
+            {usage.limit === null ? "(sin límite definido)" : `de ${usage.limit}`}
+          </span>
+        ) : null}
+      </strong>
+    </div>
+  );
+}
+
+function StateBadge({ active, label }: Readonly<{ active: boolean; label: string }>) {
+  return (
+    <span
+      className={
+        "inline-flex whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold " +
+        (active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700")
+      }
+    >
+      {label}
+    </span>
+  );
+}
 
 export function PlanSubscriptionPage() {
-  const { busy, canManage, canRead, details, error, loading, reload, updateAddons } =
-    useTenantSubscription();
-  const { showToast } = useToast();
-  const [draft, setDraft] = useState<string[] | null>(null);
-  const [confirming, setConfirming] = useState(false);
-
-  const selected = draft ?? details?.addonCodes ?? [];
-  const saved = details?.addonCodes ?? [];
-  const dirty = [...selected].sort().join("|") !== [...saved].sort().join("|");
-  const disablingEcommerce =
-    saved.includes("ecommerce_delivery") && !selected.includes("ecommerce_delivery");
-  const toggle = (code: string) =>
-    setDraft((current) => {
-      const values = current ?? saved;
-      return values.includes(code)
-        ? values.filter((item) => item !== code)
-        : [...values, code];
-    });
-
-  async function save() {
-    try {
-      await updateAddons(selected);
-      setDraft(null);
-      setConfirming(false);
-      showToast({
-        title: "Suscripción actualizada",
-        description:
-          "Los accesos ya reflejan la selección. El nuevo total se aplicará al siguiente ciclo.",
-        tone: "success",
-      });
-    } catch (caughtError) {
-      setConfirming(false);
-      showToast({
-        title: "No se pudo actualizar",
-        description:
-          caughtError instanceof Error ? caughtError.message : "Inténtelo de nuevo.",
-        tone: "danger",
-      });
-    }
-  }
-
-  const projectedTotal = subscriptionTotalQuetzales(selected);
-  const confirmationMessage = disablingEcommerce
-    ? "Al desactivar E-commerce + Entregas se bloquearán nuevas compras en la tienda online. Los pedidos existentes podrán continuar su preparación, despacho y seguimiento. El total proyectado de " +
-      money(projectedTotal) +
-      "/mes se aplicará en el próximo ciclo, sin cobro inmediato."
-    : "El acceso a los módulos cambiará de inmediato. El total proyectado de " +
-      money(projectedTotal) +
-      "/mes se aplicará en el próximo ciclo, sin cobro inmediato.";
+  const { canRead, details, error, loading, reload } = useTenantSubscription();
+  // Solo se ofrece un enlace si el despliegue configura un canal comercial; nunca se inventa uno.
+  const contactUrl = getDemoInformationRequestUrl() || getSalesContactUrl();
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <PageHeader
-        title="Plan y suscripción"
-        description="Configure los módulos del negocio y consulte la facturación."
+        title="Mi plan y módulos"
+        description="Consulta el plan de tu empresa y los módulos que tiene habilitados."
       />
 
       {!loading && !canRead ? <AccessDeniedState /> : null}
@@ -99,7 +102,7 @@ export function PlanSubscriptionPage() {
             aria-hidden="true"
             className="h-5 w-5 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-structure)]"
           />
-          Cargando suscripción...
+          Cargando plan y módulos...
         </div>
       ) : null}
 
@@ -109,239 +112,108 @@ export function PlanSubscriptionPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                  Plan actual
+                  Plan
                 </p>
-                <div className="mt-1 flex flex-wrap items-center gap-3">
-                  <h2 className="text-2xl font-bold text-[var(--color-title)]">MARJYM Base</h2>
-                  <span className="rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
-                    Incluido y obligatorio
-                  </span>
-                </div>
-                <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-                  Activo desde {formatDate(details.subscription.startedAt)} · Próxima renovación{" "}
-                  {formatDate(details.nextRenewalAt)}
-                </p>
-              </div>
-              <div className="flex items-center gap-3 sm:flex-col sm:items-end">
-                <StatusBadge status={details.subscription.status} />
-                <p className="text-xl font-bold tabular-nums text-[var(--color-title)]">
-                  {money(BASE_MONTHLY_QUETZALES)}
-                  <span className="text-sm font-medium text-[var(--color-text-muted)]">/mes</span>
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-3 border-t border-[var(--color-border)] pt-4 text-sm sm:grid-cols-3">
-              <div className="rounded-lg bg-slate-50 px-3 py-2.5">
-                <span className="block text-xs text-[var(--color-text-muted)]">Usuarios</span>
-                <strong className="mt-1 block tabular-nums text-[var(--color-title)]">
-                  {details.usage.find((item) => item.key === "maxEmployees")?.current ?? 0}
-                </strong>
-              </div>
-              <div className="rounded-lg bg-slate-50 px-3 py-2.5">
-                <span className="block text-xs text-[var(--color-text-muted)]">Sucursales</span>
-                <strong className="mt-1 block tabular-nums text-[var(--color-title)]">
-                  {details.usage.find((item) => item.key === "maxBranches")?.current ?? 0}
-                </strong>
-              </div>
-              <div className="rounded-lg bg-slate-50 px-3 py-2.5">
-                <span className="block text-xs text-[var(--color-text-muted)]">Punto de venta</span>
-                <strong className="mt-1 block text-[var(--color-title)]">
-                  Incluido, sin cupo comercial de cajas
-                </strong>
-              </div>
-            </div>
-          </section>
-
-          <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)]">
-            <section aria-labelledby="subscription-catalog-title">
-              <div>
-                <h2
-                  id="subscription-catalog-title"
-                  className="text-lg font-bold text-[var(--color-title)]"
-                >
-                  Módulos de la suscripción
+                <h2 className="mt-1 text-2xl font-bold text-[var(--color-title)]">
+                  {details.plan.name}
                 </h2>
-                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                  El plan base siempre está incluido. Active únicamente los módulos opcionales que
-                  necesite.
+                {details.plan.description ? (
+                  <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+                    {details.plan.description}
+                  </p>
+                ) : null}
+                <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+                  Activo desde {formatDate(details.subscription.startedAt)}
                 </p>
               </div>
+              <StatusBadge status={details.subscription.status} />
+            </div>
 
-              <div className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-semibold text-[var(--color-title)]">MARJYM Base</h3>
-                      <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-[var(--color-text-muted)]">
-                        Obligatorio
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm leading-5 text-[var(--color-text-muted)]">
-                      Catálogo, inventario, proveedores y compras, recepción y punto de venta.
-                    </p>
-                  </div>
-                  <strong className="whitespace-nowrap tabular-nums text-[var(--color-title)]">
-                    {money(BASE_MONTHLY_QUETZALES)}/mes
-                  </strong>
-                </div>
-              </div>
-
-              <div className="mt-3 grid gap-3">
-                {SUBSCRIPTION_ADDONS.map((addon) => {
-                  const enabled = selected.includes(addon.code);
-
-                  return (
-                    <article
-                      key={addon.code}
-                      className={
-                        "flex items-center justify-between gap-4 rounded-xl border bg-[var(--color-surface)] p-4 shadow-sm " +
-                        (enabled ? "border-blue-300" : "border-[var(--color-border)]")
-                      }
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                          <h3 className="font-semibold text-[var(--color-title)]">{addon.name}</h3>
-                          <strong className="whitespace-nowrap text-sm tabular-nums text-[var(--color-title)]">
-                            +{money(addon.monthlyQuetzales)}/mes
-                          </strong>
-                        </div>
-                        <p className="mt-1 text-sm leading-5 text-[var(--color-text-muted)]">
-                          {addon.description}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={enabled}
-                        aria-label={"Activar " + addon.name}
-                        disabled={!canManage || busy}
-                        onClick={() => toggle(addon.code)}
-                        className={
-                          "relative h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] disabled:opacity-50 " +
-                          (enabled ? "bg-blue-600" : "bg-slate-300")
-                        }
-                      >
-                        <span
-                          className={
-                            "absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform " +
-                            (enabled ? "translate-x-5" : "")
-                          }
-                        />
-                      </button>
-                    </article>
-                  );
-                })}
-              </div>
-
-              {!canManage ? (
-                <p className="mt-3 text-sm text-[var(--color-text-muted)]">
-                  Se requiere admin.plans.manage para modificar la suscripción.
-                </p>
-              ) : null}
-            </section>
-
-            <section
-              aria-labelledby="subscription-summary-title"
-              className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm lg:sticky lg:top-4"
-            >
-              <h2
-                id="subscription-summary-title"
-                className="text-lg font-bold text-[var(--color-title)]"
-              >
-                Resumen mensual proyectado
-              </h2>
-              <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">
-                Se aplicará al próximo ciclo, sin prorrateos ni cobros inmediatos.
-              </p>
-              <ul className="mt-4 divide-y divide-[var(--color-border)] text-sm">
-                <li className="flex justify-between gap-3 py-3">
-                  <span>MARJYM Base</span>
-                  <strong className="tabular-nums">{money(BASE_MONTHLY_QUETZALES)}</strong>
-                </li>
-                {SUBSCRIPTION_ADDONS.filter((addon) => selected.includes(addon.code)).map(
-                  (addon) => (
-                    <li key={addon.code} className="flex justify-between gap-3 py-3">
-                      <span>{addon.name}</span>
-                      <strong className="tabular-nums">{money(addon.monthlyQuetzales)}</strong>
-                    </li>
-                  ),
-                )}
-              </ul>
-              <div className="flex items-baseline justify-between gap-3 border-t border-[var(--color-border)] py-4">
-                <span className="font-semibold text-[var(--color-title)]">Total mensual</span>
-                <span className="text-xl font-bold tabular-nums text-[var(--color-title)]">
-                  {money(projectedTotal)}
-                </span>
-              </div>
-              <Button
-                className="w-full"
-                type="button"
-                disabled={!canManage || !dirty || busy}
-                onClick={() => setConfirming(true)}
-              >
-                Actualizar suscripción
-              </Button>
-              {dirty ? (
-                <p className="mt-2 text-center text-xs text-[var(--color-text-muted)]">
-                  Hay cambios sin guardar.
-                </p>
-              ) : null}
-            </section>
-          </div>
-
-          <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
-            <h2 className="text-lg font-bold text-[var(--color-title)]">
-              Historial de facturación
-            </h2>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-              Estos registros no son facturas fiscales ni comprobantes de pago.
-            </p>
-            {details.invoices.length === 0 ? (
-              <p className="mt-4 rounded-lg bg-slate-50 px-4 py-5 text-sm text-[var(--color-text-muted)]">
-                Aún no hay ciclos registrados.
-              </p>
-            ) : (
-              <ul className="mt-3 divide-y divide-[var(--color-border)]">
-                {details.invoices.map((invoice) => (
-                  <li key={invoice.id} className="py-3 text-sm">
-                    <details>
-                      <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 rounded-md px-2 py-1 hover:bg-slate-50">
-                        <span>Ciclo desde {formatDate(invoice.cycleStart)}</span>
-                        <strong className="tabular-nums text-[var(--color-title)]">
-                          {money(invoice.totalQuetzales)}
-                        </strong>
-                      </summary>
-                      <ul className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3 text-[var(--color-text-muted)]">
-                        <li className="flex justify-between gap-3">
-                          <span>MARJYM Base</span>
-                          <span className="tabular-nums">{money(invoice.baseQuetzales)}</span>
-                        </li>
-                        {invoice.addonLines.map((line) => (
-                          <li key={line.code} className="flex justify-between gap-3">
-                            <span>{line.name}</span>
-                            <span className="tabular-nums">{money(line.amountQuetzales)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <div className="mt-5 grid gap-3 border-t border-[var(--color-border)] pt-4 text-sm sm:grid-cols-2">
+              {USAGE_LABELS.map(({ key, label }) => (
+                <UsageTile
+                  key={key}
+                  label={label}
+                  usage={details.usage.find((item) => item.key === key)}
+                />
+              ))}
+            </div>
           </section>
+
+          <section
+            aria-labelledby="plan-modules-title"
+            className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"
+          >
+            <h2 id="plan-modules-title" className="text-lg font-bold text-[var(--color-title)]">
+              Módulos incluidos
+            </h2>
+            <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {details.capabilities.map((capability) => (
+                <li
+                  className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] px-3 py-2.5 text-sm"
+                  key={capability.key}
+                >
+                  <span className="min-w-0">
+                    <span className="block font-medium text-[var(--color-title)]">
+                      {CAPABILITY_LABELS[capability.key] ?? capability.key}
+                    </span>
+                    {capability.included && capability.operationalStatus ? (
+                      <span className="block text-xs text-[var(--color-text-muted)]">
+                        {capability.operationalStatus}
+                      </span>
+                    ) : null}
+                  </span>
+                  <StateBadge
+                    active={capability.included}
+                    label={capability.included ? "Incluido" : "No incluido"}
+                  />
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section
+            aria-labelledby="plan-addons-title"
+            className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"
+          >
+            <h2 id="plan-addons-title" className="text-lg font-bold text-[var(--color-title)]">
+              Complementos
+            </h2>
+            <ul className="mt-3 grid gap-3 md:grid-cols-2">
+              {SUBSCRIPTION_ADDONS.map((addon) => {
+                const active = details.addonCodes.includes(addon.code);
+                return (
+                  <li
+                    className="flex items-start justify-between gap-4 rounded-lg border border-[var(--color-border)] p-4"
+                    key={addon.code}
+                  >
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-[var(--color-title)]">{addon.name}</h3>
+                      <p className="mt-1 text-sm leading-5 text-[var(--color-text-muted)]">
+                        {addon.description}
+                      </p>
+                    </div>
+                    <StateBadge active={active} label={active ? "Activo" : "No activo"} />
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+
+          <InlineAlert title={PLAN_CHANGE_NOTE} tone="info">
+            {contactUrl ? (
+              <a
+                className="mt-2 inline-block text-sm font-semibold underline"
+                href={contactUrl}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                Contactar al equipo MARJYM
+              </a>
+            ) : null}
+          </InlineAlert>
         </>
       ) : null}
-
-      <ConfirmDialog
-        open={confirming}
-        title="Actualizar suscripción"
-        message={confirmationMessage}
-        confirmLabel="Guardar cambios"
-        cancelLabel="Cancelar"
-        onConfirm={() => void save()}
-        onCancel={() => setConfirming(false)}
-      />
     </div>
   );
 }

@@ -21,7 +21,6 @@ import {
 } from "@/modules/inventory/application/services/inventoryRegularizationAttempt";
 import {
   InventoryRegularizationService,
-  REGULARIZATION_API_ONLY_MESSAGE,
 } from "@/modules/inventory/application/services/InventoryRegularizationService";
 import {
   INVENTORY_ADJUSTMENT_CREATE_PERMISSION,
@@ -522,18 +521,12 @@ describe("InventoryRegularizationService permissions and scope", () => {
     expect(foreign.adjustments.previewLocationRegularization).not.toHaveBeenCalled();
   });
 
-  it("does not regularize without adjustment permission, API mode, valid reason or fingerprint", async () => {
+  it("does not regularize without adjustment permission, valid reason or fingerprint", async () => {
     const noAdjust = createService({ permissions: [INVENTORY_STOCK_READ_PERMISSION] });
     await expect(noAdjust.service.regularize(executionInput())).rejects.toBeInstanceOf(
       InventoryServiceError,
     );
     expect(noAdjust.adjustments.regularizeLocationBalance).not.toHaveBeenCalled();
-
-    const mock = createService({ api: false });
-    await expect(mock.service.regularize(executionInput())).rejects.toThrow(
-      REGULARIZATION_API_ONLY_MESSAGE,
-    );
-    expect(mock.adjustments.regularizeLocationBalance).not.toHaveBeenCalled();
 
     const invalid = createService({});
     await expect(invalid.service.regularize(executionInput({ reason: " " }))).rejects.toThrow();

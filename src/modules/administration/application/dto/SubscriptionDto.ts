@@ -1,6 +1,5 @@
 import type { PlanCode, SaasCapabilityKey, SaasLimitKey, TenantSubscriptionStatus } from "@/core/enums";
 import type { ISODateString } from "@/core/types/common.types";
-import type { SubscriptionInvoice } from "@/core/entities";
 
 /**
  * `TenantEntitlementsDto` (salida de `ResolveTenantEntitlementsService`) se movió a
@@ -40,15 +39,6 @@ export interface SubscriptionUsageDto {
   limit: number | null;
 }
 
-/** Un plan ofrecible por el selector -- SIEMPRE `PlanStatus.active` (plans.listActive()). */
-export interface SelectablePlanDto {
-  id: string;
-  code: PlanCode;
-  name: string;
-  description?: string;
-  capabilities: SaasCapabilityKey[];
-}
-
 /**
  * Read model único para la pantalla "Planes y Suscripción" (GetTenantSubscriptionDetailsService)
  * -- la UI consume ESTE contrato, nunca recalcula entitlements/usage por su cuenta.
@@ -56,25 +46,16 @@ export interface SelectablePlanDto {
 export interface TenantSubscriptionDetailsDto {
   tenantId: string;
   addonCodes: string[];
-  nextRenewalAt: ISODateString;
-  invoices: SubscriptionInvoice[];
   subscription: {
     status: TenantSubscriptionStatus;
     startedAt: ISODateString;
   };
   plan: {
-    id: string; // NUEVO -- el picker compara contra el plan vigente
+    id: string;
     code: PlanCode;
     name: string;
-    description?: string; // NUEVO
+    description?: string;
   };
   capabilities: SubscriptionCapabilityDto[];
   usage: SubscriptionUsageDto[];
-  /**
-   * NUEVO -- planes activos ofrecibles. Vive en ESTE read model y no en un service aparte
-   * (`docs/CONTRACTS.md`: nunca `component -> PlanRepository`): la pantalla necesita plan
-   * vigente y catálogo en el MISMO snapshot, o el header y el selector pueden contradecirse.
-   * Puede incluir el plan actual; el componente lo marca como "Plan actual", no lo filtra.
-   */
-  availablePlans: SelectablePlanDto[];
 }

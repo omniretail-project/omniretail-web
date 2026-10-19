@@ -11,8 +11,18 @@ import { StorefrontCatalogImage } from "@/modules/storefront/components/Storefro
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 
+function resolveAccountNavigation(
+  hasActiveSession: boolean,
+  isCustomer: boolean,
+  routes: Pick<ReturnType<typeof useStorefrontRoutes>, "account" | "login">,
+) {
+  if (!hasActiveSession) return { href: routes.login(), label: "Ingresar" };
+  if (isCustomer) return { href: routes.account(), label: "Mi Cuenta" };
+  return { href: "/inicio", label: "Ir a inicio" };
+}
+
 export function StorefrontHeader() {
-  const { itemCount } = useStorefrontCart();
+  const { itemCount, lastAddedAt } = useStorefrontCart();
   const { products } = useStorefrontDiscovery();
   const { user, loading } = useCurrentSession();
   const { config } = usePublicTenant();
@@ -35,9 +45,11 @@ export function StorefrontHeader() {
     const query = search.trim();
     router.push(query ? `${routes.catalog()}?q=${encodeURIComponent(query)}` : routes.catalog());
   };
-  const isCustomer = user?.type === UserType.customer;
-  const accountHref = !loading && user ? (isCustomer ? routes.account() : "/inicio") : routes.login();
-  const accountLabel = !loading && user ? (isCustomer ? "Mi Cuenta" : "Ir a inicio") : "Ingresar";
+  const accountNavigation = resolveAccountNavigation(
+    !loading && Boolean(user),
+    user?.type === UserType.customer,
+    routes,
+  );
 
   return (
     <header className="sticky top-0 z-30 bg-[var(--color-topbar)] text-white shadow-lg shadow-slate-900/10">
@@ -73,14 +85,18 @@ export function StorefrontHeader() {
             href={routes.cart()}
           >
             Carrito{" "}
-            <span className="ml-1 rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-xs text-[var(--color-topbar)]">
+            <span
+              aria-live="polite"
+              className={`ml-1 inline-block rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-xs text-[var(--color-topbar)] transition ${lastAddedAt ? "animate-[bounce_0.9s_ease-in-out_1] ring-4 ring-[var(--color-primary)]/35" : ""}`}
+              key={lastAddedAt ?? "initial"}
+            >
               {itemCount}
             </span>
           </Link>
           <Link
-            aria-label={accountLabel}
+            aria-label={accountNavigation.label}
             className="rounded-lg px-2.5 py-2 text-slate-200 transition hover:bg-white/10 hover:text-white sm:px-3"
-            href={accountHref}
+            href={accountNavigation.href}
           >
             <svg
               aria-hidden="true"
@@ -93,7 +109,7 @@ export function StorefrontHeader() {
               <circle cx="12" cy="8" r="4" />
               <path d="M4 21c1.5-4 4.2-6 8-6s6.5 2 8 6" />
             </svg>
-            <span className="ml-1 hidden min-[1180px]:inline">{accountLabel}</span>
+            <span className="ml-1 hidden min-[1180px]:inline">{accountNavigation.label}</span>
           </Link>
         </div>
         <form

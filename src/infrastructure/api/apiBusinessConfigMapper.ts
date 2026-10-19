@@ -6,6 +6,7 @@ import type {
   HeroBannerSlide,
 } from "@/core/entities";
 import type { BusinessPreset, DeliveryMethod, PaymentMethod } from "@/core/enums";
+import { withDerivedInventoryLocations } from "@/core/inventory/operationalCapabilities";
 import type { UpdateEcommerceConfigInput } from "@/core/repositories";
 import type { ProductTrackingConfig } from "@/core/types/tracking.types";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
@@ -122,13 +123,15 @@ export function toBusinessCapabilitiesConfig(
 export function toBusinessConfigRequest(
   config: BusinessCapabilitiesConfig,
 ): ApiSaveBusinessConfigRequest {
+  // El backend deriva ubicaciones de inventario (true/false -> true/true); se envian coherentes.
+  const { supportsMultipleLocations } = withDerivedInventoryLocations(config);
   return {
     preset: config.preset,
     supportsInventory: config.supportsInventory,
     supportsLots: config.supportsLots,
     supportsExpiration: config.supportsExpiration,
     supportsSerials: config.supportsSerials,
-    supportsMultipleLocations: config.supportsMultipleLocations,
+    supportsMultipleLocations,
     supportsUnitsAndPackaging: config.supportsUnitsAndPackaging,
     supportsProductAttributes: config.supportsProductAttributes,
     supportsKits: config.supportsKits,

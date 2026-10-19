@@ -22,6 +22,7 @@ const accountTypeLabels: Record<BankAccountType, string> = {
 
 const currencyOptions = ["GTQ", "USD"] as const;
 const statusOptions: BankAccountStatus[] = ["active", "inactive", "archived"];
+const ACCOUNT_NUMBER_MAX_DIGITS = ADMIN_FIELD_LIMITS.bankAccount.accountNumber;
 type BankAccountFieldErrors = Partial<
   Record<"bankName" | "holderName" | "alias" | "accountNumber", string>
 >;
@@ -125,8 +126,8 @@ export function BankAccountForm({
         <FormField
           hint={
             isEdit
-              ? `Dejar en blanco para conservar el número actual (${account?.accountNumberMasked}).`
-              : "Ingrese el número completo; el listado solo mostrará la versión enmascarada."
+              ? `Dejar en blanco para conservar el número actual (${account?.accountNumberMasked}). Máximo ${ACCOUNT_NUMBER_MAX_DIGITS} dígitos.`
+              : `Ingrese el número completo (máximo ${ACCOUNT_NUMBER_MAX_DIGITS} dígitos); el listado solo mostrará la versión enmascarada.`
           }
           error={errors.accountNumber}
           id="bank-account-number"
@@ -137,8 +138,13 @@ export function BankAccountForm({
             disabled={busy}
             id="bank-account-number"
             inputMode="numeric"
-            maxLength={ADMIN_FIELD_LIMITS.bankAccount.accountNumber}
-            onChange={(event) => setField("accountNumber", event.target.value.replace(/\D/g, ""))}
+            // Sin maxLength nativo: recortaría "1234 5678 9012" al pegarlo antes de quitar separadores.
+            onChange={(event) =>
+              setField(
+                "accountNumber",
+                event.target.value.replace(/\D/g, "").slice(0, ACCOUNT_NUMBER_MAX_DIGITS),
+              )
+            }
             placeholder={isEdit ? "Sin cambios" : "Ej. 123456789012"}
             required={!isEdit}
             value={value.accountNumber}
@@ -258,6 +264,9 @@ function validateBankAccountFields(
   if (!value.alias.trim()) errors.alias = "Ingrese el alias de la cuenta.";
   if (!isEdit && !value.accountNumber.trim()) {
     errors.accountNumber = "Ingrese el número de cuenta.";
+  }
+  if (value.accountNumber.length > ACCOUNT_NUMBER_MAX_DIGITS) {
+    errors.accountNumber = `El número de cuenta no puede exceder ${ACCOUNT_NUMBER_MAX_DIGITS} dígitos.`;
   }
   return errors;
 }

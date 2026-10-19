@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import type { SaleTicketItemDto } from "@/modules/pos/application/dto/SaleTicketDto";
 import { Button } from "@/shared/components/Button";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
@@ -11,6 +12,7 @@ interface SaleTicketProps {
   canCheckout: boolean;
   onIncrease: (productId: string) => void;
   onDecrease: (productId: string) => void;
+  onQuantityChange: (productId: string, quantity: number) => void;
   onRemove: (productId: string) => void;
   onCheckout: () => void;
 }
@@ -24,6 +26,7 @@ export function SaleTicket({
   canCheckout,
   onIncrease,
   onDecrease,
+  onQuantityChange,
   onRemove,
   onCheckout,
 }: SaleTicketProps) {
@@ -76,9 +79,7 @@ export function SaleTicket({
                     >
                       −
                     </button>
-                    <span className="min-w-8 text-center font-semibold text-[var(--color-text)]">
-                      {item.quantity} {item.saleUnitName}
-                    </span>
+                    <EditableTicketQuantity item={item} onChange={onQuantityChange} />
                     <button
                       aria-label={`Aumentar cantidad de ${item.name}`}
                       className="flex h-9 w-9 items-center justify-center rounded-md border border-[var(--color-border)] font-bold text-[var(--color-title)] transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] disabled:cursor-not-allowed disabled:opacity-50"
@@ -88,6 +89,9 @@ export function SaleTicket({
                     >
                       +
                     </button>
+                    <span className="text-sm font-semibold text-[var(--color-text)]">
+                      {item.saleUnitName}
+                    </span>
                   </div>
                   <button
                     className="text-sm font-semibold text-[var(--color-danger)] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
@@ -137,5 +141,68 @@ export function SaleTicket({
         </Button>
       </div>
     </aside>
+  );
+}
+
+interface EditableTicketQuantityProps {
+  item: SaleTicketItemDto;
+  onChange: (productId: string, quantity: number) => void;
+}
+
+function EditableTicketQuantity({ item, onChange }: EditableTicketQuantityProps) {
+  const [draft, setDraft] = useState(String(item.quantity));
+  const [editing, setEditing] = useState(false);
+  const cancelledRef = useRef(false);
+
+  const commit = () => {
+    if (!editing) {
+      cancelledRef.current = false;
+      return;
+    }
+    if (cancelledRef.current) {
+      cancelledRef.current = false;
+      return;
+    }
+
+    const quantity = draft === "" ? 0 : Number(draft);
+    if (quantity < 1) {
+      setDraft(String(item.quantity));
+      setEditing(false);
+      return;
+    }
+
+    onChange(item.productId, quantity);
+    setEditing(false);
+  };
+
+  return (
+    <input
+      aria-label={`Cantidad de ${item.name}`}
+      className="h-9 w-20 rounded-md border border-[var(--color-border)] bg-white px-2 text-center font-semibold text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] sm:w-24"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      type="text"
+      value={editing ? draft : String(item.quantity)}
+      onBlur={commit}
+      onChange={(event) => {
+        if (/^\d*$/.test(event.target.value)) setDraft(event.target.value);
+      }}
+      onFocus={(event) => {
+        cancelledRef.current = false;
+        setDraft(String(item.quantity));
+        setEditing(true);
+        event.currentTarget.select();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") {
+          event.preventDefault();
+          cancelledRef.current = true;
+          setDraft(String(item.quantity));
+          setEditing(false);
+          event.currentTarget.blur();
+        }
+      }}
+    />
   );
 }

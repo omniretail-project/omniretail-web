@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { getPublicDemoUrl } from "@/config/demo-mode";
 
 const navIcons = ["⌂", "▦", "▤", "◎"];
 const stats = [["Ventas del mes", "Q 48,750", "↑ 12.5%"], ["Órdenes activas", "24", "↑ 8.1%"], ["Alertas stock", "7", "↓ 3.2%"]];
 const orders = [["ORD-1045", "Pagado", "Q 1,250.00"], ["WEB-0082", "Pendiente envío", "Q 490.50"], ["ORD-1044", "Pagado", "Q 85.00"]];
 
 export default function LandingHero() {
+  const demoUrl = getPublicDemoUrl();
   return (
     <section className="relative overflow-hidden bg-[var(--mkt-bg)] py-20 lg:py-[80px] lg:pb-[120px]">
       <div className="pointer-events-none absolute -right-24 -top-24 h-[600px] w-[600px] rounded-full bg-[radial-gradient(circle,rgba(47,103,231,.06),transparent_70%)]" />
@@ -13,9 +15,10 @@ export default function LandingHero() {
           <span className="inline-flex rounded-full border border-[var(--mkt-border-light)] bg-[var(--mkt-accent-light)] px-3 py-1 text-xs font-bold uppercase tracking-[.05em] text-[var(--mkt-accent)]">Gestión comercial conectada</span>
           <h1 className="mt-5 text-[2.8rem] font-extrabold leading-[1.08] tracking-[-.03em] text-[var(--mkt-primary)] sm:text-[3.4rem] lg:text-[3.8rem]">Todo tu negocio <span className="text-[var(--mkt-accent)]">conectado</span> en un solo lugar.</h1>
           <p className="mt-6 max-w-[520px] text-lg leading-[1.6] text-[var(--mkt-muted)] sm:text-xl">Inventario, compras, recepciones y punto de venta trabajando juntos para que operes con claridad y hagas crecer tu negocio.</p>
-          <div className="mt-10 flex flex-col gap-4 sm:flex-row">
-            <Link className="inline-flex min-h-12 items-center justify-center rounded-md bg-[var(--mkt-accent)] px-6 font-semibold text-white shadow-[0_4px_6px_rgba(47,103,231,.25)] transition hover:-translate-y-px hover:bg-[var(--mkt-accent-hover)]" href="/contratar">Contratar MARJYM</Link>
-            <Link className="inline-flex min-h-12 items-center justify-center rounded-md border border-[var(--mkt-border)] bg-white px-6 font-semibold text-[var(--mkt-primary)] shadow-sm hover:bg-[var(--mkt-bg-alt)]" href="/iniciar-sesion">Iniciar sesión</Link>
+          <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <Link className="inline-flex min-h-12 items-center justify-center whitespace-nowrap rounded-md bg-[var(--mkt-accent)] px-5 font-semibold text-white shadow-[0_4px_6px_rgba(47,103,231,.25)] transition hover:-translate-y-px hover:bg-[var(--mkt-accent-hover)]" href="/solicitar-informacion">Solicitar información</Link>
+            <Link className="inline-flex min-h-12 items-center justify-center whitespace-nowrap rounded-md border border-[var(--mkt-border)] bg-white px-5 font-semibold text-[var(--mkt-primary)] shadow-sm hover:bg-[var(--mkt-bg-alt)]" href="/iniciar-sesion">Iniciar sesión</Link>
+            {demoUrl ? <a className="inline-flex min-h-12 items-center justify-center whitespace-nowrap rounded-md border border-[var(--mkt-border)] bg-white px-5 font-semibold text-[var(--mkt-primary)] shadow-sm hover:bg-[var(--mkt-bg-alt)]" href={`${demoUrl}/iniciar-sesion`} rel="noopener noreferrer" target="_blank">Probar demo</a> : null}
           </div>
         </div>
         <div className="relative mx-auto h-[360px] w-full max-w-[560px] [perspective:1200px] sm:h-[415px]">
