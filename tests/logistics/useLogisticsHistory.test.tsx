@@ -340,7 +340,7 @@ describe("useLogisticsHistory en modo mock", () => {
       recipientPhone: "5555-1111",
       address: null,
       notificationContact: { emailMode: "not_applicable" },
-      transportMode: TransportMode.pickup,
+      transportMode: TransportMode.customer,
       pickingOrderId: "picking-local",
       pickingStatus: PickingStatus.completed,
       pickingCompletedAt: "2026-10-09T15:00:00.000Z",
