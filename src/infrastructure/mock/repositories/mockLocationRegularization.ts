@@ -219,7 +219,9 @@ export function previewMockRegularization(
     destinationQuantity,
     destinationReserved,
     assignedLocationId: assignedLocationId ?? null,
-    reservations: reservations.map((item) => `${item.id}:${item.updatedAt}`).sort(),
+    reservations: reservations
+      .map((item) => `${item.id}:${item.updatedAt}`)
+      .sort((a, b) => a.localeCompare(b)),
   };
 
   return {

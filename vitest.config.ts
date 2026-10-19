@@ -202,6 +202,17 @@ export default defineConfig({
         "src/proxy.ts",
         "src/app/not-found.tsx",
         "src/infrastructure/api/sessionHeartbeat.ts",
+        // Solicitudes comerciales de informacion (landing).
+        "src/app/api/public/contact-requests/route.ts",
+        "src/modules/information-request/application/services/SubmitInformationRequestService.ts",
+        "src/modules/information-request/hooks/useInformationRequest.ts",
+        "src/modules/information-request/validation/informationRequest.schema.ts",
+        // Ubicaciones operativas de inventario (disponibilidad, bloqueo y regularizacion mock).
+        "src/core/inventory/stockAvailability.ts",
+        "src/core/inventory/operationalCapabilities.ts",
+        "src/core/inventory/operationalLocationErrors.ts",
+        "src/modules/catalog/hooks/useProductLocationLock.ts",
+        "src/infrastructure/mock/repositories/mockLocationRegularization.ts",
       ],
     },
   },
