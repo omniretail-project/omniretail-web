@@ -202,6 +202,9 @@ export default defineConfig({
         "src/proxy.ts",
         "src/app/not-found.tsx",
         "src/infrastructure/api/sessionHeartbeat.ts",
+        // Descarga unificada del comprobante del storefront (PR de carrito y correo).
+        "src/app/api/public/[slug]/receipt/[token]/route.ts",
+        "src/modules/storefront/application/services/StorefrontReceiptPdfService.ts",
       ],
     },
   },

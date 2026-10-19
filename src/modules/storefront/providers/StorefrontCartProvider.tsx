@@ -27,6 +27,8 @@ interface StorefrontCartContextValue {
   items: StorefrontCartItemDto[];
   itemCount: number;
   subtotal: number;
+  /** Cambia cada vez que el usuario agrega un artículo correctamente. */
+  lastAddedAt: number | null;
   /**
    * Agrega `quantity` unidades (1 por defecto). Devuelve `false` si no se agrego nada: producto no
    * disponible o, en modo api, la cantidad supera el stock vigente del backend.
@@ -62,6 +64,7 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
   );
   const apiCatalogService = useMemo(() => new ApiStorefrontCatalogService(), []);
   const [allItems, setAllItems] = useState<PricedStorefrontCartItem[]>([]);
+  const [lastAddedAt, setLastAddedAt] = useState<number | null>(null);
   // Lectura sincrona del carrito para decidir el resultado de addProduct antes de encolar el cambio.
   const allItemsRef = useRef(allItems);
   useEffect(() => {
@@ -124,6 +127,7 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
             salesPriceTiers: [],
           }, quantity)];
         });
+        setLastAddedAt(Date.now());
         return true;
       }
       const ecommerceConfig = await repositories.businessConfig.getEcommerceConfig(tenantId);
@@ -176,6 +180,7 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
             : item,
         );
       });
+      setLastAddedAt(Date.now());
       return true;
     },
     [apiCatalogService, publishedProductService, repositories, tenantId, tenantSlug],
@@ -209,8 +214,8 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
   }, [tenantId]);
 
   const value = useMemo<StorefrontCartContextValue>(
-    () => ({ items, itemCount, subtotal, addProduct, updateQuantity, removeProduct, clearCart }),
-    [addProduct, clearCart, itemCount, items, removeProduct, subtotal, updateQuantity],
+    () => ({ items, itemCount, subtotal, lastAddedAt, addProduct, updateQuantity, removeProduct, clearCart }),
+    [addProduct, clearCart, itemCount, items, lastAddedAt, removeProduct, subtotal, updateQuantity],
   );
 
   return <StorefrontCartContext.Provider value={value}>{children}</StorefrontCartContext.Provider>;
