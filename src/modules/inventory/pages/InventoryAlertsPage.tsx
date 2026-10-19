@@ -1192,7 +1192,7 @@ function formatOptionalStock(value: number | null | undefined, unitName: string)
  * Avisa cuando el producto no puede operar sus existencias (sin ubicacion operativa) o conserva
  * stock fuera de su balance operativo, y enlaza a la regularizacion explicita existente.
  */
-function OperationalStockNotice({
+export function OperationalStockNotice({
   canRegularize,
   row,
 }: {

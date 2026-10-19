@@ -202,6 +202,14 @@ export default defineConfig({
         "src/proxy.ts",
         "src/app/not-found.tsx",
         "src/infrastructure/api/sessionHeartbeat.ts",
+        // Lote 1 PR #191: archivos con pruebas existentes que no estaban instrumentados.
+        "src/modules/catalog/components/OperationalLocationField.tsx",
+        "src/modules/information-request/pages/InformationRequestPage.tsx",
+        "src/modules/information-request/components/CaptchaWidget.tsx",
+        "src/shared/application/services/assignedLocationResolver.ts",
+        "src/modules/inventory/application/services/GetInventoryTransferHistoryService.ts",
+        "src/modules/administration/pages/PlanSubscriptionPage.tsx",
+        "src/modules/information-request/application/dto/InformationRequestDto.ts",
         // Solicitudes comerciales de informacion (landing).
         "src/app/api/public/contact-requests/route.ts",
         "src/modules/information-request/application/services/SubmitInformationRequestService.ts",

@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   current: {} as Record<string, unknown>,
@@ -143,5 +143,130 @@ describe("InformationRequestPage", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Hemos recibido tu solicitud");
     expect(screen.getByText(REQUEST_ID)).toBeInTheDocument();
     expect(screen.queryByText(/te enviamos un correo|correo de confirmación/i)).not.toBeInTheDocument();
+  });
+
+  it("Enviar otra solicitud reinicia el formulario y Volver al inicio enlaza a la landing", () => {
+    state.current = base({ status: "received", requestId: REQUEST_ID });
+    render(<InformationRequestPage />);
+
+    expect(screen.getByRole("link", { name: "Volver al inicio" })).toHaveAttribute("href", "/");
+    fireEvent.click(screen.getByRole("button", { name: "Enviar otra solicitud" }));
+
+    expect(state.current.reset).toHaveBeenCalledTimes(1);
+  });
+
+  it("no muestra exito si el estado es received pero falta el numero de solicitud", () => {
+    state.current = base({ status: "received", requestId: null });
+    render(<InformationRequestPage />);
+    expect(screen.queryByText("Hemos recibido tu solicitud")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Solicitar información" })).toBeInTheDocument();
+  });
+
+  it("muestra el error general cuando el envio fallo", () => {
+    state.current = base({ status: "failed", message: "El servicio no está disponible temporalmente." });
+    render(<InformationRequestPage />);
+    expect(screen.getByRole("alert")).toHaveTextContent("El servicio no está disponible temporalmente.");
+    expect(screen.queryByText("Hemos recibido tu solicitud")).not.toBeInTheDocument();
+  });
+
+  it("cada campo reporta su cambio al hook con el campo y el valor correctos", () => {
+    render(<InformationRequestPage />);
+    const setField = state.current.setField as ReturnType<typeof vi.fn>;
+
+    fireEvent.change(screen.getByLabelText(/Nombre completo/), { target: { value: "Ana Pérez" } });
+    fireEvent.change(screen.getByLabelText(/Nombre comercial/), { target: { value: "Ferretería" } });
+    fireEvent.change(screen.getByLabelText(/Correo electrónico/), { target: { value: "ana@example.com" } });
+    fireEvent.change(screen.getByLabelText(/Teléfono/), { target: { value: "+502 1234 5678" } });
+    fireEvent.change(screen.getByLabelText(/Rubro comercial/), { target: { value: "hardware" } });
+    fireEvent.change(screen.getByLabelText(/Comentarios adicionales/), { target: { value: "Hola" } });
+    fireEvent.change(document.getElementById("info-website") as HTMLInputElement, {
+      target: { value: "bot" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Acepto que MARJYM use estos datos/ }));
+
+    expect(setField.mock.calls).toEqual([
+      ["fullName", "Ana Pérez"],
+      ["businessName", "Ferretería"],
+      ["email", "ana@example.com"],
+      ["phone", "+502 1234 5678"],
+      ["industry", "hardware"],
+      ["message", "Hola"],
+      ["website", "bot"],
+      ["consentAccepted", true],
+    ]);
+  });
+
+  it("marcar un modulo lo reporta con su codigo y el contador refleja el mensaje", () => {
+    state.current = base({
+      values: {
+        ...(base().values as Record<string, unknown>),
+        message: "abc",
+        modules: ["pos"],
+      },
+    });
+    render(<InformationRequestPage />);
+
+    expect(screen.getByRole("checkbox", { name: "Punto de venta" })).toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Compras" }));
+
+    expect(state.current.toggleModule).toHaveBeenCalledWith("purchasing");
+    expect(screen.getByText("3/1000")).toBeInTheDocument();
+  });
+
+  it("muestra los errores de consentimiento y de modulos asociados a sus controles", () => {
+    state.current = base({
+      fieldErrors: {
+        consentAccepted: "Debes aceptar para que podamos responder tu solicitud.",
+        modules: "Selecciona al menos un módulo.",
+      },
+    });
+    render(<InformationRequestPage />);
+
+    expect(screen.getByRole("checkbox", { name: /Acepto que MARJYM use estos datos/ })).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(screen.getByText("Debes aceptar para que podamos responder tu solicitud.")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: /Módulos de interés/ })).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByText("Selecciona al menos un módulo.")).toBeInTheDocument();
+  });
+});
+
+describe("InformationRequestPage con CAPTCHA configurado", () => {
+  const turnstileRender = vi.fn<(element: HTMLElement, options: { callback: (token: string) => void }) => string>();
+
+  beforeEach(() => {
+    turnstileRender.mockReset();
+    turnstileRender.mockReturnValue("widget-1");
+    (globalThis as { turnstile?: unknown }).turnstile = { render: turnstileRender, remove: vi.fn() };
+  });
+
+  afterEach(() => {
+    delete (globalThis as { turnstile?: unknown }).turnstile;
+    vi.unstubAllEnvs();
+  });
+
+  it("sin clave del sitio no monta el CAPTCHA y pide al hook que no lo exija", () => {
+    vi.stubEnv("NEXT_PUBLIC_CONTACT_CAPTCHA_SITE_KEY", "");
+    render(<InformationRequestPage />);
+    expect(turnstileRender).not.toHaveBeenCalled();
+  });
+
+  it("con clave monta el widget y entrega el token al campo captchaToken", async () => {
+    vi.stubEnv("NEXT_PUBLIC_CONTACT_CAPTCHA_SITE_KEY", "clave-publica");
+    render(<InformationRequestPage />);
+
+    await waitFor(() => expect(turnstileRender).toHaveBeenCalledTimes(1));
+    turnstileRender.mock.calls[0][1].callback("token-turnstile");
+
+    expect(state.current.setField).toHaveBeenCalledWith("captchaToken", "token-turnstile");
+  });
+
+  it("muestra el error cuando falta completar la verificacion", () => {
+    vi.stubEnv("NEXT_PUBLIC_CONTACT_CAPTCHA_SITE_KEY", "clave-publica");
+    state.current = base({ fieldErrors: { captchaToken: "Completa la verificación de seguridad." } });
+    render(<InformationRequestPage />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Completa la verificación de seguridad.");
   });
 });
