@@ -34,30 +34,39 @@ export function toPickingDetailDto(model: PickingDetailReadModel): PickingDetail
   return {
     ...toPickingQueueItemDto(model),
     completedAt: model.completedAt,
-    lines: model.lines.map((line): PickingDetailLineDto => ({
-      pickingLineId: line.pickingLineId,
-      ...(line.orderItemId ? { orderItemId: line.orderItemId } : {}),
-      productId: line.productId,
-      sku: line.sku,
-      name: line.name,
-      requiredQuantity: line.requiredQuantity,
-      pickedQuantity: line.pickedQuantity,
-      remainingQuantity: line.remainingQuantity,
-      status: line.status,
-      location: line.location ? { ...line.location } : null,
-      lot: line.lot ? { ...line.lot } : null,
-      serialNumbers: [...line.serialNumbers],
-      availableLocations: line.availableLocations.map((location) => ({ ...location })),
-      availableLots: line.availableLots.map((lot) => ({ ...lot })),
-      availableSerialNumbers: [...line.availableSerialNumbers],
-      tracking: { ...line.tracking },
-      inventory: toInventoryAvailability(line.inventory),
-      sourceLineId: line.sourceLineId,
-      trackingSelections: line.trackingSelections.map((selection) => ({
+    lines: model.lines.map((line): PickingDetailLineDto => {
+      const trackingSelections = line.trackingSelections.map((selection) => ({
         ...selection,
         serialNumbers: [...selection.serialNumbers],
-      })),
-    })),
+      }));
+      const persistedSerialNumbers = [...new Set(
+        trackingSelections.flatMap((selection) => selection.serialNumbers),
+      )];
+
+      return {
+        pickingLineId: line.pickingLineId,
+        ...(line.orderItemId ? { orderItemId: line.orderItemId } : {}),
+        productId: line.productId,
+        sku: line.sku,
+        name: line.name,
+        requiredQuantity: line.requiredQuantity,
+        pickedQuantity: line.pickedQuantity,
+        remainingQuantity: line.remainingQuantity,
+        status: line.status,
+        location: line.location ? { ...line.location } : null,
+        lot: line.lot ? { ...line.lot } : null,
+        serialNumbers: persistedSerialNumbers.length > 0
+          ? persistedSerialNumbers
+          : [...line.serialNumbers],
+        availableLocations: line.availableLocations.map((location) => ({ ...location })),
+        availableLots: line.availableLots.map((lot) => ({ ...lot })),
+        availableSerialNumbers: [...line.availableSerialNumbers],
+        tracking: { ...line.tracking },
+        inventory: toInventoryAvailability(line.inventory),
+        sourceLineId: line.sourceLineId,
+        trackingSelections,
+      };
+    }),
     incidents: model.incidents.map((incident) => ({ ...incident })),
     releases: model.releases.map((release) => ({ ...release })),
   };

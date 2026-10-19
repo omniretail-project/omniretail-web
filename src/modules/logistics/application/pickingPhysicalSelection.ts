@@ -153,7 +153,7 @@ export function resolvePickingCanonicalCandidates(
     const serialNumbers = location.serialNumbers.filter((serial) => {
       if (!availableSerialNumbers.has(serial.serialNumber)) return false;
       const requiresCanonicalLot =
-        line.tracking.lot || line.tracking.expiration || serial.lotId !== null;
+        line.tracking.lot || line.tracking.expiration || Boolean(serial.lotId);
       return !requiresCanonicalLot || Boolean(serial.lotId && canonicalLotIds.has(serial.lotId));
     });
     return [{ location, lots, serialNumbers }];

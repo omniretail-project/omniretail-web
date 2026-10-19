@@ -11,6 +11,11 @@ import {
   toPickingDetailDto,
   toPickingQueueItemDto,
 } from "@/modules/logistics/application/mappers/PickingApiMapper";
+import {
+  buildPickingPhysicalSelection,
+  getPickingLineUpdateAvailability,
+  getPickingLocationSerials,
+} from "@/modules/logistics/application/pickingPhysicalSelection";
 import { PickingApplicationService } from "@/modules/logistics/application/services/PickingApplicationService";
 import { isCurrentPickingRequest } from "@/modules/logistics/hooks/pickingRequestIdentity";
 
@@ -34,6 +39,10 @@ const ids = {
   release: "10000000-0000-4000-8000-000000000017",
   transfer: "10000000-0000-4000-8000-000000000018",
   transferPicking: "10000000-0000-4000-8000-000000000019",
+  serial2: "10000000-0000-4000-8000-000000000020",
+  serial3: "10000000-0000-4000-8000-000000000021",
+  serial4: "10000000-0000-4000-8000-000000000022",
+  serial5: "10000000-0000-4000-8000-000000000023",
 };
 
 const progress = {
@@ -93,7 +102,7 @@ const detailResponse = {
       status: "partial",
       location: { id: ids.locationA, code: "A-01", name: "Pasillo A" },
       lot: { id: ids.lot, number: "LOT-2030" },
-      serialNumbers: ["SER-001"],
+      serialNumbers: [],
       availableLocations: [
         {
           id: ids.locationA,
@@ -218,25 +227,139 @@ const transferDetailResponse = {
   releases: [],
 };
 
+const serialOnlyDetailResponse = {
+  ...detailResponse,
+  progress: {
+    requiredQuantity: 1,
+    pickedQuantity: 0,
+    remainingQuantity: 1,
+    percentage: 0,
+  },
+  lines: [
+    {
+      ...detailResponse.lines[0],
+      sku: "LAPTOP-SERIAL",
+      name: "Laptop serializada",
+      requiredQuantity: 1,
+      pickedQuantity: 0,
+      remainingQuantity: 1,
+      status: "pending",
+      lot: null,
+      serialNumbers: [],
+      availableLocations: [
+        {
+          id: ids.locationA,
+          code: "A-01",
+          name: "Pasillo A",
+          ownReservedQuantity: 1,
+          usableQuantity: 3,
+        },
+      ],
+      availableLots: [],
+      availableSerialNumbers: ["106", "107", "108", "109", "110"],
+      tracking: { stock: true, lot: false, expiration: false, serial: true },
+      inventory: {
+        ...detailResponse.lines[0].inventory,
+        physicalQuantity: 7,
+        ownReservedQuantity: 1,
+        otherReservedQuantity: 4,
+        freeQuantity: 2,
+        usableQuantity: 3,
+        locations: [
+          {
+            ...detailResponse.lines[0].inventory.locations[0],
+            physicalQuantity: 7,
+            ownReservedQuantity: 1,
+            otherReservedQuantity: 4,
+            freeQuantity: 2,
+            usableQuantity: 3,
+            lots: [],
+            serialNumbers: [
+              { id: ids.serial, serialNumber: "106", lotId: null },
+              { id: ids.serial2, serialNumber: "107", lotId: null },
+              { id: ids.serial3, serialNumber: "108", lotId: null },
+              { id: ids.serial4, serialNumber: "109", lotId: null },
+              { id: ids.serial5, serialNumber: "110", lotId: null },
+            ],
+          },
+        ],
+      },
+      trackingSelections: [],
+    },
+  ],
+  incidents: [],
+  releases: [],
+};
+
 async function main() {
   const queue = parseApiPickingQueue([orderQueueResponse, transferQueueResponse]);
   const detail = parseApiPickingDetail(detailResponse);
   const transferDetail = parseApiPickingDetail(transferDetailResponse);
+  const serialOnlyDetail = parseApiPickingDetail(serialOnlyDetailResponse);
   const mappedOrder = toPickingDetailDto(detail);
   const mappedTransfer = toPickingQueueItemDto(queue[1]);
   const mappedTransferDetail = toPickingDetailDto(transferDetail);
+  const mappedSerialOnlyDetail = toPickingDetailDto(serialOnlyDetail);
 
   assert.equal(mappedOrder.lines[0].requiredQuantity, 3.75);
   assert.equal(mappedOrder.lines[0].inventory.otherReservedQuantity, 2.75);
   assert.equal(mappedOrder.lines[0].inventory.locations.length, 2);
   assert.equal(mappedOrder.lines[0].availableLots[0].expirationDate, "2030-02-20");
   assert.deepEqual(mappedOrder.lines[0].availableSerialNumbers, ["SER-001", "SER-002"]);
+  assert.deepEqual(mappedOrder.lines[0].serialNumbers, ["SER-001"]);
+  assert.deepEqual(mappedOrder.lines[0].trackingSelections[0].serialNumbers, ["SER-001"]);
   assert.equal(mappedOrder.lines[0].trackingSelections[0].quantity, 1.25);
   assert.equal(mappedTransfer.deliveryMethod, "transfer");
   assert.equal(mappedTransfer.orderReference, "TR-2026-001");
   assert.equal(mappedTransfer.orderId, undefined);
   assert.equal(mappedTransferDetail.lines[0].orderItemId, undefined);
   assert.equal(mappedTransferDetail.lines[0].inventory.orderId, undefined);
+
+  const serialOnlyLine = mappedSerialOnlyDetail.lines[0];
+  assert.equal(getPickingLineUpdateAvailability(serialOnlyLine).available, true);
+  assert.deepEqual(getPickingLocationSerials(serialOnlyLine, ids.locationA), [
+    "106",
+    "107",
+    "108",
+    "109",
+    "110",
+  ]);
+  assert.deepEqual(
+    buildPickingPhysicalSelection(serialOnlyLine, 1, {
+      locationId: ids.locationA,
+      lotId: null,
+      serialNumbers: ["106"],
+    }).trackingSelections,
+    [
+      {
+        locationId: ids.locationA,
+        lotId: null,
+        quantity: 1,
+        serialNumbers: ["106"],
+      },
+    ],
+  );
+
+  const twoSerialLine = {
+    ...serialOnlyLine,
+    requiredQuantity: 2,
+    remainingQuantity: 2,
+  };
+  assert.deepEqual(
+    buildPickingPhysicalSelection(twoSerialLine, 2, {
+      locationId: ids.locationA,
+      lotId: null,
+      serialNumbers: ["106", "107"],
+    }).trackingSelections,
+    [
+      {
+        locationId: ids.locationA,
+        lotId: null,
+        quantity: 2,
+        serialNumbers: ["106", "107"],
+      },
+    ],
+  );
 
   assert.throws(
     () => parseApiPickingQueue([{ ...orderQueueResponse, pickingOrderId: "mock-id" }]),
