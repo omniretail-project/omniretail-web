@@ -23,7 +23,10 @@ import type {
 } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
 import { STOCK_ELSEWHERE_ADJUSTMENT_MESSAGE } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
 import { useSerialBatchPrecheck } from "@/shared/hooks/useSerialBatchPrecheck";
-import { INVENTORY_STOCK_READ_PERMISSION } from "@/modules/inventory/application/services/serviceHelpers";
+import {
+  INVENTORY_MOVEMENTS_READ_PERMISSION,
+  INVENTORY_STOCK_READ_PERMISSION,
+} from "@/modules/inventory/application/services/serviceHelpers";
 import { TraceableCountFlow } from "@/modules/inventory/components/TraceableCountFlow";
 import type { InventoryOtherBranchesService } from "@/modules/inventory/application/services/InventoryOtherBranchesService";
 import type { OtherBranchAvailability } from "@/core/repositories";
@@ -127,6 +130,8 @@ export function InventoryAlertsPage() {
     hasPermission(INVENTORY_STOCK_READ_PERMISSION) && hasCapability(SaasCapabilityKey.inventory);
   const canCreatePurchaseOrder =
     hasPermission("purchasing.orders.create") && hasCapability(SaasCapabilityKey.purchasing);
+  // /inventario/movimientos exige inventory.movements.read: sin él (Cajero, Bodeguero) el acceso no se ofrece.
+  const canViewMovements = hasPermission(INVENTORY_MOVEMENTS_READ_PERMISSION);
   const {
     data,
     detailRow,
@@ -515,7 +520,7 @@ export function InventoryAlertsPage() {
               onPageChange={setPage}
               onPageSizeChange={setPageSize}
               onTransfer={openTransfer}
-              onViewHistory={openMovementHistory}
+              onViewHistory={canViewMovements ? openMovementHistory : undefined}
             />
           )}
         </div>
@@ -536,8 +541,15 @@ export function InventoryAlertsPage() {
           onAdjust={() => selectedRow && canAdjustStock && openAdjust(selectedRow)}
           onCreateOrder={() => selectedRow && openPurchaseOrder(selectedRow, "inventory-alert")}
           onOtherBranches={() => selectedRow && openOtherBranches(selectedRow)}
-          onViewHistory={() => selectedRow && openMovementHistory(selectedRow)}
-          onViewProductTransfers={() => selectedRow && setActionMode("product-transfers")}
+          onViewHistory={
+            canViewMovements ? () => selectedRow && openMovementHistory(selectedRow) : undefined
+          }
+          // Solicitudes y traslados del producto exigen inventory.transfers.manage en el backend.
+          onViewProductTransfers={
+            canManageTransfers
+              ? () => selectedRow && setActionMode("product-transfers")
+              : undefined
+          }
           onCloseProduct={closePanel}
           onCollapse={closePanel}
           onModeChange={changePanelMode}
@@ -940,7 +952,7 @@ function InventoryTable({
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
   onTransfer: (row: InventoryProductRow) => void;
-  onViewHistory: (row: InventoryProductRow) => void;
+  onViewHistory?: (row: InventoryProductRow) => void;
 }) {
   return (
     <div className="border-t border-[var(--color-border)]">
@@ -1321,7 +1333,7 @@ function RowActionsMenu({
   canManageTransfers: boolean;
   onAdjust: (row: InventoryProductRow) => void;
   onTransfer: (row: InventoryProductRow) => void;
-  onViewHistory: (row: InventoryProductRow) => void;
+  onViewHistory?: (row: InventoryProductRow) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>();
@@ -1375,6 +1387,8 @@ function RowActionsMenu({
     action(row);
   }
 
+  if (!canAdjustStock && !canManageTransfers && !onViewHistory) return null;
+
   return (
     <div
       className="relative flex justify-end"
@@ -1408,9 +1422,11 @@ function RowActionsMenu({
               Solicitar traslado
             </MenuItem>
           ) : null}
-          <MenuItem icon={<HistoryIcon />} onClick={() => select(onViewHistory)}>
-            Historial de movimientos
-          </MenuItem>
+          {onViewHistory ? (
+            <MenuItem icon={<HistoryIcon />} onClick={() => select(onViewHistory)}>
+              Historial de movimientos
+            </MenuItem>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -1560,8 +1576,8 @@ function ContextPanel({
   onOtherBranches: () => void;
   onSelectProduct: (productId: string) => void;
   onSelectTransferRequest: (request: InventoryTransferRequestRow) => void;
-  onViewHistory: () => void;
-  onViewProductTransfers: () => void;
+  onViewHistory?: () => void;
+  onViewProductTransfers?: () => void;
 }) {
   const productAlerts = row ? alerts.filter((alert) => alert.productId === row.productId) : [];
   const totalAlerts = alertTotalItems + transferRequests.length;
@@ -1800,8 +1816,8 @@ function ProductPanel({
   onCreateOrder: () => void;
   onClose: () => void;
   onOtherBranches: () => void;
-  onViewHistory: () => void;
-  onViewProductTransfers: () => void;
+  onViewHistory?: () => void;
+  onViewProductTransfers?: () => void;
 }) {
   if (row.inventoryMode === "NONE") {
     return (
@@ -1998,8 +2014,8 @@ function PhysicalProductPanel({
   onClose: () => void;
   onCreateOrder: () => void;
   onOtherBranches: () => void;
-  onViewHistory: () => void;
-  onViewProductTransfers: () => void;
+  onViewHistory?: () => void;
+  onViewProductTransfers?: () => void;
 }) {
   const baseId = useId();
   const [openSection, setOpenSection] = useState<ProductPanelSection>("information");
@@ -2198,22 +2214,26 @@ function PhysicalProductPanel({
                   <span className="min-w-0">Ver existencias en otras sucursales</span>
                 </button>
               ) : null}
-              <button
-                className={PANEL_SECONDARY_ACTION_CLASS}
-                onClick={onViewHistory}
-                type="button"
-              >
-                <HistoryIcon />
-                <span className="min-w-0">Ver historial de movimientos</span>
-              </button>
-              <button
-                className={PANEL_SECONDARY_ACTION_CLASS}
-                onClick={onViewProductTransfers}
-                type="button"
-              >
-                <TransferIcon />
-                <span className="min-w-0">Ver solicitudes y traslados</span>
-              </button>
+              {onViewHistory ? (
+                <button
+                  className={PANEL_SECONDARY_ACTION_CLASS}
+                  onClick={onViewHistory}
+                  type="button"
+                >
+                  <HistoryIcon />
+                  <span className="min-w-0">Ver historial de movimientos</span>
+                </button>
+              ) : null}
+              {onViewProductTransfers ? (
+                <button
+                  className={PANEL_SECONDARY_ACTION_CLASS}
+                  onClick={onViewProductTransfers}
+                  type="button"
+                >
+                  <TransferIcon />
+                  <span className="min-w-0">Ver solicitudes y traslados</span>
+                </button>
+              ) : null}
               {canCreatePurchaseOrder ? (
                 <button
                   className={PANEL_SECONDARY_ACTION_CLASS}
