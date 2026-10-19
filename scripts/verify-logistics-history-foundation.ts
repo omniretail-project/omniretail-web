@@ -151,7 +151,13 @@ async function main() {
       detail,
       loading: false,
       error: null,
+      handoverEligible: false,
+      handoverSubmitting: false,
+      handoverMutationInFlight: false,
+      handoverError: null,
+      handoverErrorUncertain: false,
       onClose: () => undefined,
+      onConfirmStorePickupHandover: () => Promise.resolve(null),
     }),
   );
   assert.match(detailMarkup, /POS-H-DELIVERED/);
@@ -166,7 +172,13 @@ async function main() {
       detail: pickupDetail,
       loading: false,
       error: null,
+      handoverEligible: false,
+      handoverSubmitting: false,
+      handoverMutationInFlight: false,
+      handoverError: null,
+      handoverErrorUncertain: false,
       onClose: () => undefined,
+      onConfirmStorePickupHandover: () => Promise.resolve(null),
     }),
   );
   assert.match(pickupMarkup, /Persona que retira/);

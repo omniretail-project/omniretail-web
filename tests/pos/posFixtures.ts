@@ -59,6 +59,8 @@ export const ids = {
   otherBranch: id(23),
   session: id(24),
   customer: id(25),
+  location: id(26),
+  lot: id(27),
 };
 
 export const at = "2026-10-08T12:00:00.000Z";

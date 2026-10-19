@@ -50,6 +50,52 @@ describe("PendingSaleConfirmationStore", () => {
     expect(store.load("u:t:b:s")).toBeNull();
   });
 
+  it("conserva la seleccion fisica y el confirmationId exactos para un reintento", () => {
+    const store = new PendingSaleConfirmationStore();
+    const pending: PendingSaleConfirmation = {
+      ...record(),
+      confirmationId: "confirmation-with-tracking",
+      input: {
+        ...record().input,
+        ticket: {
+          items: [
+            {
+              productId: "product-1",
+              sku: "TRACE-001",
+              name: "Producto trazable",
+              quantity: 1.25,
+              baseUnitPrice: 10,
+              unitPrice: 10,
+              discount: 0,
+              subtotal: 12.5,
+              availableQuantity: 5,
+              saleUnitId: "unit-1",
+              saleUnitName: "Unidad",
+              tracksStock: true,
+              requiresUnsupportedTraceability: true,
+              trackingSelections: [
+                {
+                  productId: "product-1",
+                  locationId: "location-1",
+                  lotId: "lot-1",
+                  quantity: 1.25,
+                  serialNumbers: ["SER-001"],
+                },
+              ],
+            },
+          ],
+          subtotal: 12.5,
+          discountTotal: 0,
+          total: 12.5,
+          hasUnsupportedTraceability: true,
+        },
+      },
+    };
+
+    expect(store.save(pending)).toBe(true);
+    expect(store.load(pending.contextKey)).toEqual(pending);
+  });
+
   it("ignora datos corruptos, de otra versión o de otro contexto", () => {
     const store = new PendingSaleConfirmationStore();
     window.sessionStorage.setItem("omniretail.pos.pending-sale.u:t:b:s", "{no es json");

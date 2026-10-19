@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
 import {
   CashShiftStatus,
@@ -9,7 +9,7 @@ import {
   SaasCapabilityKey,
   TransportMode,
 } from "@/core/enums";
-import type { SaleConfirmationPaymentMethod } from "@/core/repositories";
+import type { PosApiTrackingSelection, SaleConfirmationPaymentMethod } from "@/core/repositories";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
@@ -23,7 +23,15 @@ import type {
 import type { PosProductDto } from "@/modules/pos/application/dto/PosProductDto";
 import type { PosCashShiftDto } from "@/modules/pos/application/dto/PosCashShiftDto";
 import type { PosSaleConfirmationDto } from "@/modules/pos/application/dto/PosSaleConfirmationDto";
-import type { SaleTicketDto, SaleTicketItemDto } from "@/modules/pos/application/dto/SaleTicketDto";
+import type {
+  SaleTicketDto,
+  SaleTicketItemDto,
+  SaleTicketTrackingSummaryDto,
+} from "@/modules/pos/application/dto/SaleTicketDto";
+import {
+  canonicalizePosTrackingSelections,
+  normalizePosTrackingQuantity,
+} from "@/modules/pos/application/posTrackingSelection";
 import { ConfirmSaleService } from "@/modules/pos/application/services/ConfirmSaleService";
 import {
   type PendingSaleConfirmation,
@@ -41,6 +49,7 @@ import {
   type CheckoutValidationErrors,
 } from "@/modules/pos/validation/checkout.validation";
 import { validateTicketQuantity } from "@/modules/pos/validation/ticket.validation";
+import { validateSaleTicketTraceability } from "@/modules/pos/application/validateSaleTicketTraceability";
 import { cleanPosError } from "@/modules/pos/application/services/posServiceContext";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useEntitlement } from "@/shared/hooks/useEntitlement";
@@ -66,6 +75,14 @@ interface ConfirmationAttempt {
   confirmationId: string;
   orderIdempotencyKey?: string;
   contextKey: string;
+}
+
+interface PosTraceabilityTicketRequest {
+  contextKey: string;
+  product: PosProductDto;
+  requestedQuantity: number;
+  requiredBaseQuantity: number;
+  initialSelections: PosApiTrackingSelection[];
 }
 
 type EditableCheckoutPatch = Partial<Omit<CheckoutDto, "cardTerminalResult">>;
@@ -97,6 +114,8 @@ export function usePosTerminal() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ticketState, setTicketState] = useState<TicketState>({ items: [], error: null });
+  const [traceabilityRequest, setTraceabilityRequest] =
+    useState<PosTraceabilityTicketRequest | null>(null);
   const [checkoutState, setCheckoutState] = useState<CheckoutState>(() => createCheckoutState(0));
   const [bankAccounts, setBankAccounts] = useState<CheckoutBankAccountDto[]>([]);
   const [bankAccountsLoading, setBankAccountsLoading] = useState(true);
@@ -134,6 +153,7 @@ export function usePosTerminal() {
   const cardTerminalReferenceSequenceRef = useRef(482931);
   const readContextKey = `${sessionId ?? ""}:${user?.id ?? ""}:${currentBranch?.tenantId ?? ""}:${currentBranch?.id ?? ""}`;
   const currentReadContextRef = useRef(readContextKey);
+  currentReadContextRef.current = readContextKey;
   const currentConfirmationContextKey =
     sessionId && user && currentBranch && cashShift
       ? `${sessionId}:${user.id}:${currentBranch.tenantId}:${currentBranch.id}:${cashShift.id}`
@@ -214,6 +234,7 @@ export function usePosTerminal() {
     currentBranch,
     productService,
     readContextKey,
+    repositories,
     sessionError,
     sessionLoading,
     user,
@@ -407,14 +428,14 @@ export function usePosTerminal() {
     user,
   ]);
 
-  useEffect(() => {
-    currentReadContextRef.current = readContextKey;
+  useLayoutEffect(() => {
     window.queueMicrotask(() => {
       productsRequestRef.current += 1;
       bankAccountsRequestRef.current += 1;
       cashShiftRequestRef.current += 1;
       paymentMethodsRequestRef.current += 1;
       setTicketState({ items: [], error: null });
+      setTraceabilityRequest(null);
       setCheckoutState(createCheckoutState(0));
       setConfirmationAttempt(null);
       setConfirmationError(null);
@@ -460,10 +481,34 @@ export function usePosTerminal() {
     });
   }, [readContextKey, reload, repositories]);
 
-  useDataEvent("product.changed", scheduleReload);
+  const schedulePhysicalInventoryReload = useCallback(() => {
+    if (pendingConfirmationRef.current) {
+      scheduleReload();
+      return;
+    }
+    setTraceabilityRequest(null);
+    setConfirmationAttempt(null);
+    setConfirmationError(null);
+    setConfirmationResult(null);
+    setTicketState((current) => ({
+      ...current,
+      items: current.items.map(clearTicketItemTracking),
+    }));
+    setCheckoutState((current) => ({
+      ...current,
+      errors: {},
+      validated: false,
+      readyToConfirm: false,
+      hasOperationalBlock: false,
+      message: null,
+    }));
+    scheduleReload();
+  }, [scheduleReload]);
+
+  useDataEvent("product.changed", schedulePhysicalInventoryReload);
   useDataEvent("promotion.changed", scheduleReload);
-  useDataEvent("inventory.changed", scheduleReload);
-  useDataEvent("stock.changed", scheduleReload);
+  useDataEvent("inventory.changed", schedulePhysicalInventoryReload);
+  useDataEvent("stock.changed", schedulePhysicalInventoryReload);
   useDataEvent("payment.changed", reloadBankAccounts);
   useDataEvent("cash-shift.changed", reloadCashShift);
   useDataEvent("business-config.changed", reloadPaymentMethods);
@@ -498,22 +543,75 @@ export function usePosTerminal() {
     }));
   }, [invalidateConfirmationAttempt]);
 
+  const prepareTraceabilitySelection = useCallback(
+    (product: PosProductDto, requestedQuantity: number) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
+      const validationError = validatePosTicketQuantity(product, requestedQuantity);
+      if (validationError) {
+        setTicketState((current) => ({ ...current, error: validationError }));
+        return;
+      }
+      if (product.requiresUnsupportedTraceability || !product.requiresTraceabilitySelection) {
+        setTicketState((current) => ({
+          ...current,
+          error: `${product.name} requiere un flujo de venta que esta terminal todavía no soporta.`,
+        }));
+        return;
+      }
+
+      try {
+        const requiredBaseQuantity = normalizePosTrackingQuantity(
+          requestedQuantity * product.saleUnitToBaseFactor,
+        );
+        if (product.requiresSerial && !Number.isInteger(requiredBaseQuantity)) {
+          throw new Error("Los productos serializados requieren una cantidad base entera.");
+        }
+        setTicketState((current) => ({ ...current, error: null }));
+        setTraceabilityRequest({
+          contextKey: readContextKey,
+          product,
+          requestedQuantity,
+          requiredBaseQuantity,
+          initialSelections:
+            ticketState.items.find((item) => item.productId === product.productId)
+              ?.trackingSelections ?? [],
+        });
+      } catch (conversionError) {
+        setTicketState((current) => ({
+          ...current,
+          error:
+            conversionError instanceof Error
+              ? conversionError.message
+              : "No se pudo convertir la cantidad a unidades base.",
+        }));
+      }
+    },
+    [readContextKey, ticketState.items],
+  );
+
   const addProduct = useCallback(
     (product: PosProductDto) => {
       if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateCheckoutValidation();
+      if (product.requiresUnsupportedTraceability) {
+        setTicketState((current) => ({
+          ...current,
+          error: `${product.name} requiere un flujo de venta que esta terminal todavía no soporta.`,
+        }));
+        return;
+      }
       setTicketState((current) => {
-        const existingItem = current.items.find((item) => item.productId === product.productId);
-        const requestedQuantity = (existingItem?.quantity ?? 0) + 1;
-        const validationError = validateTicketQuantity(product, requestedQuantity);
+        const currentItem = current.items.find((item) => item.productId === product.productId);
+        const nextQuantity = (currentItem?.quantity ?? 0) + 1;
+        const validationError = validatePosTicketQuantity(product, nextQuantity);
         if (validationError) return { ...current, error: validationError };
 
-        if (existingItem) {
+        if (currentItem) {
           return {
             error: null,
             items: current.items.map((item) =>
               item.productId === product.productId
-                ? createTicketItem(product, requestedQuantity)
+                ? createTicketItem(product, nextQuantity)
                 : item,
             ),
           };
@@ -532,12 +630,21 @@ export function usePosTerminal() {
     (productId: string) => {
       if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateCheckoutValidation();
+      const item = ticketState.items.find((candidate) => candidate.productId === productId);
+      const product = products.find((candidate) => candidate.productId === productId);
+      if (item?.trackingSelections?.length && !product?.requiresTraceabilitySelection) {
+        setTicketState((current) => ({
+          ...current,
+          error: "El producto trazable ya no está disponible; actualiza el catálogo antes de cambiar la cantidad.",
+        }));
+        return;
+      }
       setTicketState((current) => {
         const item = current.items.find((candidate) => candidate.productId === productId);
         if (!item) return current;
 
         const requestedQuantity = item.quantity + 1;
-        const validationError = validateTicketQuantity(item, requestedQuantity);
+        const validationError = validatePosTicketQuantity(product ?? item, requestedQuantity);
         if (validationError) return { ...current, error: validationError };
 
         return {
@@ -554,13 +661,26 @@ export function usePosTerminal() {
         };
       });
     },
-    [invalidateCheckoutValidation, products],
+    [invalidateCheckoutValidation, products, ticketState.items],
   );
 
   const decreaseQuantity = useCallback(
     (productId: string) => {
       if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateCheckoutValidation();
+      const currentItem = ticketState.items.find((candidate) => candidate.productId === productId);
+      const product = products.find((candidate) => candidate.productId === productId);
+      if (
+        currentItem?.trackingSelections?.length &&
+        currentItem.quantity > 1 &&
+        !product?.requiresTraceabilitySelection
+      ) {
+        setTicketState((current) => ({
+          ...current,
+          error: "El producto trazable ya no está disponible; actualiza el catálogo antes de cambiar la cantidad.",
+        }));
+        return;
+      }
       setTicketState((current) => {
         const item = current.items.find((candidate) => candidate.productId === productId);
         if (!item) return current;
@@ -571,32 +691,8 @@ export function usePosTerminal() {
           };
         }
 
-        return {
-          error: null,
-          items: current.items.map((candidate) =>
-            candidate.productId === productId
-              ? updateTicketItemQuantity(
-                  candidate,
-                  candidate.quantity - 1,
-                  products.find((product) => product.productId === productId),
-                )
-              : candidate,
-          ),
-        };
-      });
-    },
-    [invalidateCheckoutValidation, products],
-  );
-
-  const setQuantity = useCallback(
-    (productId: string, requestedQuantity: number) => {
-      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
-      invalidateCheckoutValidation();
-      setTicketState((current) => {
-        const item = current.items.find((candidate) => candidate.productId === productId);
-        if (!item) return current;
-
-        const validationError = validateTicketQuantity(item, requestedQuantity);
+        const requestedQuantity = item.quantity - 1;
+        const validationError = validatePosTicketQuantity(product ?? item, requestedQuantity);
         if (validationError) return { ...current, error: validationError };
 
         return {
@@ -613,13 +709,111 @@ export function usePosTerminal() {
         };
       });
     },
-    [invalidateCheckoutValidation, products],
+    [invalidateCheckoutValidation, products, ticketState.items],
+  );
+
+  const setQuantity = useCallback(
+    (productId: string, requestedQuantity: number) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
+      invalidateCheckoutValidation();
+      const item = ticketState.items.find((candidate) => candidate.productId === productId);
+      const product = products.find((candidate) => candidate.productId === productId);
+      if (
+        item?.trackingSelections?.length &&
+        requestedQuantity !== item.quantity &&
+        !product?.requiresTraceabilitySelection
+      ) {
+        setTicketState((current) => ({
+          ...current,
+          error: "El producto trazable ya no está disponible; actualiza el catálogo antes de cambiar la cantidad.",
+        }));
+        return;
+      }
+      setTicketState((current) => {
+        const item = current.items.find((candidate) => candidate.productId === productId);
+        if (!item) return current;
+
+        const validationError = validatePosTicketQuantity(product ?? item, requestedQuantity);
+        if (validationError) return { ...current, error: validationError };
+
+        return {
+          error: null,
+          items: current.items.map((candidate) =>
+            candidate.productId === productId
+              ? updateTicketItemQuantity(
+                  candidate,
+                  requestedQuantity,
+                  products.find((product) => product.productId === productId),
+                )
+              : candidate,
+          ),
+        };
+      });
+    },
+    [invalidateCheckoutValidation, products, ticketState.items],
+  );
+
+  const cancelTraceabilitySelection = useCallback(() => {
+    setTraceabilityRequest(null);
+  }, []);
+
+  const confirmTraceabilitySelection = useCallback(
+    (
+      selections: PosApiTrackingSelection[],
+      summary: SaleTicketTrackingSummaryDto[] = [],
+    ) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) {
+        setTraceabilityRequest(null);
+        return;
+      }
+      const request = traceabilityRequest;
+      if (!request || request.contextKey !== currentReadContextRef.current) {
+        setTraceabilityRequest(null);
+        return;
+      }
+      try {
+        const canonical = validateTicketTrackingSelections(request, selections, ticketState.items);
+        invalidateCheckoutValidation();
+        setTicketState((current) => {
+          const nextItem = createTicketItem(
+            request.product,
+            request.requestedQuantity,
+            canonical,
+            request.requiredBaseQuantity,
+            summary,
+          );
+          const existingIndex = current.items.findIndex(
+            (item) => item.productId === request.product.productId,
+          );
+          return {
+            error: null,
+            items:
+              existingIndex < 0
+                ? [...current.items, nextItem]
+                : current.items.map((item, index) => (index === existingIndex ? nextItem : item)),
+          };
+        });
+        setTraceabilityRequest(null);
+      } catch (selectionError) {
+        setTicketState((current) => ({
+          ...current,
+          error:
+            selectionError instanceof Error
+              ? selectionError.message
+              : "La selección física no es válida.",
+        }));
+      }
+    },
+    [invalidateCheckoutValidation, ticketState.items, traceabilityRequest],
   );
 
   const removeItem = useCallback(
     (productId: string) => {
       if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateCheckoutValidation();
+      setTraceabilityRequest((current) =>
+        current?.product.productId === productId ? null : current,
+      );
       setTicketState((current) => ({
         items: current.items.filter((item) => item.productId !== productId),
         error: null,
@@ -632,6 +826,7 @@ export function usePosTerminal() {
     if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
     cancelCardTerminalProcessing();
     invalidateConfirmationAttempt();
+    setTraceabilityRequest(null);
     setTicketState({ items: [], error: null });
     setCheckoutState(createCheckoutState(0));
   }, [cancelCardTerminalProcessing, invalidateConfirmationAttempt]);
@@ -712,6 +907,7 @@ export function usePosTerminal() {
   ]);
 
   const closeCheckout = useCallback(() => {
+    setTraceabilityRequest(null);
     setCheckoutState((current) => ({ ...current, open: false }));
   }, []);
 
@@ -719,6 +915,11 @@ export function usePosTerminal() {
     if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
     cancelCardTerminalProcessing();
     invalidateConfirmationAttempt();
+    setTraceabilityRequest(null);
+    setTicketState((current) => ({
+      ...current,
+      items: current.items.map(clearTicketItemTracking),
+    }));
     setCheckoutState((current) => ({
       ...createCheckoutState(ticket.total, availablePaymentModes[0] ?? PaymentMethod.cash),
       open: current.open,
@@ -775,6 +976,16 @@ export function usePosTerminal() {
     (patch: EditableCheckoutPatch) => {
       if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       if (patch.cardAmount !== undefined) cancelCardTerminalProcessing();
+      if (
+        patch.deliveryMethod !== undefined &&
+        patch.deliveryMethod !== DeliveryMethod.immediate
+      ) {
+        setTraceabilityRequest(null);
+        setTicketState((current) => ({
+          ...current,
+          items: current.items.map(clearTicketItemTracking),
+        }));
+      }
       invalidateConfirmationAttempt();
       setCheckoutState((current) => {
         const cardAmountChanged =
@@ -959,8 +1170,17 @@ export function usePosTerminal() {
       const value = { ...current.value, changeAmount: amounts.changeAmount };
       const result = validateCheckoutDto(value, ticket.total);
       const hasAllowedPaymentMode = availablePaymentModes.includes(value.paymentMode);
+      const immediateTraceabilityError =
+        value.deliveryMethod === DeliveryMethod.immediate
+          ? getImmediateTraceabilityError(ticket.items)
+          : null;
+      const hasDeferredTraceability =
+        value.deliveryMethod !== DeliveryMethod.immediate &&
+        ticket.items.some((item) => (item.trackingSelections?.length ?? 0) > 0);
       const hasOperationalBlock =
         ticket.hasUnsupportedTraceability ||
+        Boolean(immediateTraceabilityError) ||
+        hasDeferredTraceability ||
         !hasOpenCashShift ||
         !hasPosSalesPermission ||
         !hasCurrentBranchAccess ||
@@ -983,6 +1203,8 @@ export function usePosTerminal() {
               hasOpenCashShift,
               hasPosSalesPermission,
               hasUnsupportedTraceability: ticket.hasUnsupportedTraceability,
+              immediateTraceabilityError,
+              hasDeferredTraceability,
               hasAllowedPaymentMode,
               paymentMethodsError,
               paymentMethodsLoading,
@@ -1000,6 +1222,7 @@ export function usePosTerminal() {
     paymentMethodsError,
     paymentMethodsLoading,
     ticket.hasUnsupportedTraceability,
+    ticket.items,
     ticket.total,
   ]);
 
@@ -1007,8 +1230,15 @@ export function usePosTerminal() {
     () => calculateCheckoutAmounts(checkoutState.value, ticket.total),
     [checkoutState.value, ticket.total],
   );
+  const checkoutImmediateTraceabilityError =
+    checkoutState.value.deliveryMethod === DeliveryMethod.immediate
+      ? getImmediateTraceabilityError(ticket.items)
+      : null;
   const checkoutHasOperationalBlock =
     ticket.hasUnsupportedTraceability ||
+    Boolean(checkoutImmediateTraceabilityError) ||
+    (checkoutState.value.deliveryMethod !== DeliveryMethod.immediate &&
+      ticket.items.some((item) => (item.trackingSelections?.length ?? 0) > 0)) ||
     !hasOpenCashShift ||
     !hasPosSalesPermission ||
     !hasCurrentBranchAccess ||
@@ -1025,6 +1255,10 @@ export function usePosTerminal() {
         hasOpenCashShift,
         hasPosSalesPermission,
         hasUnsupportedTraceability: ticket.hasUnsupportedTraceability,
+        immediateTraceabilityError: checkoutImmediateTraceabilityError,
+        hasDeferredTraceability:
+          checkoutState.value.deliveryMethod !== DeliveryMethod.immediate &&
+          ticket.items.some((item) => (item.trackingSelections?.length ?? 0) > 0),
         hasAllowedPaymentMode: availablePaymentModes.includes(checkoutState.value.paymentMode),
         paymentMethodsError,
         paymentMethodsLoading,
@@ -1197,6 +1431,10 @@ export function usePosTerminal() {
     setQuantity,
     removeItem,
     clearTicket,
+    traceabilityRequest,
+    prepareTraceabilitySelection,
+    cancelTraceabilitySelection,
+    confirmTraceabilitySelection,
     ticketItems: ticket.items,
     subtotal: ticket.subtotal,
     discountTotal: ticket.discountTotal,
@@ -1272,7 +1510,13 @@ function filterPosProducts(products: PosProductDto[], search: string) {
   );
 }
 
-function createTicketItem(product: PosProductDto, quantity: number): SaleTicketItemDto {
+function createTicketItem(
+  product: PosProductDto,
+  quantity: number,
+  trackingSelections: PosApiTrackingSelection[] = [],
+  baseQuantity?: number,
+  trackingSelectionSummary: SaleTicketTrackingSummaryDto[] = [],
+): SaleTicketItemDto {
   const price = calculateEffectivePrice(
     resolveQuantityPrice({
       basePrice: product.basePrice,
@@ -1291,12 +1535,76 @@ function createTicketItem(product: PosProductDto, quantity: number): SaleTicketI
     discount: price.discountAmount,
     subtotal: fromCents(toCents(price.effectivePrice) * quantity),
     availableQuantity: product.availableQuantity,
+    baseUnitId: product.baseUnitId,
+    baseQuantity,
+    saleUnitToBaseFactor: product.saleUnitToBaseFactor,
     saleUnitId: product.saleUnitId,
     saleUnitName: product.saleUnitName,
     tracksStock: product.tracksStock,
+    requiresTraceabilitySelection: product.requiresTraceabilitySelection,
+    requiresLot: product.requiresLot,
+    requiresSerial: product.requiresSerial,
+    requiresExpiration: product.requiresExpiration,
     requiresUnsupportedTraceability: product.requiresUnsupportedTraceability,
+    trackingSelections: trackingSelections.length > 0 ? trackingSelections : undefined,
+    trackingSelectionSummary:
+      trackingSelectionSummary.length > 0 ? trackingSelectionSummary : undefined,
     isKit: product.productType === "kit",
   };
+}
+
+function clearTicketItemTracking(item: SaleTicketItemDto): SaleTicketItemDto {
+  if (
+    item.baseQuantity === undefined &&
+    !item.trackingSelections?.length &&
+    !item.trackingSelectionSummary?.length
+  ) {
+    return item;
+  }
+  return {
+    ...item,
+    baseQuantity: undefined,
+    trackingSelections: undefined,
+    trackingSelectionSummary: undefined,
+  };
+}
+
+function validateTicketTrackingSelections(
+  request: PosTraceabilityTicketRequest,
+  selections: PosApiTrackingSelection[],
+  currentItems: SaleTicketItemDto[],
+): PosApiTrackingSelection[] {
+  const canonical = canonicalizePosTrackingSelections(selections);
+  if (canonical.length === 0) throw new Error("Debe seleccionar inventario físico.");
+  if (canonical.some((selection) => selection.productId !== request.product.productId)) {
+    throw new Error("La selección física no corresponde al producto solicitado.");
+  }
+  const selectedBaseQuantity = normalizePosTrackingQuantity(
+    canonical.reduce((total, selection) => total + selection.quantity, 0),
+  );
+  if (selectedBaseQuantity !== request.requiredBaseQuantity) {
+    throw new Error(
+      `La selección debe cubrir exactamente ${request.requiredBaseQuantity} unidades base.`,
+    );
+  }
+
+  const occupiedSerials = new Set(
+    currentItems
+      .filter((item) => item.productId !== request.product.productId)
+      .flatMap((item) => item.trackingSelections ?? [])
+      .flatMap((selection) => selection.serialNumbers ?? [])
+      .map((serial) => serial.trim().toUpperCase()),
+  );
+  if (
+    canonical.some((selection) =>
+      (selection.serialNumbers ?? []).some((serial) =>
+        occupiedSerials.has(serial.trim().toUpperCase()),
+      ),
+    )
+  ) {
+    throw new Error("Una serie seleccionada ya está asignada a otra línea del ticket.");
+  }
+  return canonical;
 }
 
 function updateTicketItemQuantity(
@@ -1304,12 +1612,35 @@ function updateTicketItemQuantity(
   quantity: number,
   product?: PosProductDto,
 ): SaleTicketItemDto {
+  if (quantity === item.quantity) return item;
   if (product) return createTicketItem(product, quantity);
   return {
     ...item,
     quantity,
     subtotal: fromCents(toCents(item.unitPrice) * quantity),
   };
+}
+
+function validatePosTicketQuantity(
+  item: PosProductDto | SaleTicketItemDto,
+  quantity: number,
+): string | null {
+  const quantityError = validateTicketQuantity(item, quantity);
+  if (quantityError || !item.requiresTraceabilitySelection) return quantityError;
+
+  try {
+    const baseQuantity = normalizePosTrackingQuantity(
+      quantity * (item.saleUnitToBaseFactor ?? Number.NaN),
+    );
+    if (item.requiresSerial && !Number.isInteger(baseQuantity)) {
+      return "Los productos serializados requieren una cantidad base entera.";
+    }
+    return null;
+  } catch (error) {
+    return error instanceof Error
+      ? error.message
+      : "No se pudo convertir la cantidad a unidades base.";
+  }
 }
 
 function calculateTicket(items: SaleTicketItemDto[]): SaleTicketDto {
@@ -1332,6 +1663,17 @@ function calculateTicket(items: SaleTicketItemDto[]): SaleTicketDto {
   };
 }
 
+function getImmediateTraceabilityError(items: SaleTicketItemDto[]): string | null {
+  try {
+    validateSaleTicketTraceability(items);
+    return null;
+  } catch (error) {
+    return error instanceof Error
+      ? error.message
+      : "La selección física del ticket debe revisarse.";
+  }
+}
+
 function getCheckoutValidationMessage({
   cashShiftError,
   cashShiftLoading,
@@ -1339,6 +1681,8 @@ function getCheckoutValidationMessage({
   hasOpenCashShift,
   hasPosSalesPermission,
   hasUnsupportedTraceability,
+  immediateTraceabilityError,
+  hasDeferredTraceability,
   hasAllowedPaymentMode,
   paymentMethodsError,
   paymentMethodsLoading,
@@ -1349,6 +1693,8 @@ function getCheckoutValidationMessage({
   hasOpenCashShift: boolean;
   hasPosSalesPermission: boolean;
   hasUnsupportedTraceability: boolean;
+  immediateTraceabilityError: string | null;
+  hasDeferredTraceability: boolean;
   hasAllowedPaymentMode: boolean;
   paymentMethodsError: string | null;
   paymentMethodsLoading: boolean;
@@ -1377,6 +1723,12 @@ function getCheckoutValidationMessage({
   }
   if (hasUnsupportedTraceability) {
     return "Cobro validado, pero la venta tiene productos con trazabilidad no soportada.";
+  }
+  if (immediateTraceabilityError) {
+    return `Cobro validado, pero ${immediateTraceabilityError}`;
+  }
+  if (hasDeferredTraceability) {
+    return "Cobro validado, pero los productos con selección física requieren entrega inmediata.";
   }
   return "Cobro validado. Pendiente de confirmación de venta.";
 }
@@ -1415,7 +1767,7 @@ function createCheckoutValue(total: number, paymentMode: CheckoutPaymentMode): C
     bankAccountId: "",
     transferReference: "",
     transferExternallyVerified: false,
-    deliveryMethod: DeliveryMethod.immediate,
+    deliveryMethod: "",
     transportMode: TransportMode.none,
     notificationContact: { emailMode: "send", email: "" },
   };

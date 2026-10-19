@@ -11,6 +11,7 @@ import {
   LOGISTICS_HISTORY_SEARCH_DEBOUNCE_MS,
   useLogisticsHistory,
 } from "@/modules/logistics/hooks/useLogisticsHistory";
+import { DispatchMutationCoordinator } from "@/modules/logistics/hooks/dispatchRequestIdentity";
 
 const mocks = vi.hoisted(() => ({
   usesApi: true,
@@ -23,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     loading: false,
   },
   session: {
+    sessionId: "session-a",
     user: { id: "user-1", tenantId: "tenant-1" },
     canAccessBranch: () => true,
     hasPermission: () => true,
@@ -30,6 +32,7 @@ const mocks = vi.hoisted(() => ({
     error: null as string | null,
   },
   repositories: {} as { dispatchReadDataSource?: "api" | "mock" },
+  coordinator: null as DispatchMutationCoordinator | null,
   execute: vi.fn(),
   getApiPreparedDetail: vi.fn(),
   confirmApiOrder: vi.fn(),
@@ -50,6 +53,9 @@ vi.mock("@/shared/navigation/PrivateHeader/ActiveBranchProvider", () => ({
   useActiveBranch: () => mocks.branch,
 }));
 vi.mock("@/shared/hooks/useDataEvent", () => ({ useDataEvent: () => undefined }));
+vi.mock("@/modules/logistics/providers/DispatchMutationCoordinatorProvider", () => ({
+  useDispatchMutationCoordinator: () => mocks.coordinator,
+}));
 vi.mock("@/modules/logistics/application/services/DispatchApplicationService", () => ({
   DispatchApplicationService: class {
     getApiPreparedDetail(branchId: string, orderId: string) {
@@ -127,6 +133,7 @@ async function renderHistory() {
 
 describe("useLogisticsHistory en modo API", () => {
   beforeEach(() => {
+    mocks.coordinator = new DispatchMutationCoordinator();
     mocks.usesApi = true;
     mocks.branch = {
       currentBranch: { id: "branch-1", tenantId: "tenant-1", name: "Centro" },
@@ -310,6 +317,7 @@ describe("useLogisticsHistory en modo API", () => {
 
 describe("useLogisticsHistory en modo mock", () => {
   beforeEach(() => {
+    mocks.coordinator = new DispatchMutationCoordinator();
     mocks.usesApi = false;
     mocks.execute.mockResolvedValue([
       item(1, { deliveryMethod: DeliveryMethod.store_pickup }),

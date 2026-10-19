@@ -86,17 +86,15 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
     : 0;
   const recommendedSerialCount = serialDelta > 0 ? serialDelta : line.remainingQuantity;
   const canonicalLocationIds = new Set(getPickingCanonicalLocationIds(line));
-  const locationSerialNumbers = getPickingLocationSerials(line, selectedLocationId);
+  const locationSerialNumbers = [...new Set(
+    getPickingLocationSerials(line, selectedLocationId),
+  )];
   const recommendedSerialNumbers = locationSerialNumbers.slice(0, recommendedSerialCount);
-  const recommendedSerialSet = new Set(recommendedSerialNumbers);
-  const alternativeSerialNumbers = locationSerialNumbers.filter(
-    (serial) => !recommendedSerialSet.has(serial),
-  );
   const selectedLot = line.lot
     ? line.availableLots.find((candidate) => candidate.id === line.lot?.id)
     : null;
   const visibleSerialNumbers = filterAvailableSerialNumbers(
-    alternativeSerialNumbers,
+    locationSerialNumbers,
     serialSearch,
   );
   const replacementSerialOptions = [...new Set([
@@ -320,34 +318,19 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
                   <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-title)]">
                     Series sugeridas
                   </p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {recommendedSerialNumbers.map((serial) => {
-                      const selected = selectedSerials.includes(serial);
-                      return (
-                        <button
-                          aria-pressed={selected}
-                          className="rounded-full border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-2.5 py-1 text-sm font-medium text-[var(--color-title)] transition hover:border-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-60"
-                          disabled={
-                            disabled ||
-                            selected ||
-                            serialDelta <= 0 ||
-                            selectedSerials.length >= serialDelta
-                          }
-                          key={serial}
-                          onClick={() => {
-                            setSelectedSerials((current) => [...current, serial]);
-                            setError(null);
-                          }}
-                          type="button"
-                        >
-                          {selected ? "✓ " : ""}{serial}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <ul aria-label="Series sugeridas" className="mt-2 flex flex-wrap gap-1.5">
+                    {recommendedSerialNumbers.map((serial) => (
+                      <li
+                        className="rounded-full border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-2.5 py-1 text-sm font-medium text-[var(--color-title)]"
+                        key={serial}
+                      >
+                        {serial}
+                      </li>
+                    ))}
+                  </ul>
                   {serialDelta <= 0 ? (
                     <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                      Indica la cantidad total que recogerás para seleccionar las sugerencias.
+                      Indica la cantidad total que recogerás para calcular las sugerencias.
                     </p>
                   ) : null}
                 </div>
@@ -371,7 +354,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
                   ))}
                 </div>
               ) : null}
-              {alternativeSerialNumbers.length ? (
+              {locationSerialNumbers.length ? (
                 <>
                   <Button
                     aria-controls={`available-serials-${line.pickingLineId}`}
@@ -383,8 +366,8 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
                     variant="secondary"
                   >
                     {showAvailableSerials
-                      ? "Ocultar otras series disponibles"
-                      : `Ver otras series disponibles (${alternativeSerialNumbers.length})`}
+                      ? "Ocultar series disponibles"
+                      : `Ver series disponibles (${locationSerialNumbers.length})`}
                   </Button>
                   {showAvailableSerials ? (
                     <div

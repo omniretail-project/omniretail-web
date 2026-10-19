@@ -51,6 +51,7 @@ import type {
   SalesRepository,
   SavedPaymentMethodRepository,
   StorePickupDeliveryRepository,
+  StorePickupHandoverCommandRepository,
   SupplierProductRepository,
   SupplierRepository,
   TenantOnboardingRepository,
@@ -74,6 +75,7 @@ import { withApiLogisticsPacking } from "@/infrastructure/api/withApiLogisticsPa
 import { withApiLogisticsDispatch } from "@/infrastructure/api/withApiLogisticsDispatch";
 import { withApiPos } from "@/infrastructure/api/withApiPos";
 import { withApiLogisticsHistory } from "@/infrastructure/api/withApiLogisticsHistory";
+import { withApiStorePickupHandover } from "@/infrastructure/api/withApiStorePickupHandover";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import {
   getReferenceDataCache,
@@ -201,6 +203,7 @@ export interface RepositoryRegistry {
   logisticsHistory?: LogisticsHistoryReadRepository;
   dispatchCommands?: DispatchCommandRepository;
   storePickupDeliveries: StorePickupDeliveryRepository;
+  storePickupHandoverCommands?: StorePickupHandoverCommandRepository;
   notifications: NotificationRepository;
   auditLogs: AuditLogRepository;
 }
@@ -300,7 +303,11 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
                           withApiProductRelations(
                             withApiProducts(
                               withApiCatalogMasterData(
-                                withApiLogisticsHistory(withApiSession(mockRepositories, eventBus)),
+                                withApiStorePickupHandover(
+                                  withApiLogisticsHistory(
+                                    withApiSession(mockRepositories, eventBus),
+                                  ),
+                                ),
                                 eventBus,
                               ),
                               eventBus,

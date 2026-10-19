@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { StorePickupHandoverResult } from "@/core/repositories";
 import { DeliveryMethod, OrderStatus } from "@/core/enums";
 import type { DataEventPayload } from "@/core/types/events.types";
+import { shouldRetainDispatchOperationIdentity } from "@/modules/logistics/hooks/dispatchRequestIdentity";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type {
@@ -16,6 +18,8 @@ import type {
 } from "@/modules/logistics/application/dto/DispatchReadModelDto";
 import { DispatchApplicationService } from "@/modules/logistics/application/services/DispatchApplicationService";
 import { GetLogisticsHistoryService } from "@/modules/logistics/application/services/GetLogisticsHistoryService";
+import { StorePickupHandoverApplicationService } from "@/modules/logistics/application/services/StorePickupHandoverApplicationService";
+import { useDispatchMutationCoordinator } from "@/modules/logistics/providers/DispatchMutationCoordinatorProvider";
 import type { DispatchShipmentValidationResult } from "@/modules/logistics/validation/dispatch.validation";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
@@ -34,10 +38,39 @@ export const defaultLogisticsHistoryFilters: LogisticsHistoryFilters = {
   to: "",
 };
 
+interface StorePickupHandoverContext {
+  contextKey: string | null;
+  generation: number;
+}
+
+interface StorePickupHandoverVisualState {
+  contextKey: string;
+  generation: number;
+  orderId: string;
+}
+
+interface StorePickupHandoverErrorState extends StorePickupHandoverVisualState {
+  message: string;
+  uncertain: boolean;
+}
+
+export function isStorePickupHandoverEligible(item: LogisticsHistoryItemDto | null): boolean {
+  return Boolean(
+    item &&
+      item.sourceType === "order" &&
+      item.deliveryMethod === DeliveryMethod.store_pickup &&
+      item.operationalStatus === OrderStatus.ready_for_pickup &&
+      item.deliveredAt === null &&
+      item.storePickupDeliveryId === null,
+  );
+}
+
 export function useLogisticsHistory() {
   const repositories = useRepositories();
+  const mutationCoordinator = useDispatchMutationCoordinator();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const {
+    sessionId,
     user,
     canAccessBranch,
     hasPermission,
@@ -49,7 +82,14 @@ export function useLogisticsHistory() {
     () => new DispatchApplicationService(repositories),
     [repositories],
   );
+  const storePickupHandoverService = useMemo(
+    () => new StorePickupHandoverApplicationService(repositories),
+    [repositories],
+  );
   const usesApi = service.usesApi;
+  const handoverContextKey = sessionId && user && currentBranch
+    ? `${sessionId}:${user.id}:${user.tenantId}:${currentBranch.id}`
+    : null;
   const [items, setItems] = useState<LogisticsHistoryItemDto[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(LOGISTICS_HISTORY_DEFAULT_PAGE_SIZE);
@@ -68,6 +108,20 @@ export function useLogisticsHistory() {
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [dispatchSubmitting, setDispatchSubmitting] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
+  const [handoverSubmittingState, setHandoverSubmittingState] =
+    useState<StorePickupHandoverVisualState | null>(null);
+  const [handoverErrorState, setHandoverErrorState] =
+    useState<StorePickupHandoverErrorState | null>(null);
+  const [handoverDetailContextState, setHandoverDetailContextState] =
+    useState<StorePickupHandoverVisualState | null>(null);
+  const [currentHandoverContext, setCurrentHandoverContext] =
+    useState<StorePickupHandoverContext>({ contextKey: handoverContextKey, generation: 0 });
+  if (currentHandoverContext.contextKey !== handoverContextKey) {
+    setCurrentHandoverContext({
+      contextKey: handoverContextKey,
+      generation: currentHandoverContext.generation + 1,
+    });
+  }
   const requestSequenceRef = useRef(0);
   const detailSequenceRef = useRef(0);
   const dispatchSequenceRef = useRef(0);
@@ -77,6 +131,7 @@ export function useLogisticsHistory() {
   const dispatchOrderIdRef = useRef<string | null>(null);
   const dispatchOperationIdRef = useRef("");
   const dispatchMutationLockRef = useRef(false);
+  const handoverMutationSequenceRef = useRef(0);
 
   const hasBranchAccess = Boolean(
     user &&
@@ -88,7 +143,10 @@ export function useLogisticsHistory() {
   const canReadDispatch = hasPermission("logistics.dispatch.read");
   const canConfirmDispatch =
     canReadDispatch && hasPermission("logistics.dispatch.confirm");
+  const canConfirmStorePickupHandover =
+    usesApi && hasBranchAccess && hasPermission("logistics.dispatch.confirm");
   const contextLoading = branchLoading || sessionLoading;
+  const handoverContextRef = useRef<StorePickupHandoverContext>(currentHandoverContext);
 
   // En modo mock los filtros se aplican en el cliente: `apiQuery` es null y no provoca consultas.
   const apiQuery = useMemo(
@@ -160,6 +218,13 @@ export function useLogisticsHistory() {
     async (branchId: string, item: LogisticsHistoryItemDto) => {
       const orderId = item.orderId;
       const sequence = ++detailSequenceRef.current;
+      const handoverDetailContext = handoverContextRef.current.contextKey
+        ? {
+            contextKey: handoverContextRef.current.contextKey,
+            generation: handoverContextRef.current.generation,
+            orderId,
+          }
+        : null;
       setDetailLoading(true);
       setDetailError(null);
       try {
@@ -172,6 +237,7 @@ export function useLogisticsHistory() {
           detailOrderIdRef.current !== orderId
         ) return null;
         setDetail(nextDetail);
+        setHandoverDetailContextState(handoverDetailContext);
         return nextDetail;
       } catch (cause) {
         if (
@@ -196,17 +262,22 @@ export function useLogisticsHistory() {
   const openDetail = useCallback(
     async (item: LogisticsHistoryItemDto) => {
       if (!currentBranch || !hasBranchAccess || !canRead) return;
+      handoverMutationSequenceRef.current += 1;
       detailOrderIdRef.current = item.orderId;
       detailItemRef.current = item;
       setDetailOrderId(item.orderId);
       setDetail(null);
       setDetailError(null);
+      setHandoverDetailContextState(null);
+      setHandoverErrorState(null);
+      setHandoverSubmittingState(null);
       await loadDetail(currentBranch.id, item);
     },
     [canRead, currentBranch, hasBranchAccess, loadDetail],
   );
 
   const closeDetail = useCallback(() => {
+    handoverMutationSequenceRef.current += 1;
     detailSequenceRef.current += 1;
     detailOrderIdRef.current = null;
     detailItemRef.current = null;
@@ -214,7 +285,112 @@ export function useLogisticsHistory() {
     setDetail(null);
     setDetailError(null);
     setDetailLoading(false);
+    setHandoverDetailContextState(null);
+    setHandoverErrorState(null);
+    setHandoverSubmittingState(null);
   }, []);
+
+  const confirmStorePickupHandover = useCallback(
+    async (orderId: string): Promise<StorePickupHandoverResult | null> => {
+      const currentDetail = detail?.summary ?? null;
+      if (
+        !usesApi ||
+        !sessionId ||
+        !user ||
+        !currentBranch ||
+        !handoverContextKey ||
+        !canConfirmStorePickupHandover ||
+        detailOrderIdRef.current !== orderId ||
+        currentDetail?.orderId !== orderId ||
+        !isCurrentStorePickupHandoverState(
+          handoverDetailContextState,
+          handoverContextRef.current,
+          orderId,
+        ) ||
+        !isStorePickupHandoverEligible(currentDetail)
+      ) return null;
+
+      const activeContext = handoverContextRef.current;
+      if (activeContext.contextKey !== handoverContextKey) return null;
+      const requestContext: StorePickupHandoverVisualState = {
+        contextKey: handoverContextKey,
+        generation: activeContext.generation,
+        orderId,
+      };
+      const mutationToken = mutationCoordinator.beginRequest();
+      if (mutationToken === null) return null;
+      const sequence = ++handoverMutationSequenceRef.current;
+      const branchId = currentBranch.id;
+      setHandoverSubmittingState(requestContext);
+      setHandoverErrorState(null);
+
+      try {
+        const result = await storePickupHandoverService.confirm(branchId, orderId);
+        if (!isCurrentStorePickupHandover(
+          sequence,
+          handoverMutationSequenceRef.current,
+          requestContext,
+          handoverContextRef.current,
+          detailOrderIdRef.current,
+        )) return null;
+
+        await reload();
+        if (!isCurrentStorePickupHandover(
+          sequence,
+          handoverMutationSequenceRef.current,
+          requestContext,
+          handoverContextRef.current,
+          detailOrderIdRef.current,
+        )) return null;
+        const selectedItem = detailItemRef.current;
+        if (selectedItem?.orderId === orderId) await loadDetail(branchId, selectedItem);
+        return result;
+      } catch (cause) {
+        if (isCurrentStorePickupHandover(
+          sequence,
+          handoverMutationSequenceRef.current,
+          requestContext,
+          handoverContextRef.current,
+          detailOrderIdRef.current,
+        )) {
+          setHandoverErrorState({
+            ...requestContext,
+            message: toMessage(
+              cause,
+              "No se pudo confirmar ni verificar la entrega al cliente.",
+            ),
+            uncertain: shouldRetainDispatchOperationIdentity(cause),
+          });
+        }
+        return null;
+      } finally {
+        if (
+          mutationCoordinator.finishRequest(mutationToken) &&
+          isCurrentStorePickupHandover(
+            sequence,
+            handoverMutationSequenceRef.current,
+            requestContext,
+            handoverContextRef.current,
+            detailOrderIdRef.current,
+          )
+        ) setHandoverSubmittingState(null);
+      }
+    },
+    [
+      canConfirmStorePickupHandover,
+      currentBranch,
+      detail,
+      handoverDetailContextState,
+      handoverContextKey,
+      loadDetail,
+      mutationCoordinator,
+      reload,
+      sessionId,
+      storePickupHandoverService,
+      user,
+      usesApi,
+    ],
+  );
 
   const openDispatch = useCallback(
     async (item: LogisticsHistoryItemDto) => {
@@ -330,6 +506,30 @@ export function useLogisticsHistory() {
     [canConfirmDispatch, currentBranch, dispatchDetail, dispatchService, reload, repositories],
   );
 
+  useLayoutEffect(() => {
+    handoverContextRef.current = currentHandoverContext;
+    const { contextKey, generation } = currentHandoverContext;
+    handoverMutationSequenceRef.current += 1;
+    window.queueMicrotask(() => {
+      if (
+        handoverContextRef.current.contextKey !== contextKey ||
+        handoverContextRef.current.generation !== generation
+      ) return;
+      setHandoverDetailContextState(null);
+      setHandoverSubmittingState(null);
+      setHandoverErrorState(null);
+    });
+    return () => {
+      if (
+        handoverContextRef.current.contextKey === contextKey &&
+        handoverContextRef.current.generation === generation
+      ) {
+        handoverContextRef.current = { contextKey: null, generation: generation + 1 };
+        handoverMutationSequenceRef.current += 1;
+      }
+    };
+  }, [currentHandoverContext]);
+
   useEffect(() => {
     let active = true;
     activeBranchIdRef.current = currentBranch?.id ?? null;
@@ -403,6 +603,38 @@ export function useLogisticsHistory() {
     () => (usesApi ? scopedItems : filterLogisticsHistory(scopedItems, filters)),
     [filters, scopedItems, usesApi],
   );
+  const handoverDetailEligible = Boolean(
+    usesApi &&
+      canConfirmStorePickupHandover &&
+      currentHandoverContext.contextKey === handoverContextKey &&
+      detailOrderId !== null &&
+      detail?.summary.orderId === detailOrderId &&
+      isCurrentStorePickupHandoverState(
+        handoverDetailContextState,
+        currentHandoverContext,
+        detailOrderId,
+      ) &&
+      isStorePickupHandoverEligible(detail.summary),
+  );
+  const handoverSubmitting = isCurrentStorePickupHandoverState(
+    handoverSubmittingState,
+    currentHandoverContext,
+    detailOrderId,
+  );
+  const handoverError = isCurrentStorePickupHandoverState(
+    handoverErrorState,
+    currentHandoverContext,
+    detailOrderId,
+  )
+    ? handoverErrorState.message
+    : null;
+  const handoverErrorUncertain = isCurrentStorePickupHandoverState(
+    handoverErrorState,
+    currentHandoverContext,
+    detailOrderId,
+  )
+    ? handoverErrorState.uncertain
+    : false;
 
   const updateFilters = useCallback((patch: Partial<LogisticsHistoryFilters>) => {
     setPage(1);
@@ -448,6 +680,12 @@ export function useLogisticsHistory() {
     hasBranchAccess,
     canRead,
     canConfirmDispatch,
+    canConfirmStorePickupHandover,
+    storePickupHandoverEligible: handoverDetailEligible,
+    storePickupHandoverSubmitting: handoverSubmitting,
+    storePickupHandoverMutationInFlight: mutationCoordinator.isRequestInFlight(),
+    storePickupHandoverError: handoverError,
+    storePickupHandoverErrorUncertain: handoverErrorUncertain,
     currentBranchName: currentBranch?.name ?? "Sin sucursal",
     updateFilters,
     resetFilters,
@@ -457,7 +695,34 @@ export function useLogisticsHistory() {
     openDispatch,
     closeDispatch,
     confirmDispatch,
+    confirmStorePickupHandover,
   };
+}
+
+function isCurrentStorePickupHandoverState(
+  state: StorePickupHandoverVisualState | null,
+  activeContext: StorePickupHandoverContext,
+  selectedOrderId: string | null,
+): state is StorePickupHandoverVisualState {
+  return Boolean(
+    state &&
+      state.contextKey === activeContext.contextKey &&
+      state.generation === activeContext.generation &&
+      state.orderId === selectedOrderId,
+  );
+}
+
+function isCurrentStorePickupHandover(
+  sequence: number,
+  currentSequence: number,
+  requestContext: StorePickupHandoverVisualState,
+  activeContext: StorePickupHandoverContext,
+  selectedOrderId: string | null,
+) {
+  return (
+    sequence === currentSequence &&
+    isCurrentStorePickupHandoverState(requestContext, activeContext, selectedOrderId)
+  );
 }
 
 export function filterLogisticsHistory(

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CheckoutModal } from "@/modules/pos/components/CheckoutModal";
 import { PendingSaleBanner } from "@/modules/pos/components/PendingSaleBanner";
+import { PosTraceabilitySelector } from "@/modules/pos/components/PosTraceabilitySelector";
 import { PosSalesHistoryModal } from "@/modules/pos/components/PosSalesHistoryModal";
 import { ProductSearch } from "@/modules/pos/components/ProductSearch";
 import { QuickProductList } from "@/modules/pos/components/QuickProductList";
@@ -133,6 +134,7 @@ export function PosTerminalPage() {
         paymentMethodsLoading={terminal.paymentMethodsLoading}
         readyToConfirm={terminal.checkoutReadyToConfirm}
         subtotal={terminal.subtotal}
+        ticketItems={terminal.ticketItems}
         total={terminal.total}
         validated={terminal.checkoutValidated}
         onCheckoutChange={terminal.updateCheckout}
@@ -144,10 +146,34 @@ export function PosTerminalPage() {
         onStorePickupContactChange={terminal.updateStorePickupContact}
         onPaymentModeChange={terminal.setPaymentMode}
         onProcessCardPayment={terminal.processCardPayment}
+        onSelectTraceability={(productId) => {
+          const item = terminal.ticketItems.find((candidate) => candidate.productId === productId);
+          const product = terminal.products.find((candidate) => candidate.productId === productId);
+          if (item && product) terminal.prepareTraceabilitySelection(product, item.quantity);
+        }}
         onReset={terminal.resetCheckout}
         onValidate={terminal.validateCheckout}
       />
       <PosSalesHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <PosTraceabilitySelector
+        initialSelections={terminal.traceabilityRequest?.initialSelections}
+        open={Boolean(terminal.traceabilityRequest)}
+        product={
+          terminal.traceabilityRequest
+            ? {
+                productId: terminal.traceabilityRequest.product.productId,
+                name: terminal.traceabilityRequest.product.name,
+                sku: terminal.traceabilityRequest.product.sku,
+                requiredBaseQuantity: terminal.traceabilityRequest.requiredBaseQuantity,
+                requiresLot: terminal.traceabilityRequest.product.requiresLot,
+                requiresSerial: terminal.traceabilityRequest.product.requiresSerial,
+                requiresExpiration: terminal.traceabilityRequest.product.requiresExpiration,
+              }
+            : null
+        }
+        onCancel={terminal.cancelTraceabilitySelection}
+        onConfirm={terminal.confirmTraceabilitySelection}
+      />
     </div>
   );
 }
