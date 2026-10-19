@@ -72,6 +72,15 @@ describe("validateSaleTicketTraceability", () => {
     ).not.toThrow();
   });
 
+  it("permite omitir la selección física cuando Picking resolverá una venta diferida", () => {
+    expect(() =>
+      validateSaleTicketTraceability(
+        [item({ baseQuantity: undefined, trackingSelections: [] })],
+        { requirePhysicalSelection: false },
+      ),
+    ).not.toThrow();
+  });
+
   it.each([
     ["sin selección", { trackingSelections: [] }, "completar la selección"],
     [

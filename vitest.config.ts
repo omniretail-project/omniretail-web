@@ -42,6 +42,7 @@ export default defineConfig({
         "src/modules/pos/application/services/**/*.ts",
         "src/modules/pos/components/SaleReversalResult.tsx",
         "src/modules/pos/components/CashShiftSummary.tsx",
+        "src/modules/pos/components/CheckoutModal.tsx",
         "src/modules/pos/components/QuickProductList.tsx",
         "src/modules/pos/components/ReturnSaleDetails.tsx",
         "src/modules/pos/components/SaleTicket.tsx",

@@ -134,6 +134,7 @@ export function PosTerminalPage() {
         paymentMethodsLoading={terminal.paymentMethodsLoading}
         readyToConfirm={terminal.checkoutReadyToConfirm}
         subtotal={terminal.subtotal}
+        ticketItems={terminal.ticketItems}
         total={terminal.total}
         validated={terminal.checkoutValidated}
         onCheckoutChange={terminal.updateCheckout}
@@ -145,11 +146,17 @@ export function PosTerminalPage() {
         onStorePickupContactChange={terminal.updateStorePickupContact}
         onPaymentModeChange={terminal.setPaymentMode}
         onProcessCardPayment={terminal.processCardPayment}
+        onSelectTraceability={(productId) => {
+          const item = terminal.ticketItems.find((candidate) => candidate.productId === productId);
+          const product = terminal.products.find((candidate) => candidate.productId === productId);
+          if (item && product) terminal.prepareTraceabilitySelection(product, item.quantity);
+        }}
         onReset={terminal.resetCheckout}
         onValidate={terminal.validateCheckout}
       />
       <PosSalesHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} />
       <PosTraceabilitySelector
+        initialSelections={terminal.traceabilityRequest?.initialSelections}
         open={Boolean(terminal.traceabilityRequest)}
         product={
           terminal.traceabilityRequest

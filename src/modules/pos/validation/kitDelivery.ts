@@ -1,4 +1,5 @@
 import { DeliveryMethod } from "@/core/enums";
+import type { CheckoutDeliveryMethod } from "@/modules/pos/application/dto/CheckoutDto";
 
 /**
  * El backend rechaza los kits en ventas diferidas (`KIT_FULFILLMENT_NOT_SUPPORTED`): su
@@ -9,6 +10,13 @@ export const KIT_DEFERRED_MESSAGE =
   "Los kits solo se pueden vender con entrega inmediata. Quita el kit del ticket o cambia la modalidad a entrega inmediata.";
 
 /** `true` si la combinacion (modalidad, ticket) incluye un kit en una entrega diferida. */
-export function isKitDeferredSale(deliveryMethod: DeliveryMethod, hasKitItems: boolean): boolean {
-  return hasKitItems && deliveryMethod !== DeliveryMethod.immediate;
+export function isKitDeferredSale(
+  deliveryMethod: CheckoutDeliveryMethod,
+  hasKitItems: boolean,
+): boolean {
+  return (
+    hasKitItems &&
+    (deliveryMethod === DeliveryMethod.store_pickup ||
+      deliveryMethod === DeliveryMethod.home_delivery)
+  );
 }

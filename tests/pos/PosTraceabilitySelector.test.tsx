@@ -107,6 +107,7 @@ function product(
 
 function renderSelector(options?: {
   selectedProduct?: PosTraceabilitySelectorProduct;
+  initialSelections?: PosApiTrackingSelection[];
   onCancel?: () => void;
   onConfirm?: (selections: PosApiTrackingSelection[]) => void;
 }) {
@@ -116,6 +117,7 @@ function renderSelector(options?: {
   const view = render(
     <PosTraceabilitySelector
       open
+      initialSelections={options?.initialSelections}
       product={selectedProduct}
       onCancel={onCancel}
       onConfirm={onConfirm}
@@ -142,13 +144,13 @@ describe("PosTraceabilitySelector", () => {
     expect(screen.queryByLabelText("Cantidad del lote LOT-001")).not.toBeInTheDocument();
     expect(screen.getByTestId(`traceability-combination-${locationA.id}:${ids.lot}`))
       .toHaveTextContent("Asignación FEFO: 2 unidades base");
-    const confirmButton = screen.getByRole("button", { name: "Usar selección" });
+    const confirmButton = screen.getByRole("button", { name: /^Guardar selección/ });
     expect(confirmButton).toBeEnabled();
     fireEvent.click(confirmButton);
 
     expect(onConfirm).toHaveBeenCalledWith([
       expect.objectContaining({ locationId: locationA.id, lotId: ids.lot, quantity: 2 }),
-    ]);
+    ], expect.any(Array));
   });
 
   it("distribuye FEFO entre varias ubicaciones cuando el primer lote no alcanza", async () => {
@@ -156,12 +158,12 @@ describe("PosTraceabilitySelector", () => {
       selectedProduct: product({ requiredBaseQuantity: 5 }),
     });
     await waitUntilLoaded();
-    fireEvent.click(screen.getByRole("button", { name: "Usar selección" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Guardar selección/ }));
 
     expect(onConfirm).toHaveBeenCalledWith([
       expect.objectContaining({ locationId: locationA.id, lotId: ids.lot, quantity: 4 }),
       expect.objectContaining({ locationId: locationB.id, lotId: id(84), quantity: 1 }),
-    ]);
+    ], expect.any(Array));
   });
 
   it("conserva cantidades manuales para lotes sin seguimiento de vencimiento", async () => {
@@ -175,12 +177,12 @@ describe("PosTraceabilitySelector", () => {
     fireEvent.change(screen.getByLabelText("Cantidad del lote LOT-002"), {
       target: { value: "0.75" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Usar selección" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Guardar selección/ }));
 
     expect(onConfirm).toHaveBeenCalledWith([
       expect.objectContaining({ locationId: locationA.id, quantity: 1.25 }),
       expect.objectContaining({ locationId: locationB.id, quantity: 0.75 }),
-    ]);
+    ], expect.any(Array));
   });
 
   it("exige completar series FEFO anteriores antes de habilitar fechas posteriores", async () => {
@@ -189,14 +191,26 @@ describe("PosTraceabilitySelector", () => {
     });
     await waitUntilLoaded();
 
-    const confirmButton = screen.getByRole("button", { name: "Usar selección" });
+    const confirmButton = screen.getByRole("button", { name: /^Guardar selección/ });
+    const firstLot = screen.getByTestId(
+      `traceability-combination-${locationA.id}:${ids.lot}`,
+    );
+    fireEvent.click(within(firstLot).getByRole("button", { name: "Ver series disponibles" }));
+    const secondLot = screen.getByTestId(
+      `traceability-combination-${locationB.id}:${id(84)}`,
+    );
     expect(confirmButton).toBeDisabled();
-    expect(screen.getByRole("checkbox", { name: "SER-003" })).toBeDisabled();
+    expect(
+      within(secondLot).getByRole("button", { name: "Ver series disponibles" }),
+    ).toBeDisabled();
     fireEvent.click(screen.getByRole("checkbox", { name: "SER-001" }));
     expect(confirmButton).toBeDisabled();
-    expect(screen.getByRole("checkbox", { name: "SER-003" })).toBeDisabled();
+    expect(
+      within(secondLot).getByRole("button", { name: "Ver series disponibles" }),
+    ).toBeDisabled();
     fireEvent.click(screen.getByRole("checkbox", { name: "SER-002" }));
     expect(confirmButton).toBeDisabled();
+    fireEvent.click(within(secondLot).getByRole("button", { name: "Ver series disponibles" }));
     expect(screen.getByRole("checkbox", { name: "SER-003" })).toBeEnabled();
     fireEvent.click(screen.getByRole("checkbox", { name: "SER-003" }));
     expect(confirmButton).toBeEnabled();
@@ -217,7 +231,7 @@ describe("PosTraceabilitySelector", () => {
         lotId: id(84),
         serialNumbers: ["SER-003"],
       }),
-    ]);
+    ], expect.any(Array));
   });
 
   it("permite elegir series entre lotes empatados en vencimiento", async () => {
@@ -232,12 +246,45 @@ describe("PosTraceabilitySelector", () => {
     });
     await waitUntilLoaded();
 
+    const secondLot = screen.getByTestId(
+      `traceability-combination-${locationB.id}:${id(84)}`,
+    );
+    fireEvent.click(within(secondLot).getByRole("button", { name: "Ver series disponibles" }));
     expect(screen.getByRole("checkbox", { name: "SER-003" })).toBeEnabled();
     fireEvent.click(screen.getByRole("checkbox", { name: "SER-003" }));
-    fireEvent.click(screen.getByRole("button", { name: "Usar selección" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Guardar selección/ }));
     expect(onConfirm).toHaveBeenCalledWith([
       expect.objectContaining({ locationId: locationB.id, serialNumbers: ["SER-003"] }),
-    ]);
+    ], expect.any(Array));
+  });
+
+  it("muestra las series seleccionadas respecto a la cantidad requerida", async () => {
+    renderSelector({
+      selectedProduct: product({
+        requiredBaseQuantity: 3,
+        requiresExpiration: false,
+        requiresSerial: true,
+      }),
+    });
+    await waitUntilLoaded();
+    const firstLot = screen.getByTestId(
+      `traceability-combination-${locationA.id}:${ids.lot}`,
+    );
+    const secondLot = screen.getByTestId(
+      `traceability-combination-${locationB.id}:${id(84)}`,
+    );
+
+    expect(within(firstLot).getByText("2 series disponibles")).toBeInTheDocument();
+    expect(within(firstLot).getByText("Series seleccionadas: 0 de 3")).toBeInTheDocument();
+    fireEvent.click(within(firstLot).getByRole("button", { name: "Ver series disponibles" }));
+    fireEvent.click(within(firstLot).getByRole("checkbox", { name: "SER-001" }));
+    fireEvent.click(within(firstLot).getByRole("checkbox", { name: "SER-002" }));
+    expect(within(firstLot).getByText("Series seleccionadas: 2 de 3")).toBeInTheDocument();
+
+    fireEvent.click(within(secondLot).getByRole("button", { name: "Ver series disponibles" }));
+    fireEvent.click(within(secondLot).getByRole("checkbox", { name: "SER-003" }));
+    expect(within(firstLot).getByText("Series seleccionadas: 3 de 3")).toBeInTheDocument();
+    expect(within(secondLot).getByText("Series seleccionadas: 3 de 3")).toBeInTheDocument();
   });
 
   it("identifica lotes vencidos como no elegibles", async () => {
@@ -255,7 +302,7 @@ describe("PosTraceabilitySelector", () => {
     await waitUntilLoaded();
 
     expect(screen.getByText("Inventario FEFO insuficiente")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Usar selección" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Guardar selección/ })).toBeDisabled();
   });
 
   it("cancela sin publicar ni conservar la selección", async () => {
@@ -308,6 +355,10 @@ describe("PosTraceabilitySelector", () => {
     const selectedProduct = product({ requiredBaseQuantity: 2, requiresSerial: true });
     const view = renderSelector({ selectedProduct });
     await waitUntilLoaded();
+    const firstLot = screen.getByTestId(
+      `traceability-combination-${locationA.id}:${ids.lot}`,
+    );
+    fireEvent.click(within(firstLot).getByRole("button", { name: "Ver series disponibles" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "SER-001" }));
 
     view.rerender(
@@ -321,6 +372,38 @@ describe("PosTraceabilitySelector", () => {
 
     expect(screen.getByRole("checkbox", { name: "SER-001" })).toBeChecked();
     expect(mocks.load).toHaveBeenCalledOnce();
+  });
+
+  it("busca series y restaura una selección guardada para corregirla", async () => {
+    renderSelector({
+      selectedProduct: product({ requiredBaseQuantity: 2, requiresSerial: true }),
+      initialSelections: [
+        {
+          productId: ids.product,
+          locationId: locationA.id,
+          lotId: ids.lot,
+          quantity: 2,
+          serialNumbers: ["SER-001", "SER-002"],
+        },
+      ],
+    });
+    await waitUntilLoaded();
+    const firstLot = screen.getByTestId(
+      `traceability-combination-${locationA.id}:${ids.lot}`,
+    );
+
+    await waitFor(() => expect(within(firstLot).getByText("SER-001")).toBeInTheDocument());
+    fireEvent.click(within(firstLot).getByRole("button", { name: "Ver series disponibles" }));
+    expect(within(firstLot).getByRole("checkbox", { name: "SER-001" })).toBeChecked();
+    expect(within(firstLot).getByRole("checkbox", { name: "SER-002" })).toBeChecked();
+
+    fireEvent.change(within(firstLot).getByLabelText("Buscar series en Estante A"), {
+      target: { value: "002" },
+    });
+    expect(within(firstLot).queryByRole("checkbox", { name: "SER-001" })).not.toBeInTheDocument();
+    expect(within(firstLot).getByRole("checkbox", { name: "SER-002" })).toBeInTheDocument();
+    fireEvent.click(within(firstLot).getByRole("button", { name: "Ocultar series disponibles" }));
+    expect(within(firstLot).queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
   it("diferencia errores de permisos o red de una consulta sin inventario", () => {

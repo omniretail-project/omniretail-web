@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PosApiTrackingSelection } from "@/core/repositories";
-import type { PosTraceabilityCombinationDto } from "@/modules/pos/application/dto/PosTraceabilityInventoryDto";
+import type { SaleTicketTrackingSummaryDto } from "@/modules/pos/application/dto/SaleTicketDto";
+import type {
+  PosTraceabilityCombinationDto,
+  PosTraceabilityInventoryDto,
+} from "@/modules/pos/application/dto/PosTraceabilityInventoryDto";
 import {
   buildPosTraceabilitySelection,
   formatQuantity,
@@ -28,8 +32,12 @@ export interface PosTraceabilitySelectorProduct extends PosTraceabilitySelection
 interface PosTraceabilitySelectorProps {
   open: boolean;
   product: PosTraceabilitySelectorProduct | null;
+  initialSelections?: PosApiTrackingSelection[];
   onCancel: () => void;
-  onConfirm: (selections: PosApiTrackingSelection[]) => void;
+  onConfirm: (
+    selections: PosApiTrackingSelection[],
+    summary: SaleTicketTrackingSummaryDto[],
+  ) => void;
 }
 
 interface SerialGroupState {
@@ -38,9 +46,12 @@ interface SerialGroupState {
   unlocked: boolean;
 }
 
+const EMPTY_INITIAL_SELECTIONS: PosApiTrackingSelection[] = [];
+
 export function PosTraceabilitySelector({
   open,
   product,
+  initialSelections = EMPTY_INITIAL_SELECTIONS,
   onCancel,
   onConfirm,
 }: PosTraceabilitySelectorProps) {
@@ -54,6 +65,7 @@ export function PosTraceabilitySelector({
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [selectedSerialIds, setSelectedSerialIds] = useState<Set<string>>(new Set());
   const [validationError, setValidationError] = useState<string | null>(null);
+  const initializedInventoryRef = useRef<PosTraceabilityInventoryDto | null>(null);
   const productId = product?.productId;
 
   useEffect(() => {
@@ -64,6 +76,7 @@ export function PosTraceabilitySelector({
       setQuantities({});
       setSelectedSerialIds(new Set());
       setValidationError(null);
+      initializedInventoryRef.current = null;
       void loadInventory(productId);
     });
     return () => {
@@ -73,6 +86,20 @@ export function PosTraceabilitySelector({
   }, [closeInventory, loadInventory, open, productId]);
 
   const data = inventoryData?.productId === product?.productId ? inventoryData : null;
+  useEffect(() => {
+    if (!data || initializedInventoryRef.current === data) return;
+    let active = true;
+    window.queueMicrotask(() => {
+      if (!active || initializedInventoryRef.current === data) return;
+      initializedInventoryRef.current = data;
+      const draft = restoreSelectionDraft(data, initialSelections);
+      setQuantities(draft.quantities);
+      setSelectedSerialIds(draft.selectedSerialIds);
+    });
+    return () => {
+      active = false;
+    };
+  }, [data, initialSelections]);
   const combinations = data?.combinations ?? [];
   const fefoState = useMemo(() => {
     if (!data || !product?.requiresExpiration) return { plan: null, error: null };
@@ -146,7 +173,7 @@ export function PosTraceabilitySelector({
         selectedSerialIds,
       });
       setValidationError(null);
-      onConfirm(result.selections);
+      onConfirm(result.selections, buildSelectionSummary(data, result.selections));
     } catch (error) {
       setValidationError(
         error instanceof Error ? error.message : "La selección física no es válida.",
@@ -223,7 +250,7 @@ export function PosTraceabilitySelector({
               type="button"
               onClick={confirm}
             >
-              Usar selección
+              {product.requiresSerial ? "Guardar selección de series" : "Guardar selección"}
             </Button>
           </div>
         </div>
@@ -363,6 +390,8 @@ function CombinationCard({
   onQuantityChange,
   onSerialToggle,
 }: CombinationCardProps) {
+  const [showSerials, setShowSerials] = useState(false);
+  const [serialSearch, setSerialSearch] = useState("");
   const selectable = isSelectableTraceabilityCombination(combination, product, businessDate);
   const expired = Boolean(
     product.requiresExpiration &&
@@ -376,6 +405,19 @@ function CombinationCard({
     ? selectable && Boolean(fefoGroupState?.unlocked && fefoGroupState.group.requiredQuantity > 0)
     : selectable;
   const key = traceabilityCombinationKey(combination);
+  const normalizedSearch = serialSearch.trim().toLocaleLowerCase("es");
+  const filteredSerials = normalizedSearch
+    ? combination.serials.filter((serial) =>
+        serial.serialNumber.toLocaleLowerCase("es").includes(normalizedSearch),
+      )
+    : combination.serials;
+  const selectedSerials = combination.serials.filter((serial) =>
+    selectedSerialIds.has(serial.serialId),
+  );
+  const requiredSerialCount =
+    fefoGroupState?.group.requiredQuantity ?? product.requiredBaseQuantity;
+  const selectedRequiredSerialCount =
+    fefoGroupState?.selectedCount ?? selectedSerialIds.size;
 
   return (
     <li
@@ -423,8 +465,41 @@ function CombinationCard({
               {!fefoGroupState.unlocked ? " · completa primero la fecha anterior" : ""}
             </p>
           ) : null}
-          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {combination.serials.map((serial) => {
+          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+            Series seleccionadas: {selectedRequiredSerialCount} de {requiredSerialCount}
+          </p>
+          {selectedSerials.length > 0 ? (
+            <div aria-label="Series guardadas" className="mt-2 flex flex-wrap gap-2">
+              {selectedSerials.map((serial) => (
+                <span
+                  className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-primary)]"
+                  key={serial.serialId}
+                >
+                  {serial.serialNumber}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <Button
+            className="mt-3"
+            disabled={!serialsEnabled}
+            type="button"
+            variant="secondary"
+            onClick={() => setShowSerials((current) => !current)}
+          >
+            {showSerials ? "Ocultar series disponibles" : "Ver series disponibles"}
+          </Button>
+          {showSerials ? (
+            <div className="mt-3 space-y-2">
+              <Input
+                aria-label={`Buscar series en ${combination.location.name}`}
+                placeholder="Buscar por número de serie"
+                value={serialSearch}
+                onChange={(event) => setSerialSearch(event.target.value)}
+              />
+              <div className="max-h-56 overflow-y-auto rounded-md border border-[var(--color-border)] p-2">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredSerials.map((serial) => {
               const checked = selectedSerialIds.has(serial.serialId);
               return (
                 <label
@@ -444,7 +519,15 @@ function CombinationCard({
                 </label>
               );
             })}
-          </div>
+                </div>
+                {filteredSerials.length === 0 ? (
+                  <p className="p-3 text-sm text-[var(--color-text-muted)]">
+                    No hay series que coincidan con la búsqueda.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </fieldset>
       ) : product.requiresExpiration ? (
         <div className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-sm">
@@ -473,6 +556,55 @@ function CombinationCard({
       )}
     </li>
   );
+}
+
+function restoreSelectionDraft(
+  inventory: PosTraceabilityInventoryDto,
+  selections: PosApiTrackingSelection[],
+) {
+  const quantities: Record<string, string> = {};
+  const selectedSerialIds = new Set<string>();
+  for (const selection of selections) {
+    const combination = inventory.combinations.find(
+      (candidate) =>
+        candidate.location.id === selection.locationId &&
+        (candidate.lot?.lotId ?? null) === (selection.lotId ?? null),
+    );
+    if (!combination) continue;
+    const key = traceabilityCombinationKey(combination);
+    if ((selection.serialNumbers?.length ?? 0) > 0) {
+      const selectedNumbers = new Set(selection.serialNumbers);
+      combination.serials.forEach((serial) => {
+        if (selectedNumbers.has(serial.serialNumber)) selectedSerialIds.add(serial.serialId);
+      });
+    } else {
+      quantities[key] = String(selection.quantity);
+    }
+  }
+  return { quantities, selectedSerialIds };
+}
+
+function buildSelectionSummary(
+  inventory: PosTraceabilityInventoryDto,
+  selections: PosApiTrackingSelection[],
+): SaleTicketTrackingSummaryDto[] {
+  return selections.map((selection) => {
+    const combination = inventory.combinations.find(
+      (candidate) =>
+        candidate.location.id === selection.locationId &&
+        (candidate.lot?.lotId ?? null) === (selection.lotId ?? null),
+    );
+    return {
+      locationId: selection.locationId,
+      locationCode: combination?.location.code ?? selection.locationId,
+      locationName: combination?.location.name ?? "Ubicación seleccionada",
+      lotId: selection.lotId ?? null,
+      lotNumber: combination?.lot?.lotNumber ?? null,
+      expirationDate: combination?.lot?.expirationDate ?? null,
+      quantity: selection.quantity,
+      serialNumbers: [...(selection.serialNumbers ?? [])],
+    };
+  });
 }
 
 function buildSerialGroupStates(

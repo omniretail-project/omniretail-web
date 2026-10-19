@@ -55,9 +55,7 @@ export function QuickProductList({
           ? "No disponible"
           : hasAvailableStock
             ? canAdd
-              ? product.requiresTraceabilitySelection
-                ? "Seleccionar"
-                : "Agregar"
+              ? "Agregar"
               : "No disponible"
             : "Sin existencia";
 
@@ -92,10 +90,6 @@ export function QuickProductList({
               {hasUnsupportedTraceability ? (
                 <p className="mt-2 text-xs font-semibold text-[var(--color-warning)]">
                   Este producto requiere un proceso de venta distinto.
-                </p>
-              ) : product.requiresTraceabilitySelection ? (
-                <p className="mt-2 text-xs font-semibold text-[var(--color-structure)]">
-                  Selecciona el inventario físico antes de agregarlo al ticket.
                 </p>
               ) : null}
             </div>

@@ -209,14 +209,8 @@ async function renderReadyPage() {
 }
 
 async function addTraceableLine() {
-  fireEvent.click(within(productCard(traceableProduct.name)).getByRole("button", { name: "Seleccionar" }));
-  await screen.findByRole("heading", { name: "Seleccionar inventario físico" });
-  fireEvent.click(await screen.findByRole("checkbox", { name: "SER-001" }));
-  fireEvent.click(screen.getByRole("checkbox", { name: "SER-002" }));
-  fireEvent.click(screen.getByRole("button", { name: "Usar selección" }));
-  await waitFor(() =>
-    expect(within(ticket()).getByText(/Selección física preparada: 2 unidades base/)).toBeInTheDocument(),
-  );
+  fireEvent.click(within(productCard(traceableProduct.name)).getByRole("button", { name: "Agregar" }));
+  await waitFor(() => expect(within(ticket()).getByText(traceableProduct.name)).toBeInTheDocument());
 }
 
 describe("PosTerminalPage integración trazable", () => {
@@ -273,28 +267,17 @@ describe("PosTerminalPage integración trazable", () => {
     expect(within(ticket()).getByText("1 producto")).toBeInTheDocument();
   });
 
-  it("abre el selector para un trazable y cancelar no modifica el ticket", async () => {
+  it("agrega un trazable directamente sin abrir ni consultar el selector físico", async () => {
     await renderReadyPage();
 
-    fireEvent.click(within(productCard(traceableProduct.name)).getByRole("button", { name: "Seleccionar" }));
-    expect(await screen.findByRole("heading", { name: "Seleccionar inventario físico" })).toBeInTheDocument();
-    await waitFor(() =>
-      expect(mocks.inventory).toHaveBeenCalledWith({
-        branchId: ids.branch,
-        productId: traceableProduct.productId,
-        locationId: undefined,
-        lotId: undefined,
-      }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    await addTraceableLine();
 
-    await waitFor(() =>
-      expect(screen.queryByRole("heading", { name: "Seleccionar inventario físico" })).not.toBeInTheDocument(),
-    );
-    expect(within(ticket()).getByText("Tu ticket está vacío")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Seleccionar inventario físico" })).not.toBeInTheDocument();
+    expect(mocks.inventory).not.toHaveBeenCalled();
+    expect(within(ticket()).getByRole("textbox", { name: `Cantidad de ${traceableProduct.name}` })).toHaveValue("1");
   });
 
-  it("incorpora ubicación, lote y series, y conserva la línea al cancelar una reselección", async () => {
+  it("modifica la cantidad trazable sin abrir automáticamente el selector", async () => {
     await renderReadyPage();
     await addTraceableLine();
 
@@ -302,12 +285,9 @@ describe("PosTerminalPage integración trazable", () => {
     fireEvent.click(
       within(ticket()).getByRole("button", { name: `Aumentar cantidad de ${traceableProduct.name}` }),
     );
-    expect(await screen.findByText("Debes seleccionar 4 unidades base")).toBeInTheDocument();
-    expect(within(ticket()).getByRole("textbox", { name: `Cantidad de ${traceableProduct.name}` })).toHaveValue("1");
-    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
-
-    expect(within(ticket()).getByText(/Selección física preparada: 2 unidades base/)).toBeInTheDocument();
-    expect(within(ticket()).getByRole("textbox", { name: `Cantidad de ${traceableProduct.name}` })).toHaveValue("1");
+    expect(screen.queryByRole("heading", { name: "Seleccionar inventario físico" })).not.toBeInTheDocument();
+    expect(mocks.inventory).not.toHaveBeenCalled();
+    expect(within(ticket()).getByRole("textbox", { name: `Cantidad de ${traceableProduct.name}` })).toHaveValue("2");
   });
 
   it("invalida la línea trazable cuando cambia la sucursal", async () => {

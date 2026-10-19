@@ -6,6 +6,7 @@ import type { OrderNotificationContact } from "@/core/types/orderNotification.ty
 import type { StorePickupContactSnapshot } from "@/core/types/storePickupContact.types";
 
 export type CheckoutPaymentMode = "cash" | "card" | "transfer" | "mixed";
+export type CheckoutDeliveryMethod = DeliveryMethod | "";
 export type CardTerminalStatus = "idle" | "processing" | "approved" | "rejected";
 export type CardTerminalOutcome = Extract<CardTerminalStatus, "approved" | "rejected">;
 
@@ -34,7 +35,7 @@ export interface CheckoutDto {
   bankAccountId: string;
   transferReference: string;
   transferExternallyVerified: boolean;
-  deliveryMethod: DeliveryMethod;
+  deliveryMethod: CheckoutDeliveryMethod;
   transportMode: TransportMode;
   deliveryAddress?: AddressSnapshot;
   storePickupContact?: StorePickupContactSnapshot;

@@ -195,7 +195,12 @@ function traceabilitySelections(productId = traceableProduct.productId, serialNu
 async function prepareCashCheckout(result: { current: ReturnType<typeof usePosTerminal> }) {
   act(() => result.current.addProduct(product));
   act(() => result.current.openCheckout());
-  act(() => result.current.updateCheckout({ cashReceived: 50 }));
+  act(() =>
+    result.current.updateCheckout({
+      deliveryMethod: DeliveryMethod.immediate,
+      cashReceived: 50,
+    }),
+  );
   act(() => result.current.validateCheckout());
   await waitFor(() => expect(result.current.checkoutReadyToConfirm).toBe(true));
 }
@@ -266,6 +271,23 @@ describe("usePosTerminal", () => {
     expect(result.current.confirmationError).toBeNull();
   });
 
+  it("inicia el checkout sin modalidad y exige seleccionarla antes de confirmar", async () => {
+    const { result } = await renderReadyTerminal();
+    act(() => result.current.addProduct(product));
+    act(() => result.current.openCheckout());
+
+    expect(result.current.checkout.deliveryMethod).toBe("");
+    act(() => result.current.updateCheckout({ cashReceived: 50 }));
+    act(() => result.current.validateCheckout());
+
+    expect(result.current.checkoutErrors.deliveryMethod).toBe(
+      "Selecciona una modalidad de entrega.",
+    );
+    expect(result.current.checkoutReadyToConfirm).toBe(false);
+    await act(async () => result.current.confirmSale());
+    expect(mocks.confirm).not.toHaveBeenCalled();
+  });
+
   describe("edicion directa de cantidad", () => {
     it("actualiza la cantidad y recalcula los importes confirmados", async () => {
       const { result } = await renderReadyTerminal();
@@ -331,25 +353,30 @@ describe("usePosTerminal", () => {
   });
 
   describe("preparacion de trazabilidad", () => {
-    it("abre el selector sin agregar la linea y permite cancelar sin modificar el ticket", async () => {
+    it("agrega una linea trazable sin abrir automáticamente el selector", async () => {
       const { result } = await renderTerminalWithProducts([product, traceableProduct]);
 
       act(() => result.current.addProduct(traceableProduct));
 
-      expect(result.current.ticketItems).toEqual([]);
-      expect(result.current.traceabilityRequest).toMatchObject({
-        product: { productId: traceableProduct.productId },
-        requestedQuantity: 1,
-        requiredBaseQuantity: 2,
-      });
-      act(() => result.current.cancelTraceabilitySelection());
       expect(result.current.traceabilityRequest).toBeNull();
-      expect(result.current.ticketItems).toEqual([]);
+      expect(result.current.ticketItems).toEqual([
+        expect.objectContaining({
+          productId: traceableProduct.productId,
+          quantity: 1,
+          saleUnitToBaseFactor: 2,
+          requiresTraceabilitySelection: true,
+          requiresLot: true,
+          requiresSerial: true,
+          requiresExpiration: true,
+          trackingSelections: undefined,
+        }),
+      ]);
     });
 
     it("conserva unidad, cantidad base y seleccion fisica canonicalizada en la linea correcta", async () => {
       const { result } = await renderTerminalWithProducts([product, traceableProduct]);
       act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.prepareTraceabilitySelection(traceableProduct, 1));
 
       act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
 
@@ -377,9 +404,15 @@ describe("usePosTerminal", () => {
       const { result } = await renderTerminalWithProducts([traceableProduct]);
       const selections = traceabilitySelections();
       act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.prepareTraceabilitySelection(traceableProduct, 1));
       act(() => result.current.confirmTraceabilitySelection(selections));
       act(() => result.current.openCheckout());
-      act(() => result.current.updateCheckout({ cashReceived: 50 }));
+      act(() =>
+        result.current.updateCheckout({
+          deliveryMethod: DeliveryMethod.immediate,
+          cashReceived: 50,
+        }),
+      );
       act(() => result.current.validateCheckout());
 
       await waitFor(() => expect(result.current.checkoutReadyToConfirm).toBe(true));
@@ -395,13 +428,37 @@ describe("usePosTerminal", () => {
       ]);
     });
 
+    it("mantiene bloqueada una venta inmediata sin selección física", async () => {
+      const { result } = await renderTerminalWithProducts([traceableProduct]);
+      act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.openCheckout());
+      act(() =>
+        result.current.updateCheckout({
+          deliveryMethod: DeliveryMethod.immediate,
+          cashReceived: 50,
+        }),
+      );
+      act(() => result.current.validateCheckout());
+
+      expect(result.current.checkoutReadyToConfirm).toBe(false);
+      expect(result.current.checkoutMessage).toContain("completar la selección física");
+      await act(async () => result.current.confirmSale());
+      expect(mocks.confirm).not.toHaveBeenCalled();
+    });
+
     it("confirma una venta mixta sin agregar trazabilidad a la línea ordinaria", async () => {
       const { result } = await renderTerminalWithProducts([product, traceableProduct]);
       act(() => result.current.addProduct(product));
       act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.prepareTraceabilitySelection(traceableProduct, 1));
       act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
       act(() => result.current.openCheckout());
-      act(() => result.current.updateCheckout({ cashReceived: 100 }));
+      act(() =>
+        result.current.updateCheckout({
+          deliveryMethod: DeliveryMethod.immediate,
+          cashReceived: 100,
+        }),
+      );
       act(() => result.current.validateCheckout());
 
       await waitFor(() => expect(result.current.checkoutReadyToConfirm).toBe(true));
@@ -413,10 +470,9 @@ describe("usePosTerminal", () => {
       expect(items[1].trackingSelections).toEqual(traceabilitySelections());
     });
 
-    it("mantiene bloqueada una línea trazable para entrega diferida", async () => {
+    it("deja la selección física de una venta diferida a Picking", async () => {
       const { result } = await renderTerminalWithProducts([traceableProduct]);
       act(() => result.current.addProduct(traceableProduct));
-      act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
       act(() => result.current.openCheckout());
       act(() =>
         result.current.updateCheckout({
@@ -428,39 +484,85 @@ describe("usePosTerminal", () => {
       );
       act(() => result.current.validateCheckout());
 
-      expect(result.current.checkoutReadyToConfirm).toBe(false);
-      expect(result.current.checkoutMessage).toContain("requieren entrega inmediata");
+      expect(result.current.checkoutReadyToConfirm).toBe(true);
       await act(async () => result.current.confirmSale());
-      expect(mocks.confirm).not.toHaveBeenCalled();
+      expect(mocks.confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ticket: expect.objectContaining({
+            items: [expect.objectContaining({ trackingSelections: undefined })],
+          }),
+        }),
+      );
     });
 
-    it("exige una nueva seleccion antes de aplicar un cambio de cantidad", async () => {
+    it("descarta la selección física al cambiar una venta inmediata a diferida", async () => {
+      const { result } = await renderTerminalWithProducts([traceableProduct]);
+      act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.prepareTraceabilitySelection(traceableProduct, 1));
+      act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
+      expect(result.current.ticketItems[0]?.trackingSelections).toEqual(traceabilitySelections());
+
+      act(() =>
+        result.current.updateCheckout({
+          deliveryMethod: DeliveryMethod.store_pickup,
+          transportMode: TransportMode.customer,
+        }),
+      );
+
+      expect(result.current.ticketItems[0]).toMatchObject({
+        baseQuantity: undefined,
+        trackingSelections: undefined,
+        trackingSelectionSummary: undefined,
+      });
+      expect(result.current.traceabilityRequest).toBeNull();
+    });
+
+    it("cambia la cantidad sin abrir el selector e invalida la selección anterior", async () => {
       const { result } = await renderTerminalWithProducts([product, traceableProduct]);
       act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.prepareTraceabilitySelection(traceableProduct, 1));
       act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
 
       act(() => result.current.setQuantity(traceableProduct.productId, 2));
-      expect(result.current.ticketItems[0]).toMatchObject({ quantity: 1, baseQuantity: 2 });
-      expect(result.current.traceabilityRequest).toMatchObject({
-        requestedQuantity: 2,
-        requiredBaseQuantity: 4,
+      expect(result.current.ticketItems[0]).toMatchObject({
+        quantity: 2,
+        baseQuantity: undefined,
+        trackingSelections: undefined,
       });
+      expect(result.current.traceabilityRequest).toBeNull();
+    });
 
-      act(() =>
-        result.current.confirmTraceabilitySelection([
-          { ...traceabilitySelections()[0]!, quantity: 4, serialNumbers: ["S1", "S2", "S3", "S4"] },
-        ]),
-      );
-      expect(result.current.ticketItems[0]).toMatchObject({ quantity: 2, baseQuantity: 4 });
+    it("los botones de cantidad tampoco abren el selector y descartan selecciones obsoletas", async () => {
+      const { result } = await renderTerminalWithProducts([traceableProduct]);
+      act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.prepareTraceabilitySelection(traceableProduct, 1));
+      act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
+
+      act(() => result.current.increaseQuantity(traceableProduct.productId));
+      expect(result.current.ticketItems[0]).toMatchObject({
+        quantity: 2,
+        baseQuantity: undefined,
+        trackingSelections: undefined,
+      });
+      expect(result.current.traceabilityRequest).toBeNull();
+
+      act(() => result.current.decreaseQuantity(traceableProduct.productId));
+      expect(result.current.ticketItems[0]).toMatchObject({
+        quantity: 1,
+        baseQuantity: undefined,
+        trackingSelections: undefined,
+      });
+      expect(result.current.traceabilityRequest).toBeNull();
     });
 
     it("conserva la cantidad y seleccion anteriores al cancelar una nueva seleccion", async () => {
       const { result } = await renderTerminalWithProducts([product, traceableProduct]);
       const originalSelections = traceabilitySelections();
       act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.prepareTraceabilitySelection(traceableProduct, 1));
       act(() => result.current.confirmTraceabilitySelection(originalSelections));
 
-      act(() => result.current.setQuantity(traceableProduct.productId, 2));
+      act(() => result.current.prepareTraceabilitySelection(traceableProduct, 2));
       expect(result.current.traceabilityRequest).toMatchObject({
         requestedQuantity: 2,
         requiredBaseQuantity: 4,
@@ -482,20 +584,40 @@ describe("usePosTerminal", () => {
     it("elimina selecciones al quitar la linea o vaciar el ticket", async () => {
       const { result } = await renderTerminalWithProducts([product, traceableProduct]);
       act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.prepareTraceabilitySelection(traceableProduct, 1));
       act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
       act(() => result.current.removeItem(traceableProduct.productId));
       expect(result.current.ticketItems).toEqual([]);
 
       act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.prepareTraceabilitySelection(traceableProduct, 1));
       act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
       act(() => result.current.clearTicket());
       expect(result.current.ticketItems).toEqual([]);
       expect(result.current.traceabilityRequest).toBeNull();
     });
 
+    it("invalida selecciones físicas cuando cambia el inventario disponible", async () => {
+      const { result } = await renderTerminalWithProducts([traceableProduct]);
+      act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.prepareTraceabilitySelection(traceableProduct, 1));
+      act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
+      expect(result.current.ticketItems[0]?.trackingSelections).toEqual(traceabilitySelections());
+
+      await act(async () => {
+        emit("inventory.changed");
+        await Promise.resolve();
+      });
+
+      expect(result.current.ticketItems[0]?.trackingSelections).toBeUndefined();
+      expect(result.current.traceabilityRequest).toBeNull();
+      expect(result.current.checkoutReadyToConfirm).toBe(false);
+    });
+
     it("invalida ticket y selector al cambiar de sucursal o sesion", async () => {
       const view = await renderTerminalWithProducts([product, traceableProduct]);
       act(() => view.result.current.addProduct(traceableProduct));
+      act(() => view.result.current.prepareTraceabilitySelection(traceableProduct, 1));
 
       mocks.branch = {
         currentBranch: { id: ids.otherBranch, tenantId: ids.tenant, name: "Norte" },
@@ -508,6 +630,7 @@ describe("usePosTerminal", () => {
       expect(view.result.current.ticketItems).toEqual([]);
 
       act(() => view.result.current.addProduct(traceableProduct));
+      act(() => view.result.current.prepareTraceabilitySelection(traceableProduct, 1));
       expect(view.result.current.traceabilityRequest).not.toBeNull();
       mocks.session = { ...mocks.session, sessionId: id(93) };
       view.rerender();
@@ -523,18 +646,40 @@ describe("usePosTerminal", () => {
       };
       const { result } = await renderTerminalWithProducts([traceableProduct, other]);
       act(() => result.current.addProduct(traceableProduct));
+      act(() => result.current.prepareTraceabilitySelection(traceableProduct, 1));
       act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
 
       act(() => result.current.addProduct(other));
+      act(() => result.current.prepareTraceabilitySelection(other, 1));
       act(() =>
         result.current.confirmTraceabilitySelection(
           traceabilitySelections(other.productId, "SER-001"),
         ),
       );
 
-      expect(result.current.ticketItems).toHaveLength(1);
+      expect(result.current.ticketItems).toHaveLength(2);
+      expect(result.current.ticketItems[0]?.trackingSelections).toEqual(
+        traceabilitySelections(),
+      );
+      expect(result.current.ticketItems[1]).toMatchObject({
+        productId: other.productId,
+        trackingSelections: undefined,
+      });
       expect(result.current.ticketError).toContain("ya está asignada a otra línea");
       expect(result.current.traceabilityRequest?.product.productId).toBe(other.productId);
+
+      act(() => result.current.openCheckout());
+      act(() =>
+        result.current.updateCheckout({
+          deliveryMethod: DeliveryMethod.immediate,
+          cashReceived: 100,
+        }),
+      );
+      act(() => result.current.validateCheckout());
+
+      expect(result.current.checkoutReadyToConfirm).toBe(false);
+      await act(async () => result.current.confirmSale());
+      expect(mocks.confirm).not.toHaveBeenCalled();
     });
 
     it("bloquea conversiones serializadas fraccionarias y kits con trazabilidad especial", async () => {
@@ -621,9 +766,15 @@ describe("usePosTerminal", () => {
   it("reintenta una venta trazable con el mismo confirmationId y el payload físico idéntico", async () => {
     const { result } = await renderTerminalWithProducts([traceableProduct]);
     act(() => result.current.addProduct(traceableProduct));
+    act(() => result.current.prepareTraceabilitySelection(traceableProduct, 1));
     act(() => result.current.confirmTraceabilitySelection(traceabilitySelections()));
     act(() => result.current.openCheckout());
-    act(() => result.current.updateCheckout({ cashReceived: 50 }));
+    act(() =>
+      result.current.updateCheckout({
+        deliveryMethod: DeliveryMethod.immediate,
+        cashReceived: 50,
+      }),
+    );
     act(() => result.current.validateCheckout());
     await waitFor(() => expect(result.current.checkoutReadyToConfirm).toBe(true));
     mocks.confirm.mockRejectedValueOnce(new BackendRequestError("timeout", 408));
@@ -773,7 +924,12 @@ describe("usePosTerminal", () => {
 
     act(() => result.current.addProduct(product));
     act(() => result.current.openCheckout());
-    act(() => result.current.updateCheckout({ cashReceived: 50 }));
+    act(() =>
+      result.current.updateCheckout({
+        deliveryMethod: DeliveryMethod.immediate,
+        cashReceived: 50,
+      }),
+    );
     act(() => result.current.validateCheckout());
     await act(async () => result.current.confirmSale());
 

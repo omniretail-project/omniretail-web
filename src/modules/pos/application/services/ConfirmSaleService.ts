@@ -193,7 +193,13 @@ export class ConfirmSaleService {
   ): Promise<PosSaleConfirmationDto> {
     const seenProductIds = new Set<string>();
     input.ticket.items.forEach((item) => validateTicketItem(item, seenProductIds));
-    validateSaleTicketTraceability(input.ticket.items);
+    validateSaleTicketTraceability(
+      input.ticket.items,
+      {
+        requirePhysicalSelection:
+          input.checkout.deliveryMethod === DeliveryMethod.immediate,
+      },
+    );
     if (
       input.checkout.deliveryMethod !== DeliveryMethod.immediate &&
       input.ticket.items.some((item) => (item.trackingSelections?.length ?? 0) > 0)
@@ -248,10 +254,17 @@ export class ConfirmSaleService {
   private createDeferredOrderInput(
     input: AuthorizedConfirmPosSaleInput,
   ): SaleConfirmationDeferredOrderInput | undefined {
-    if (input.checkout.deliveryMethod === DeliveryMethod.immediate) return undefined;
+    const deliveryMethod = input.checkout.deliveryMethod;
+    if (deliveryMethod === DeliveryMethod.immediate) return undefined;
+    if (
+      deliveryMethod !== DeliveryMethod.store_pickup &&
+      deliveryMethod !== DeliveryMethod.home_delivery
+    ) {
+      throw new Error("Selecciona una modalidad de entrega antes de confirmar la venta.");
+    }
     const idempotencyKey = input.orderIdempotencyKey?.trim();
     if (!idempotencyKey) throw new Error("No se pudo identificar el intento de pedido diferido.");
-    if (input.checkout.deliveryMethod === DeliveryMethod.home_delivery) {
+    if (deliveryMethod === DeliveryMethod.home_delivery) {
       const address = input.checkout.deliveryAddress;
       if (
         !address?.recipientName.trim() ||
@@ -262,14 +275,14 @@ export class ConfirmSaleService {
         throw new Error("La entrega a domicilio requiere contacto, teléfono, dirección y ciudad.");
       }
     }
-    if (input.checkout.deliveryMethod === DeliveryMethod.store_pickup) {
+    if (deliveryMethod === DeliveryMethod.store_pickup) {
       const contact = input.checkout.storePickupContact;
       if (!contact?.recipientName?.trim() || !contact.recipientPhone?.trim()) {
         throw new Error("El retiro en tienda requiere nombre y teléfono de quien retira.");
       }
     }
     const deliveryAddress =
-      input.checkout.deliveryMethod === DeliveryMethod.home_delivery
+      deliveryMethod === DeliveryMethod.home_delivery
         ? {
             recipientName: input.checkout.deliveryAddress!.recipientName.trim(),
             recipientPhone: input.checkout.deliveryAddress!.recipientPhone!.trim(),
@@ -280,7 +293,7 @@ export class ConfirmSaleService {
           }
         : undefined;
     const notificationContact =
-      input.checkout.deliveryMethod === DeliveryMethod.home_delivery
+      deliveryMethod === DeliveryMethod.home_delivery
         ? input.checkout.notificationContact.emailMode === "send"
           ? {
               emailMode: "send" as const,
@@ -290,7 +303,7 @@ export class ConfirmSaleService {
         : undefined;
 
     const storePickupContact =
-      input.checkout.deliveryMethod === DeliveryMethod.store_pickup
+      deliveryMethod === DeliveryMethod.store_pickup
         ? {
             recipientName: input.checkout.storePickupContact!.recipientName.trim(),
             recipientPhone: input.checkout.storePickupContact!.recipientPhone.trim(),
@@ -299,7 +312,7 @@ export class ConfirmSaleService {
 
     return {
       idempotencyKey,
-      deliveryMethod: input.checkout.deliveryMethod,
+      deliveryMethod,
       transportMode: input.checkout.transportMode,
       notificationContact,
       deliveryAddress,

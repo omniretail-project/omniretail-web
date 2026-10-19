@@ -334,6 +334,36 @@ describe("ConfirmSaleService en modo API", () => {
     expect(posApi.confirmSale).not.toHaveBeenCalled();
   });
 
+  it("confirma una venta trazable diferida sin selección física para que Picking la resuelva", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    const traceableItem = {
+      ...traceableTicket().items[0]!,
+      baseQuantity: undefined,
+      trackingSelections: undefined,
+    };
+
+    await new ConfirmSaleService(repositories).execute(
+      confirmInput({
+        ticket: ticket({ items: [traceableItem] }),
+        orderIdempotencyKey: "order-traceable-picking",
+        checkout: checkout({
+          deliveryMethod: DeliveryMethod.store_pickup,
+          transportMode: TransportMode.customer,
+          storePickupContact: { recipientName: "Ana", recipientPhone: "55550101" },
+        }),
+      }),
+    );
+
+    expect(posApi.confirmSale).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [expect.objectContaining({ trackingSelections: [] })],
+        deferredOrder: expect.objectContaining({
+          deliveryMethod: DeliveryMethod.store_pickup,
+        }),
+      }),
+    );
+  });
+
   it("envía el pedido de retiro en tienda con el contacto recortado y la clave de pedido", async () => {
     const { repositories, posApi } = createPosRepositories();
 
@@ -395,6 +425,7 @@ describe("ConfirmSaleService en modo API", () => {
     ["sin pedido de origen en modo API", { sourceOrderId: ids.order }, "pedidos existentes"],
     ["ticket vacío", { ticket: ticket({ items: [], total: 0 }) }, "El ticket está vacío."],
     ["sin confirmationId", { confirmationId: "  " }, "intento de confirmación"],
+    ["sin modalidad de entrega", { checkout: checkout({ deliveryMethod: "" }) }, "revisarse"],
     ["trazabilidad no soportada", { ticket: ticket({ hasUnsupportedTraceability: true }) }, "lote, serial o kit"],
     [
       "pedido diferido sin clave",

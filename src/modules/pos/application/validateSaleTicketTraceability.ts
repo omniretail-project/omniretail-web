@@ -4,16 +4,26 @@ import { normalizePosTrackingQuantity } from "@/modules/pos/application/posTrack
 /**
  * Revalida la selección persistida sin reconstruirla ni canonicalizarla. Esto conserva exactamente
  * el payload de una venta pendiente y deja al backend como autoridad final sobre el inventario.
+ * Las ventas diferidas pueden omitir la selección porque Picking resolverá el inventario físico;
+ * cualquier selección ya presente continúa validándose y nunca se acepta parcialmente.
  */
-export function validateSaleTicketTraceability(items: SaleTicketItemDto[]): void {
+export function validateSaleTicketTraceability(
+  items: SaleTicketItemDto[],
+  options: { requirePhysicalSelection?: boolean } = {},
+): void {
+  const requirePhysicalSelection = options.requirePhysicalSelection ?? true;
   const ticketSerials = new Set<string>();
 
   for (const item of items) {
-    validateItemTraceability(item, ticketSerials);
+    validateItemTraceability(item, ticketSerials, requirePhysicalSelection);
   }
 }
 
-function validateItemTraceability(item: SaleTicketItemDto, ticketSerials: Set<string>): void {
+function validateItemTraceability(
+  item: SaleTicketItemDto,
+  ticketSerials: Set<string>,
+  requirePhysicalSelection: boolean,
+): void {
   const selections = item.trackingSelections ?? [];
 
   if (item.requiresUnsupportedTraceability) {
@@ -29,6 +39,9 @@ function validateItemTraceability(item: SaleTicketItemDto, ticketSerials: Set<st
 
   if (item.isKit) {
     throw new Error(`${item.name} es un kit con trazabilidad no soportada en Terminal.`);
+  }
+  if (!requirePhysicalSelection && selections.length === 0) {
+    return;
   }
   if (selections.length === 0) {
     throw new Error(`Debe completar la selección física de ${item.name}.`);

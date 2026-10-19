@@ -23,7 +23,11 @@ import type {
 import type { PosProductDto } from "@/modules/pos/application/dto/PosProductDto";
 import type { PosCashShiftDto } from "@/modules/pos/application/dto/PosCashShiftDto";
 import type { PosSaleConfirmationDto } from "@/modules/pos/application/dto/PosSaleConfirmationDto";
-import type { SaleTicketDto, SaleTicketItemDto } from "@/modules/pos/application/dto/SaleTicketDto";
+import type {
+  SaleTicketDto,
+  SaleTicketItemDto,
+  SaleTicketTrackingSummaryDto,
+} from "@/modules/pos/application/dto/SaleTicketDto";
 import {
   canonicalizePosTrackingSelections,
   normalizePosTrackingQuantity,
@@ -45,6 +49,7 @@ import {
   type CheckoutValidationErrors,
 } from "@/modules/pos/validation/checkout.validation";
 import { validateTicketQuantity } from "@/modules/pos/validation/ticket.validation";
+import { validateSaleTicketTraceability } from "@/modules/pos/application/validateSaleTicketTraceability";
 import { cleanPosError } from "@/modules/pos/application/services/posServiceContext";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useEntitlement } from "@/shared/hooks/useEntitlement";
@@ -77,6 +82,7 @@ interface PosTraceabilityTicketRequest {
   product: PosProductDto;
   requestedQuantity: number;
   requiredBaseQuantity: number;
+  initialSelections: PosApiTrackingSelection[];
 }
 
 type EditableCheckoutPatch = Partial<Omit<CheckoutDto, "cardTerminalResult">>;
@@ -475,10 +481,34 @@ export function usePosTerminal() {
     });
   }, [readContextKey, reload, repositories]);
 
-  useDataEvent("product.changed", scheduleReload);
+  const schedulePhysicalInventoryReload = useCallback(() => {
+    if (pendingConfirmationRef.current) {
+      scheduleReload();
+      return;
+    }
+    setTraceabilityRequest(null);
+    setConfirmationAttempt(null);
+    setConfirmationError(null);
+    setConfirmationResult(null);
+    setTicketState((current) => ({
+      ...current,
+      items: current.items.map(clearTicketItemTracking),
+    }));
+    setCheckoutState((current) => ({
+      ...current,
+      errors: {},
+      validated: false,
+      readyToConfirm: false,
+      hasOperationalBlock: false,
+      message: null,
+    }));
+    scheduleReload();
+  }, [scheduleReload]);
+
+  useDataEvent("product.changed", schedulePhysicalInventoryReload);
   useDataEvent("promotion.changed", scheduleReload);
-  useDataEvent("inventory.changed", scheduleReload);
-  useDataEvent("stock.changed", scheduleReload);
+  useDataEvent("inventory.changed", schedulePhysicalInventoryReload);
+  useDataEvent("stock.changed", schedulePhysicalInventoryReload);
   useDataEvent("payment.changed", reloadBankAccounts);
   useDataEvent("cash-shift.changed", reloadCashShift);
   useDataEvent("business-config.changed", reloadPaymentMethods);
@@ -515,7 +545,8 @@ export function usePosTerminal() {
 
   const prepareTraceabilitySelection = useCallback(
     (product: PosProductDto, requestedQuantity: number) => {
-      const validationError = validateTicketQuantity(product, requestedQuantity);
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
+      const validationError = validatePosTicketQuantity(product, requestedQuantity);
       if (validationError) {
         setTicketState((current) => ({ ...current, error: validationError }));
         return;
@@ -541,6 +572,9 @@ export function usePosTerminal() {
           product,
           requestedQuantity,
           requiredBaseQuantity,
+          initialSelections:
+            ticketState.items.find((item) => item.productId === product.productId)
+              ?.trackingSelections ?? [],
         });
       } catch (conversionError) {
         setTicketState((current) => ({
@@ -552,15 +586,13 @@ export function usePosTerminal() {
         }));
       }
     },
-    [readContextKey],
+    [readContextKey, ticketState.items],
   );
 
   const addProduct = useCallback(
     (product: PosProductDto) => {
       if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateCheckoutValidation();
-      const existingItem = ticketState.items.find((item) => item.productId === product.productId);
-      const requestedQuantity = (existingItem?.quantity ?? 0) + 1;
       if (product.requiresUnsupportedTraceability) {
         setTicketState((current) => ({
           ...current,
@@ -568,14 +600,10 @@ export function usePosTerminal() {
         }));
         return;
       }
-      if (product.requiresTraceabilitySelection) {
-        prepareTraceabilitySelection(product, requestedQuantity);
-        return;
-      }
       setTicketState((current) => {
         const currentItem = current.items.find((item) => item.productId === product.productId);
         const nextQuantity = (currentItem?.quantity ?? 0) + 1;
-        const validationError = validateTicketQuantity(product, nextQuantity);
+        const validationError = validatePosTicketQuantity(product, nextQuantity);
         if (validationError) return { ...current, error: validationError };
 
         if (currentItem) {
@@ -595,7 +623,7 @@ export function usePosTerminal() {
         };
       });
     },
-    [invalidateCheckoutValidation, prepareTraceabilitySelection, ticketState.items],
+    [invalidateCheckoutValidation],
   );
 
   const increaseQuantity = useCallback(
@@ -611,16 +639,12 @@ export function usePosTerminal() {
         }));
         return;
       }
-      if (item && product?.requiresTraceabilitySelection) {
-        prepareTraceabilitySelection(product, item.quantity + 1);
-        return;
-      }
       setTicketState((current) => {
         const item = current.items.find((candidate) => candidate.productId === productId);
         if (!item) return current;
 
         const requestedQuantity = item.quantity + 1;
-        const validationError = validateTicketQuantity(item, requestedQuantity);
+        const validationError = validatePosTicketQuantity(product ?? item, requestedQuantity);
         if (validationError) return { ...current, error: validationError };
 
         return {
@@ -637,7 +661,7 @@ export function usePosTerminal() {
         };
       });
     },
-    [invalidateCheckoutValidation, prepareTraceabilitySelection, products, ticketState.items],
+    [invalidateCheckoutValidation, products, ticketState.items],
   );
 
   const decreaseQuantity = useCallback(
@@ -657,10 +681,6 @@ export function usePosTerminal() {
         }));
         return;
       }
-      if (currentItem && currentItem.quantity > 1 && product?.requiresTraceabilitySelection) {
-        prepareTraceabilitySelection(product, currentItem.quantity - 1);
-        return;
-      }
       setTicketState((current) => {
         const item = current.items.find((candidate) => candidate.productId === productId);
         if (!item) return current;
@@ -671,13 +691,17 @@ export function usePosTerminal() {
           };
         }
 
+        const requestedQuantity = item.quantity - 1;
+        const validationError = validatePosTicketQuantity(product ?? item, requestedQuantity);
+        if (validationError) return { ...current, error: validationError };
+
         return {
           error: null,
           items: current.items.map((candidate) =>
             candidate.productId === productId
               ? updateTicketItemQuantity(
                   candidate,
-                  candidate.quantity - 1,
+                  requestedQuantity,
                   products.find((product) => product.productId === productId),
                 )
               : candidate,
@@ -685,7 +709,7 @@ export function usePosTerminal() {
         };
       });
     },
-    [invalidateCheckoutValidation, prepareTraceabilitySelection, products, ticketState.items],
+    [invalidateCheckoutValidation, products, ticketState.items],
   );
 
   const setQuantity = useCallback(
@@ -705,15 +729,11 @@ export function usePosTerminal() {
         }));
         return;
       }
-      if (item && product?.requiresTraceabilitySelection && requestedQuantity !== item.quantity) {
-        prepareTraceabilitySelection(product, requestedQuantity);
-        return;
-      }
       setTicketState((current) => {
         const item = current.items.find((candidate) => candidate.productId === productId);
         if (!item) return current;
 
-        const validationError = validateTicketQuantity(item, requestedQuantity);
+        const validationError = validatePosTicketQuantity(product ?? item, requestedQuantity);
         if (validationError) return { ...current, error: validationError };
 
         return {
@@ -730,7 +750,7 @@ export function usePosTerminal() {
         };
       });
     },
-    [invalidateCheckoutValidation, prepareTraceabilitySelection, products, ticketState.items],
+    [invalidateCheckoutValidation, products, ticketState.items],
   );
 
   const cancelTraceabilitySelection = useCallback(() => {
@@ -738,7 +758,14 @@ export function usePosTerminal() {
   }, []);
 
   const confirmTraceabilitySelection = useCallback(
-    (selections: PosApiTrackingSelection[]) => {
+    (
+      selections: PosApiTrackingSelection[],
+      summary: SaleTicketTrackingSummaryDto[] = [],
+    ) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) {
+        setTraceabilityRequest(null);
+        return;
+      }
       const request = traceabilityRequest;
       if (!request || request.contextKey !== currentReadContextRef.current) {
         setTraceabilityRequest(null);
@@ -753,6 +780,7 @@ export function usePosTerminal() {
             request.requestedQuantity,
             canonical,
             request.requiredBaseQuantity,
+            summary,
           );
           const existingIndex = current.items.findIndex(
             (item) => item.productId === request.product.productId,
@@ -879,6 +907,7 @@ export function usePosTerminal() {
   ]);
 
   const closeCheckout = useCallback(() => {
+    setTraceabilityRequest(null);
     setCheckoutState((current) => ({ ...current, open: false }));
   }, []);
 
@@ -886,6 +915,11 @@ export function usePosTerminal() {
     if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
     cancelCardTerminalProcessing();
     invalidateConfirmationAttempt();
+    setTraceabilityRequest(null);
+    setTicketState((current) => ({
+      ...current,
+      items: current.items.map(clearTicketItemTracking),
+    }));
     setCheckoutState((current) => ({
       ...createCheckoutState(ticket.total, availablePaymentModes[0] ?? PaymentMethod.cash),
       open: current.open,
@@ -942,6 +976,16 @@ export function usePosTerminal() {
     (patch: EditableCheckoutPatch) => {
       if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       if (patch.cardAmount !== undefined) cancelCardTerminalProcessing();
+      if (
+        patch.deliveryMethod !== undefined &&
+        patch.deliveryMethod !== DeliveryMethod.immediate
+      ) {
+        setTraceabilityRequest(null);
+        setTicketState((current) => ({
+          ...current,
+          items: current.items.map(clearTicketItemTracking),
+        }));
+      }
       invalidateConfirmationAttempt();
       setCheckoutState((current) => {
         const cardAmountChanged =
@@ -1126,11 +1170,16 @@ export function usePosTerminal() {
       const value = { ...current.value, changeAmount: amounts.changeAmount };
       const result = validateCheckoutDto(value, ticket.total);
       const hasAllowedPaymentMode = availablePaymentModes.includes(value.paymentMode);
+      const immediateTraceabilityError =
+        value.deliveryMethod === DeliveryMethod.immediate
+          ? getImmediateTraceabilityError(ticket.items)
+          : null;
       const hasDeferredTraceability =
         value.deliveryMethod !== DeliveryMethod.immediate &&
         ticket.items.some((item) => (item.trackingSelections?.length ?? 0) > 0);
       const hasOperationalBlock =
         ticket.hasUnsupportedTraceability ||
+        Boolean(immediateTraceabilityError) ||
         hasDeferredTraceability ||
         !hasOpenCashShift ||
         !hasPosSalesPermission ||
@@ -1154,6 +1203,7 @@ export function usePosTerminal() {
               hasOpenCashShift,
               hasPosSalesPermission,
               hasUnsupportedTraceability: ticket.hasUnsupportedTraceability,
+              immediateTraceabilityError,
               hasDeferredTraceability,
               hasAllowedPaymentMode,
               paymentMethodsError,
@@ -1180,8 +1230,13 @@ export function usePosTerminal() {
     () => calculateCheckoutAmounts(checkoutState.value, ticket.total),
     [checkoutState.value, ticket.total],
   );
+  const checkoutImmediateTraceabilityError =
+    checkoutState.value.deliveryMethod === DeliveryMethod.immediate
+      ? getImmediateTraceabilityError(ticket.items)
+      : null;
   const checkoutHasOperationalBlock =
     ticket.hasUnsupportedTraceability ||
+    Boolean(checkoutImmediateTraceabilityError) ||
     (checkoutState.value.deliveryMethod !== DeliveryMethod.immediate &&
       ticket.items.some((item) => (item.trackingSelections?.length ?? 0) > 0)) ||
     !hasOpenCashShift ||
@@ -1200,6 +1255,7 @@ export function usePosTerminal() {
         hasOpenCashShift,
         hasPosSalesPermission,
         hasUnsupportedTraceability: ticket.hasUnsupportedTraceability,
+        immediateTraceabilityError: checkoutImmediateTraceabilityError,
         hasDeferredTraceability:
           checkoutState.value.deliveryMethod !== DeliveryMethod.immediate &&
           ticket.items.some((item) => (item.trackingSelections?.length ?? 0) > 0),
@@ -1376,6 +1432,7 @@ export function usePosTerminal() {
     removeItem,
     clearTicket,
     traceabilityRequest,
+    prepareTraceabilitySelection,
     cancelTraceabilitySelection,
     confirmTraceabilitySelection,
     ticketItems: ticket.items,
@@ -1458,6 +1515,7 @@ function createTicketItem(
   quantity: number,
   trackingSelections: PosApiTrackingSelection[] = [],
   baseQuantity?: number,
+  trackingSelectionSummary: SaleTicketTrackingSummaryDto[] = [],
 ): SaleTicketItemDto {
   const price = calculateEffectivePrice(
     resolveQuantityPrice({
@@ -1489,7 +1547,25 @@ function createTicketItem(
     requiresExpiration: product.requiresExpiration,
     requiresUnsupportedTraceability: product.requiresUnsupportedTraceability,
     trackingSelections: trackingSelections.length > 0 ? trackingSelections : undefined,
+    trackingSelectionSummary:
+      trackingSelectionSummary.length > 0 ? trackingSelectionSummary : undefined,
     isKit: product.productType === "kit",
+  };
+}
+
+function clearTicketItemTracking(item: SaleTicketItemDto): SaleTicketItemDto {
+  if (
+    item.baseQuantity === undefined &&
+    !item.trackingSelections?.length &&
+    !item.trackingSelectionSummary?.length
+  ) {
+    return item;
+  }
+  return {
+    ...item,
+    baseQuantity: undefined,
+    trackingSelections: undefined,
+    trackingSelectionSummary: undefined,
   };
 }
 
@@ -1536,12 +1612,35 @@ function updateTicketItemQuantity(
   quantity: number,
   product?: PosProductDto,
 ): SaleTicketItemDto {
+  if (quantity === item.quantity) return item;
   if (product) return createTicketItem(product, quantity);
   return {
     ...item,
     quantity,
     subtotal: fromCents(toCents(item.unitPrice) * quantity),
   };
+}
+
+function validatePosTicketQuantity(
+  item: PosProductDto | SaleTicketItemDto,
+  quantity: number,
+): string | null {
+  const quantityError = validateTicketQuantity(item, quantity);
+  if (quantityError || !item.requiresTraceabilitySelection) return quantityError;
+
+  try {
+    const baseQuantity = normalizePosTrackingQuantity(
+      quantity * (item.saleUnitToBaseFactor ?? Number.NaN),
+    );
+    if (item.requiresSerial && !Number.isInteger(baseQuantity)) {
+      return "Los productos serializados requieren una cantidad base entera.";
+    }
+    return null;
+  } catch (error) {
+    return error instanceof Error
+      ? error.message
+      : "No se pudo convertir la cantidad a unidades base.";
+  }
 }
 
 function calculateTicket(items: SaleTicketItemDto[]): SaleTicketDto {
@@ -1564,6 +1663,17 @@ function calculateTicket(items: SaleTicketItemDto[]): SaleTicketDto {
   };
 }
 
+function getImmediateTraceabilityError(items: SaleTicketItemDto[]): string | null {
+  try {
+    validateSaleTicketTraceability(items);
+    return null;
+  } catch (error) {
+    return error instanceof Error
+      ? error.message
+      : "La selección física del ticket debe revisarse.";
+  }
+}
+
 function getCheckoutValidationMessage({
   cashShiftError,
   cashShiftLoading,
@@ -1571,6 +1681,7 @@ function getCheckoutValidationMessage({
   hasOpenCashShift,
   hasPosSalesPermission,
   hasUnsupportedTraceability,
+  immediateTraceabilityError,
   hasDeferredTraceability,
   hasAllowedPaymentMode,
   paymentMethodsError,
@@ -1582,6 +1693,7 @@ function getCheckoutValidationMessage({
   hasOpenCashShift: boolean;
   hasPosSalesPermission: boolean;
   hasUnsupportedTraceability: boolean;
+  immediateTraceabilityError: string | null;
   hasDeferredTraceability: boolean;
   hasAllowedPaymentMode: boolean;
   paymentMethodsError: string | null;
@@ -1611,6 +1723,9 @@ function getCheckoutValidationMessage({
   }
   if (hasUnsupportedTraceability) {
     return "Cobro validado, pero la venta tiene productos con trazabilidad no soportada.";
+  }
+  if (immediateTraceabilityError) {
+    return `Cobro validado, pero ${immediateTraceabilityError}`;
   }
   if (hasDeferredTraceability) {
     return "Cobro validado, pero los productos con selección física requieren entrega inmediata.";
@@ -1652,7 +1767,7 @@ function createCheckoutValue(total: number, paymentMode: CheckoutPaymentMode): C
     bankAccountId: "",
     transferReference: "",
     transferExternallyVerified: false,
-    deliveryMethod: DeliveryMethod.immediate,
+    deliveryMethod: "",
     transportMode: TransportMode.none,
     notificationContact: { emailMode: "send", email: "" },
   };

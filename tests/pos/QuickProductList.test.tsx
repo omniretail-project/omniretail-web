@@ -45,7 +45,7 @@ describe("QuickProductList trazabilidad", () => {
     expect(onAdd).toHaveBeenCalledWith(ordinary);
   });
 
-  it("ofrece seleccionar inventario para un producto trazable compatible", () => {
+  it("permite agregar directamente un producto trazable compatible", () => {
     const traceable = {
       ...ordinary,
       requiresLot: true,
@@ -63,8 +63,8 @@ describe("QuickProductList trazabilidad", () => {
       />,
     );
 
-    expect(screen.getByText(/Selecciona el inventario físico/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Seleccionar" }));
+    expect(screen.queryByText(/Selecciona el inventario físico/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Agregar" }));
     expect(onAdd).toHaveBeenCalledWith(traceable);
   });
 
