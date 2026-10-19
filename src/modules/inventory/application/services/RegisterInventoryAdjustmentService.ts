@@ -16,6 +16,7 @@ import type { AdjustStockDto } from "@/modules/inventory/application/dto/Invento
 import { toBaseQuantity } from "@/core/units";
 import {
   ensureCanCreateAdjustment,
+  ensureCanReadStock,
   ensureProductBelongsToTenant,
   ensureTenantCanUseInventory,
   ensureTenantCanUseTracking,
@@ -365,6 +366,71 @@ export class RegisterInventoryAdjustmentService {
     assertAdjustmentTargetIsUnambiguous(input.movementKind, operational);
     return operational;
   }
+
+  /**
+   * Desglose bajo demanda (una lectura de balances administrativos por producto): existencia
+   * fisica total, balance operativo y saldo heredado. No bloquea por ambiguedad: solo informa.
+   */
+  async getStockBreakdown(input: {
+    tenantId: string;
+    branchId: string;
+    productId: string;
+    usesLocations: boolean;
+    knownLocations?: StorageLocation[];
+  }): Promise<InventoryStockBreakdown> {
+    const [settings, locations, balances] = await Promise.all([
+      input.usesLocations
+        ? this.repositories.inventory.getProductInventorySettings(input.productId, input.branchId)
+        : Promise.resolve(null),
+      input.usesLocations
+        ? input.knownLocations
+          ? Promise.resolve(
+              input.knownLocations.filter(
+                (location) =>
+                  location.tenantId === input.tenantId && location.branchId === input.branchId,
+              ),
+            )
+          : this.repositories.inventory.getLocations(input.branchId)
+        : Promise.resolve([]),
+      this.repositories.inventory.getProductBalances(
+        input.productId,
+        input.branchId,
+        input.tenantId,
+      ),
+    ]);
+    const scoped = balances.filter(
+      (balance) =>
+        balance.tenantId === input.tenantId &&
+        balance.branchId === input.branchId &&
+        balance.productId === input.productId,
+    );
+    const operational = selectOperationalAdjustmentBalance({
+      ...input,
+      settings,
+      locations,
+      balances: scoped,
+    });
+    return {
+      physicalQuantity: scoped.reduce((total, balance) => total + balance.quantity, 0),
+      operationalQuantity: operational.quantity,
+      operationalReservedQuantity: operational.quantity - operational.availableQuantity,
+      operationalAvailableQuantity: operational.availableQuantity,
+      legacyQuantity: scoped
+        .filter((balance) => !balance.locationId)
+        .reduce((total, balance) => total + balance.quantity, 0),
+      requiresRegularization: operational.hasStockElsewhere,
+    };
+  }
+}
+
+export interface InventoryStockBreakdown {
+  physicalQuantity: number;
+  operationalQuantity: number;
+  operationalReservedQuantity: number;
+  operationalAvailableQuantity: number;
+  /** Saldo con locationId NULL (heredado). */
+  legacyQuantity: number;
+  requiresRegularization: boolean;
 }
 
 const ADJUSTMENT_ERROR_MESSAGES: Record<string, string> = {
@@ -385,7 +451,16 @@ const ADJUSTMENT_ERROR_MESSAGES: Record<string, string> = {
 export function toInventoryAdjustmentError(error: unknown): Error {
   if (error instanceof BackendRequestError && error.code) {
     const message = ADJUSTMENT_ERROR_MESSAGES[error.code];
-    if (message) return new InventoryServiceError(message);
+    // Se conserva status, codigo, campos y el mensaje original del backend (401/403/409 intactos).
+    if (message) {
+      return new BackendRequestError(
+        message,
+        error.status,
+        error.code,
+        error.fields,
+        error.backendMessage ?? error.message,
+      );
+    }
   }
   return error instanceof Error
     ? error
@@ -559,6 +634,21 @@ export class InventoryAdjustmentLookupService {
       movementKind: "out",
       usesLocations: input.usesLocations,
       knownLocations: input.knownLocations,
+    });
+  }
+
+  /** Desglose fisico / operativo / heredado, solo lectura (una lectura de balances por producto). */
+  async getStockBreakdown(input: {
+    branchId: string;
+    productId: string;
+    usesLocations: boolean;
+    knownLocations?: StorageLocation[];
+  }): Promise<InventoryStockBreakdown> {
+    const { tenantId, permissions } = await resolveInventoryContext(this.repositories);
+    ensureCanReadStock(permissions);
+    return new RegisterInventoryAdjustmentService(this.repositories).getStockBreakdown({
+      tenantId,
+      ...input,
     });
   }
 

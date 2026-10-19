@@ -36,16 +36,16 @@ describe("PublicDemoBanner", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("muestra la franja con contratar y contacto cuando estan configurados", () => {
+  it("muestra la franja con solicitar informacion y contacto cuando estan configurados", () => {
     vi.stubEnv("NEXT_PUBLIC_PUBLIC_DEMO", "true");
     vi.stubEnv("NEXT_PUBLIC_MARKETING_URL", "https://marjym.example/");
     vi.stubEnv("NEXT_PUBLIC_SALES_CONTACT_URL", "https://wa.me/50200000000");
     render(<PublicDemoBanner />);
 
     expect(screen.getByText(/Estás en una demo con datos de ejemplo/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Contratar MARJYM/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /Solicitar información/ })).toHaveAttribute(
       "href",
-      "https://marjym.example/contratar",
+      "https://marjym.example/solicitar-informacion",
     );
     expect(screen.getByRole("link", { name: /contactemos/ })).toHaveAttribute(
       "href",

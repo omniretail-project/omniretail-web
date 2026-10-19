@@ -25,6 +25,9 @@ export function enforceBusinessConfigCoherence(dto: BusinessConfigDto): Business
     return coherentDto;
   }
 
+  // Ubicaciones operativas: capacidad derivada del control de inventario, nunca independiente.
+  coherentDto.supportsMultipleLocations = true;
+
   const supportsTraceability = coherentDto.supportsLots || coherentDto.supportsExpiration;
   coherentDto.supportsLots = supportsTraceability;
   coherentDto.supportsExpiration = supportsTraceability;

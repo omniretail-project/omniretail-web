@@ -156,6 +156,7 @@ export function EmployeeSeguridadPage() {
             autoComplete="current-password"
             disabled={busy}
             id="employee-security-current-password"
+            maxLength={EMPLOYEE_PASSWORD_POLICY.MAX_LENGTH}
             onChange={(event) => updatePasswordField("currentPassword", event.target.value)}
             value={form.currentPassword}
           />
@@ -238,6 +239,7 @@ export function EmployeeSeguridadPage() {
           onBegin={mfaEnrollment.begin}
           onDisable={mfaEnrollment.disable}
           onVerify={mfaEnrollment.verify}
+          passwordMaxLength={EMPLOYEE_PASSWORD_POLICY.MAX_LENGTH}
           status={mfaEnrollment.status}
           unavailableMethods={mfaEnrollment.unavailableMethods}
         />

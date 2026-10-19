@@ -20,7 +20,7 @@ export default function PublicLayout({ children }: Readonly<{ children: ReactNod
     pathname.startsWith("/verificar-correo/");
 
   useEffect(() => {
-    if (isGlobalRegistrationRoute) router.replace("/contratar");
+    if (isGlobalRegistrationRoute) router.replace("/solicitar-informacion");
   }, [isGlobalRegistrationRoute, router]);
 
   if (isGlobalRegistrationRoute) return null;

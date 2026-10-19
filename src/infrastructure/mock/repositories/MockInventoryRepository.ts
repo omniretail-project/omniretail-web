@@ -20,6 +20,9 @@ import type {
 } from "@/core/repositories";
 import { buildPickingInventoryAvailability } from "@/core/inventory/pickingAvailability";
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
+import { OperationalLocationError } from "@/core/inventory/operationalLocationErrors";
+import { resolveOperationalLocation } from "@/core/inventory/stockAvailability";
+import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 import {
   consumeInventoryReservationInDatabase,
@@ -30,6 +33,50 @@ import {
   getClaimedPickingSerialNumbers,
   planPickingAllocationCapacity,
 } from "@/infrastructure/mock/repositories/pickingSelectionMutations";
+
+/**
+ * Politica de ubicacion operativa para entradas, salidas y ajustes: solo la ubicacion asignada y
+ * activa (o el saldo heredado NULL ya existente cuando no hay asignacion). Nunca se elige otra
+ * ubicacion ni se crea un balance heredado nuevo. Los movimientos entre ubicaciones (transfer)
+ * son relocalizaciones explicitas y quedan fuera de esta politica.
+ */
+function assertOperationalMovementTarget(db: MockDatabase, input: RegisterInventoryMovementInput) {
+  if (input.type === InventoryMovementType.transfer) return;
+  const assignedLocationId =
+    db.productInventorySettings.find(
+      (item) =>
+        item.tenantId === input.tenantId &&
+        item.branchId === input.branchId &&
+        item.productId === input.productId,
+    )?.defaultLocationId ?? null;
+  const selection = resolveOperationalLocation({
+    tenantId: input.tenantId,
+    branchId: input.branchId,
+    locations: db.storageLocations,
+    assignedLocationId,
+  });
+  const targetLocationId = input.toLocationId ?? input.fromLocationId;
+  if (selection.source === "none") {
+    throw new OperationalLocationError("INVENTORY_ASSIGNED_LOCATION_INACTIVE");
+  }
+  if (selection.source === "assigned") {
+    if (!targetLocationId) throw new OperationalLocationError("INVENTORY_LOCATION_REQUIRED");
+    if (targetLocationId !== selection.locationId) {
+      throw new OperationalLocationError("INVENTORY_LOCATION_MISMATCH");
+    }
+    return;
+  }
+  const hasLegacyBalance = db.inventoryBalances.some(
+    (balance) =>
+      balance.tenantId === input.tenantId &&
+      balance.branchId === input.branchId &&
+      balance.productId === input.productId &&
+      !balance.locationId,
+  );
+  if (targetLocationId || !hasLegacyBalance) {
+    throw new OperationalLocationError("INVENTORY_LOCATION_NOT_ASSIGNED");
+  }
+}
 
 export class MockInventoryRepository extends BaseMockRepository implements InventoryRepository {
   async getBalances() {
@@ -652,6 +699,7 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       if (product?.tracking.lot || product?.tracking.serial) {
         throw new Error("Traceable stock must be mutated through a traceability-aware workflow.");
       }
+      if (product?.tracking.stock) assertOperationalMovementTarget(db, input);
       const created: InventoryMovement = {
         ...input,
         id: this.id("movement"),

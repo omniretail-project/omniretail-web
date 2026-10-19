@@ -179,15 +179,16 @@ export const GENERIC_AUTH_ERROR_MESSAGE =
 export const GENERIC_RECOVERY_MESSAGE = "Si existe una cuenta asociada, recibirás instrucciones.";
 
 /**
- * Mensaje para un intento de registro con un correo que ya tiene cuenta
- * en el mismo tenant (regla R-A03). A diferencia de login/recovery, el
- * registro SI puede confirmar la existencia de la cuenta -- quien lo
- * intenta ya conoce el correo, así que ocultarlo no protege nada y solo
- * deja al usuario real sin salida. Ayuda a encontrar el camino correcto
- * (iniciar sesión o recuperar contraseña) en vez de un error genérico.
+ * Respuesta unica del registro de clientes y del reenvio de la verificacion de correo: es la
+ * misma exista o no la cuenta, para no revelar que correos ya estan registrados (R-A03 sigue
+ * vigente: el correo repetido no crea otra cuenta, pero la respuesta no lo delata). Es el mismo
+ * texto que responde el backend en ambos endpoints.
  */
-export const EMAIL_ALREADY_REGISTERED_MESSAGE =
-  "Ya existe una cuenta con este correo. Inicia sesión o recupera tu contraseña.";
+export const GENERIC_ACCOUNT_EMAIL_MESSAGE =
+  "Si el correo es válido, te enviamos un mensaje para continuar.";
+
+/** Espera de UI entre reenvios del correo de verificacion (el limite real lo aplica el backend). */
+export const EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS = 30;
 
 /**
  * Doc section 4.10: customer email verification token expires in 30

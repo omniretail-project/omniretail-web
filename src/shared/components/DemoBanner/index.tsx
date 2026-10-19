@@ -4,8 +4,8 @@ export interface DemoBannerProps {
   onReset: () => void;
   /** Reinicio en curso: deshabilita el boton para no lanzarlo dos veces. */
   resetting?: boolean;
-  /** Enlace a "Contratar MARJYM"; si esta vacio no se muestra. */
-  contractUrl?: string;
+  /** Enlace a "Solicitar informacion" (landing real); si esta vacio no se muestra. */
+  informationRequestUrl?: string;
   /** Enlace opcional de contacto comercial. */
   contactUrl?: string;
   className?: string;
@@ -20,7 +20,7 @@ const linkClassName = "font-semibold underline underline-offset-2 hover:no-under
 export function DemoBanner({
   onReset,
   resetting = false,
-  contractUrl,
+  informationRequestUrl,
   contactUrl,
   className,
 }: Readonly<DemoBannerProps>) {
@@ -41,9 +41,9 @@ export function DemoBanner({
       >
         {resetting ? "Reiniciando…" : "Reiniciar demo"}
       </button>
-      {contractUrl ? (
-        <a className={linkClassName} href={contractUrl} rel="noopener noreferrer">
-          Contratar MARJYM
+      {informationRequestUrl ? (
+        <a className={linkClassName} href={informationRequestUrl} rel="noopener noreferrer">
+          Solicitar información
         </a>
       ) : null}
       {contactUrl ? (

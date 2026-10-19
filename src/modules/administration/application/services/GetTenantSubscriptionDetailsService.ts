@@ -1,9 +1,7 @@
 import { SaasCapabilityKey, SaasLimitKey } from "@/core/enums";
 import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
-import { ensureCurrentSubscriptionInvoice } from "@/modules/administration/application/services/subscriptionBilling";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
-  SelectablePlanDto,
   SubscriptionCapabilityDto,
   TenantSubscriptionDetailsDto,
 } from "@/modules/administration/application/dto/SubscriptionDto";
@@ -49,16 +47,6 @@ export class GetTenantSubscriptionDetailsService {
     const usage = await new GetTenantUsageService(this.repositories).execute(tenantId);
     const entitlements = await new ResolveTenantEntitlementsService(this.repositories).execute(tenantId);
     const addonCodes = subscription.addonCodes ?? [];
-    const { nextRenewalAt } = await ensureCurrentSubscriptionInvoice(this.repositories, subscription);
-    const invoices = await this.repositories.tenantSubscriptions.listInvoices(tenantId);
-    const activePlans = await this.repositories.plans.listActive();
-    const availablePlans: SelectablePlanDto[] = activePlans.map((activePlan) => ({
-      id: activePlan.id,
-      code: activePlan.code,
-      name: activePlan.name,
-      description: activePlan.description,
-      capabilities: [...activePlan.capabilities],
-    }));
 
     // Ecommerce: entitlement (plan.capabilities) Y business config (EcommerceConfig.enabled) son
     // ejes INDEPENDIENTES -- solo se lee EcommerceConfig para mostrar el estado operacional
@@ -86,12 +74,9 @@ export class GetTenantSubscriptionDetailsService {
     return {
       tenantId,
       addonCodes: [...addonCodes],
-      nextRenewalAt,
-      invoices,
       subscription: { status: subscription.status, startedAt: subscription.startedAt },
       plan: { id: plan.id, code: plan.code, name: plan.name, description: plan.description },
       capabilities,
-      availablePlans,
       usage: [
         {
           key: SaasLimitKey.maxEmployees,

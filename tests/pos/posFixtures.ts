@@ -657,13 +657,17 @@ export function createPosRepositories(options: PosRepositoryOptions = {}) {
     },
     customers: { getById: vi.fn().mockResolvedValue(null) },
     bankAccounts: {
-      getById: vi.fn().mockResolvedValue({
-        id: ids.bankAccount,
-        tenantId: ids.tenant,
-        status: "active",
-        currency: "GTQ",
-        branchIds: [],
-      }),
+      // La venta valida la cuenta contra las activas (lectura operacional del cajero), no por id.
+      getById: vi.fn().mockRejectedValue(new Error("bankAccounts.getById es administrativo")),
+      getActiveByTenant: vi.fn().mockResolvedValue([
+        {
+          id: ids.bankAccount,
+          tenantId: ids.tenant,
+          status: "active",
+          currency: "GTQ",
+          branchIds: [],
+        },
+      ]),
     },
     cashShifts: forbiddenRepository("cashShifts"),
     cashMovements: forbiddenRepository("cashMovements"),

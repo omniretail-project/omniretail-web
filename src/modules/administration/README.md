@@ -3,16 +3,17 @@
 ## Plan y suscripción modular
 
 La ruta `/administracion/plan` muestra MARJYM Base obligatorio (Q199/mes), E-commerce +
-Entregas (Q129/mes) y Reportes avanzados (Q99/mes). Los complementos se guardan en la
-suscripción del tenant con `admin.plans.manage`; la lectura exige `admin.plans.read`. El acceso
-operativo a nuevas compras de tienda y a reportes avanzados exige capability comercial;
-los permisos de rol siguen siendo independientes. Desactivar E-commerce + Entregas no bloquea
-Picking, Packing, Dispatch ni tracking de pedidos existentes: esas acciones conservan sus
-controles de sesión, tenant, sucursal, permisos, recurso y estado. El historial mensual es
-simulado, no fiscal ni evidencia de pago; sus importes son snapshots
-por tenant y ciclo. Basic legacy migra sin extras y Enterprise con ambos extras. El Plan Básico
-no limita empleados ni sucursales: la pantalla muestra su uso sin cupos. POS está incluido sin
-cupo comercial de cajas; permanece la regla operativa de un turno abierto por usuario y sucursal.
+Entregas (Q129/mes) y Reportes avanzados (Q99/mes). Es una vista de solo lectura protegida por
+`admin.plans.read`: el cliente no contrata complementos ni cambia su plan desde el frontend. El
+aprovisionamiento comercial corresponde al equipo MARJYM y la pantalla dirige al canal de
+contacto configurado. El acceso operativo a nuevas compras de tienda y a reportes avanzados exige
+capability comercial; los permisos de rol siguen siendo independientes. Retirar E-commerce +
+Entregas no bloquea Picking, Packing, Dispatch ni tracking de pedidos existentes: esas acciones
+conservan sus controles de sesión, tenant, sucursal, permisos, recurso y estado. La pantalla no
+presenta facturación simulada. Basic legacy migra sin extras y Enterprise con ambos extras. El
+Plan Básico no limita empleados ni sucursales: la pantalla muestra su uso sin cupos. POS está
+incluido sin cupo comercial de cajas; permanece la regla operativa de un turno abierto por usuario
+y sucursal.
 
 | `SaasCapabilityKey` | MARJYM Base | E-commerce + Entregas | Reportes avanzados |
 | --- | --- | --- | --- |

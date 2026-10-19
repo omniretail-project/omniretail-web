@@ -13,13 +13,20 @@ import {
   type ReactNode,
   type SVGProps,
 } from "react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { Branch, StorageLocation } from "@/core/entities";
 import type { AdjustmentLotOption, AdjustmentSerialOption } from "@/core/repositories";
-import type { InventoryAdjustmentLookupService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
+import type {
+  InventoryAdjustmentLookupService,
+  InventoryStockBreakdown,
+} from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
 import { STOCK_ELSEWHERE_ADJUSTMENT_MESSAGE } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
 import { useSerialBatchPrecheck } from "@/shared/hooks/useSerialBatchPrecheck";
-import { INVENTORY_STOCK_READ_PERMISSION } from "@/modules/inventory/application/services/serviceHelpers";
+import {
+  INVENTORY_MOVEMENTS_READ_PERMISSION,
+  INVENTORY_STOCK_READ_PERMISSION,
+} from "@/modules/inventory/application/services/serviceHelpers";
 import { TraceableCountFlow } from "@/modules/inventory/components/TraceableCountFlow";
 import type { InventoryOtherBranchesService } from "@/modules/inventory/application/services/InventoryOtherBranchesService";
 import type { OtherBranchAvailability } from "@/core/repositories";
@@ -123,6 +130,8 @@ export function InventoryAlertsPage() {
     hasPermission(INVENTORY_STOCK_READ_PERMISSION) && hasCapability(SaasCapabilityKey.inventory);
   const canCreatePurchaseOrder =
     hasPermission("purchasing.orders.create") && hasCapability(SaasCapabilityKey.purchasing);
+  // /inventario/movimientos exige inventory.movements.read: sin él (Cajero, Bodeguero) el acceso no se ofrece.
+  const canViewMovements = hasPermission(INVENTORY_MOVEMENTS_READ_PERMISSION);
   const {
     data,
     detailRow,
@@ -225,6 +234,13 @@ export function InventoryAlertsPage() {
   const branchLocations = useMemo(
     () => locations.filter((location) => location.branchId === branchId),
     [branchId, locations],
+  );
+  const stockProbe = useMemo(
+    () =>
+      adjustmentLookup
+        ? { lookup: adjustmentLookup, locations: branchLocations, supportsMultipleLocations }
+        : null,
+    [adjustmentLookup, branchLocations, supportsMultipleLocations],
   );
   // Solo un producto con stock propio (TRACKED) admite ajustes; servicio y kit no.
   const canAdjustSelectedRow = canAdjustStock && selectedRow?.inventoryMode === "TRACKED";
@@ -504,7 +520,7 @@ export function InventoryAlertsPage() {
               onPageChange={setPage}
               onPageSizeChange={setPageSize}
               onTransfer={openTransfer}
-              onViewHistory={openMovementHistory}
+              onViewHistory={canViewMovements ? openMovementHistory : undefined}
             />
           )}
         </div>
@@ -520,12 +536,20 @@ export function InventoryAlertsPage() {
           canCreatePurchaseOrder={canCreatePurchaseOrder}
           canViewOtherBranches={canViewOtherBranches}
           kitAvailabilityService={kitAvailabilityService}
+          stockProbe={stockProbe}
           desktopExpanded={contextPanelExpanded}
           onAdjust={() => selectedRow && canAdjustStock && openAdjust(selectedRow)}
           onCreateOrder={() => selectedRow && openPurchaseOrder(selectedRow, "inventory-alert")}
           onOtherBranches={() => selectedRow && openOtherBranches(selectedRow)}
-          onViewHistory={() => selectedRow && openMovementHistory(selectedRow)}
-          onViewProductTransfers={() => selectedRow && setActionMode("product-transfers")}
+          onViewHistory={
+            canViewMovements ? () => selectedRow && openMovementHistory(selectedRow) : undefined
+          }
+          // Solicitudes y traslados del producto exigen inventory.transfers.manage en el backend.
+          onViewProductTransfers={
+            canManageTransfers
+              ? () => selectedRow && setActionMode("product-transfers")
+              : undefined
+          }
           onCloseProduct={closePanel}
           onCollapse={closePanel}
           onModeChange={changePanelMode}
@@ -928,7 +952,7 @@ function InventoryTable({
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
   onTransfer: (row: InventoryProductRow) => void;
-  onViewHistory: (row: InventoryProductRow) => void;
+  onViewHistory?: (row: InventoryProductRow) => void;
 }) {
   return (
     <div className="border-t border-[var(--color-border)]">
@@ -942,9 +966,9 @@ function InventoryTable({
           <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
             <tr>
               <th className="px-3 py-2.5 font-semibold">Producto</th>
-              <th className="px-3 py-2.5 text-right font-semibold">Existencia sucursal</th>
-              <th className="px-3 py-2.5 text-right font-semibold">Reservado sucursal</th>
-              <th className="px-3 py-2.5 text-right font-semibold">Disponible agregado</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Existencia operativa</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Reservado</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Disponible</th>
               <th className="hidden px-3 py-2.5 text-right font-semibold md:table-cell">
                 Nivel minimo
               </th>
@@ -1171,6 +1195,47 @@ function StockCells({ row }: { row: InventoryProductRow }) {
   );
 }
 
+/** Cantidad que puede no estar determinada con los datos cargados: nunca se fabrica un valor. */
+function formatOptionalStock(value: number | null | undefined, unitName: string) {
+  return value == null ? "No disponible" : `${formatStockQuantity(value)} ${unitName}`;
+}
+
+/**
+ * Avisa cuando el producto no puede operar sus existencias (sin ubicacion operativa) o conserva
+ * stock fuera de su balance operativo, y enlaza a la regularizacion explicita existente.
+ */
+export function OperationalStockNotice({
+  canRegularize,
+  row,
+}: {
+  canRegularize: boolean;
+  row: InventoryProductRow;
+}) {
+  const unassigned = !row.defaultLocationId;
+  const outsideOperational = row.requiresRegularization === true;
+  if (!unassigned && !outsideOperational) return null;
+  return (
+    <div
+      className="mt-3 rounded-md border border-[var(--color-warning)] bg-[var(--color-app-background)] px-3 py-2 text-xs leading-5 text-[var(--color-text)]"
+      role="note"
+    >
+      <p className="font-semibold">
+        {unassigned
+          ? "Sin ubicacion operativa asignada: el producto no puede recibir, reservar ni vender existencias."
+          : "Stock heredado: el producto conserva existencias fuera de su ubicacion operativa."}
+      </p>
+      {outsideOperational && canRegularize ? (
+        <Link
+          className="mt-1 inline-block font-bold text-[var(--color-structure)] underline"
+          href="/inventario/regularizacion"
+        >
+          Ir a regularizacion de ubicaciones
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
 const stockQuantityFormat = new Intl.NumberFormat("es-GT", {
   maximumFractionDigits: QUANTITY_DECIMAL_PLACES,
   useGrouping: false,
@@ -1268,7 +1333,7 @@ function RowActionsMenu({
   canManageTransfers: boolean;
   onAdjust: (row: InventoryProductRow) => void;
   onTransfer: (row: InventoryProductRow) => void;
-  onViewHistory: (row: InventoryProductRow) => void;
+  onViewHistory?: (row: InventoryProductRow) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>();
@@ -1322,6 +1387,8 @@ function RowActionsMenu({
     action(row);
   }
 
+  if (!canAdjustStock && !canManageTransfers && !onViewHistory) return null;
+
   return (
     <div
       className="relative flex justify-end"
@@ -1355,9 +1422,11 @@ function RowActionsMenu({
               Solicitar traslado
             </MenuItem>
           ) : null}
-          <MenuItem icon={<HistoryIcon />} onClick={() => select(onViewHistory)}>
-            Historial de movimientos
-          </MenuItem>
+          {onViewHistory ? (
+            <MenuItem icon={<HistoryIcon />} onClick={() => select(onViewHistory)}>
+              Historial de movimientos
+            </MenuItem>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -1451,6 +1520,12 @@ function PurchaseOrderIcon() {
   );
 }
 
+interface StockProbe {
+  lookup: InventoryAdjustmentLookupService;
+  locations: StorageLocation[];
+  supportsMultipleLocations: boolean;
+}
+
 function ContextPanel({
   activeBranchId,
   activeBranchName,
@@ -1458,6 +1533,7 @@ function ContextPanel({
   canAdjustStock,
   canViewOtherBranches,
   kitAvailabilityService,
+  stockProbe,
   desktopExpanded,
   alerts,
   canCreatePurchaseOrder,
@@ -1483,6 +1559,7 @@ function ContextPanel({
   canAdjustStock: boolean;
   canViewOtherBranches: boolean;
   kitAvailabilityService: GetInventoryKitAvailabilityService | null;
+  stockProbe: StockProbe | null;
   desktopExpanded: boolean;
   alerts: InventoryAlert[];
   canCreatePurchaseOrder: boolean;
@@ -1499,8 +1576,8 @@ function ContextPanel({
   onOtherBranches: () => void;
   onSelectProduct: (productId: string) => void;
   onSelectTransferRequest: (request: InventoryTransferRequestRow) => void;
-  onViewHistory: () => void;
-  onViewProductTransfers: () => void;
+  onViewHistory?: () => void;
+  onViewProductTransfers?: () => void;
 }) {
   const productAlerts = row ? alerts.filter((alert) => alert.productId === row.productId) : [];
   const totalAlerts = alertTotalItems + transferRequests.length;
@@ -1558,6 +1635,7 @@ function ContextPanel({
             canCreatePurchaseOrder={canCreatePurchaseOrder}
             canViewOtherBranches={canViewOtherBranches}
             kitAvailabilityService={kitAvailabilityService}
+            stockProbe={stockProbe}
             onAdjust={onAdjust}
             onCreateOrder={onCreateOrder}
             onClose={onCloseProduct}
@@ -1717,6 +1795,7 @@ function ProductPanel({
   canCreatePurchaseOrder,
   canViewOtherBranches,
   kitAvailabilityService,
+  stockProbe,
   row,
   onAdjust,
   onCreateOrder,
@@ -1731,13 +1810,14 @@ function ProductPanel({
   canCreatePurchaseOrder: boolean;
   canViewOtherBranches: boolean;
   kitAvailabilityService: GetInventoryKitAvailabilityService | null;
+  stockProbe: StockProbe | null;
   row: InventoryProductRow;
   onAdjust: () => void;
   onCreateOrder: () => void;
   onClose: () => void;
   onOtherBranches: () => void;
-  onViewHistory: () => void;
-  onViewProductTransfers: () => void;
+  onViewHistory?: () => void;
+  onViewProductTransfers?: () => void;
 }) {
   if (row.inventoryMode === "NONE") {
     return (
@@ -1810,6 +1890,7 @@ function ProductPanel({
       onViewHistory={onViewHistory}
       onViewProductTransfers={onViewProductTransfers}
       row={row}
+      stockProbe={stockProbe}
     />
   );
 }
@@ -1914,6 +1995,7 @@ function PhysicalProductPanel({
   canCreatePurchaseOrder,
   canViewOtherBranches,
   row,
+  stockProbe,
   onAdjust,
   onClose,
   onCreateOrder,
@@ -1927,17 +2009,53 @@ function PhysicalProductPanel({
   canCreatePurchaseOrder: boolean;
   canViewOtherBranches: boolean;
   row: InventoryProductRow;
+  stockProbe: StockProbe | null;
   onAdjust: () => void;
   onClose: () => void;
   onCreateOrder: () => void;
   onOtherBranches: () => void;
-  onViewHistory: () => void;
-  onViewProductTransfers: () => void;
+  onViewHistory?: () => void;
+  onViewProductTransfers?: () => void;
 }) {
   const baseId = useId();
   const [openSection, setOpenSection] = useState<ProductPanelSection>("information");
   const toggle = (section: Exclude<ProductPanelSection, null>) =>
     setOpenSection((current) => (current === section ? null : section));
+  // Desglose fisico/operativo/heredado bajo demanda (una lectura por producto abierto, solo API).
+  const probeKey = `${row.branchId}|${row.productId}`;
+  const [breakdown, setBreakdown] = useState<{
+    key: string;
+    value: InventoryStockBreakdown;
+  } | null>(null);
+  useEffect(() => {
+    if (!stockProbe) return;
+    let active = true;
+    stockProbe.lookup
+      .getStockBreakdown({
+        branchId: row.branchId,
+        productId: row.productId,
+        usesLocations: stockProbe.supportsMultipleLocations,
+        knownLocations: stockProbe.locations,
+      })
+      .then((value) => {
+        if (active) setBreakdown({ key: probeKey, value });
+      })
+      .catch(() => {
+        // Informativo: si falla el panel conserva las cantidades como "No disponible".
+      });
+    return () => {
+      active = false;
+    };
+  }, [probeKey, row.branchId, row.productId, stockProbe]);
+  const shownRow: InventoryProductRow =
+    breakdown?.key === probeKey
+      ? {
+          ...row,
+          physicalQuantity: breakdown.value.physicalQuantity,
+          unlocatedQuantity: breakdown.value.legacyQuantity,
+          requiresRegularization: breakdown.value.requiresRegularization,
+        }
+      : row;
 
   return (
     <section>
@@ -1978,11 +2096,11 @@ function PhysicalProductPanel({
           </h4>
           <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2.5">
             <CompactTile
-              label="Existencia para venta"
+              label="Existencia operativa"
               value={`${formatStockQuantity(row.sellableQuantity)} ${row.saleUnitName}`}
             />
             <CompactTile
-              label="Reservado"
+              label="Reservado (operativo)"
               value={`${formatStockQuantity(row.sellableReservedQuantity)} ${row.saleUnitName}`}
             />
             <CompactTile
@@ -1990,6 +2108,14 @@ function PhysicalProductPanel({
               value={`${formatStockQuantity(row.sellableAvailableQuantity)} ${row.saleUnitName}`}
             />
             <CompactTile label="Nivel minimo" value={String(row.minStock)} />
+            <CompactTile
+              label="Existencia fisica total"
+              value={formatOptionalStock(shownRow.physicalQuantity, row.unitName)}
+            />
+            <CompactTile
+              label="Saldo heredado (sin ubicacion)"
+              value={formatOptionalStock(shownRow.unlocatedQuantity, row.unitName)}
+            />
             {row.inventoryUnitId !== row.unitId ? (
               <>
                 <CompactTile
@@ -2021,6 +2147,7 @@ function PhysicalProductPanel({
               </>
             ) : null}
           </dl>
+          <OperationalStockNotice canRegularize={canAdjustStock} row={shownRow} />
           <h4 className="mt-3 border-t border-[var(--color-border)] pt-3 text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
             Información del producto
           </h4>
@@ -2087,22 +2214,26 @@ function PhysicalProductPanel({
                   <span className="min-w-0">Ver existencias en otras sucursales</span>
                 </button>
               ) : null}
-              <button
-                className={PANEL_SECONDARY_ACTION_CLASS}
-                onClick={onViewHistory}
-                type="button"
-              >
-                <HistoryIcon />
-                <span className="min-w-0">Ver historial de movimientos</span>
-              </button>
-              <button
-                className={PANEL_SECONDARY_ACTION_CLASS}
-                onClick={onViewProductTransfers}
-                type="button"
-              >
-                <TransferIcon />
-                <span className="min-w-0">Ver solicitudes y traslados</span>
-              </button>
+              {onViewHistory ? (
+                <button
+                  className={PANEL_SECONDARY_ACTION_CLASS}
+                  onClick={onViewHistory}
+                  type="button"
+                >
+                  <HistoryIcon />
+                  <span className="min-w-0">Ver historial de movimientos</span>
+                </button>
+              ) : null}
+              {onViewProductTransfers ? (
+                <button
+                  className={PANEL_SECONDARY_ACTION_CLASS}
+                  onClick={onViewProductTransfers}
+                  type="button"
+                >
+                  <TransferIcon />
+                  <span className="min-w-0">Ver solicitudes y traslados</span>
+                </button>
+              ) : null}
               {canCreatePurchaseOrder ? (
                 <button
                   className={PANEL_SECONDARY_ACTION_CLASS}
@@ -2529,8 +2660,8 @@ function AdjustStockModal({
         ? { quantity: row.quantity, availableQuantity: row.availableQuantity }
         : !supportsMultipleLocations || !value.locationId
           ? {
-              quantity: row.unlocatedQuantity,
-              availableQuantity: row.unlocatedAvailableQuantity,
+              quantity: row.unlocatedQuantity ?? 0,
+              availableQuantity: row.unlocatedAvailableQuantity ?? 0,
             }
           : {
               quantity: row.locationQuantities[value.locationId] ?? 0,
@@ -2773,8 +2904,8 @@ function AdjustStockModal({
         ? { quantity: row.quantity, availableQuantity: row.availableQuantity }
         : !supportsMultipleLocations || !nextValue.locationId
           ? {
-              quantity: row.unlocatedQuantity,
-              availableQuantity: row.unlocatedAvailableQuantity,
+              quantity: row.unlocatedQuantity ?? 0,
+              availableQuantity: row.unlocatedAvailableQuantity ?? 0,
             }
           : {
               quantity: row.locationQuantities[nextValue.locationId] ?? 0,
@@ -3068,6 +3199,7 @@ function AdjustStockModal({
               <CharacterCount current={value.notes.length} maximum={TEXT_LIMITS.notes} />
             </Field>
             <AdjustmentSummary
+              currentQuantity={operationalStock.quantity}
               delta={delta}
               finalQuantity={finalQuantity}
               row={row}
@@ -3082,11 +3214,14 @@ function AdjustStockModal({
 }
 
 function AdjustmentSummary({
+  currentQuantity,
   delta,
   finalQuantity,
   row,
   value,
 }: {
+  /** Saldo del balance que realmente se modifica (no el total fisico de la sucursal). */
+  currentQuantity: number;
   delta: number;
   finalQuantity: number;
   row: InventoryProductRow;
@@ -3097,7 +3232,7 @@ function AdjustmentSummary({
       <div>
         <dt className="font-semibold text-[var(--color-text-muted)]">Stock actual</dt>
         <dd className="font-bold text-[var(--color-title)]">
-          {row.quantity} {row.unitName}
+          {currentQuantity} {row.unitName}
         </dd>
       </div>
       <div>

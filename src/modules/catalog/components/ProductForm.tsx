@@ -3,7 +3,6 @@
 import { useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Product, Promotion } from "@/core/entities";
 import {
-  LocationStatus,
   ProductStatus,
   ProductType,
   PromotionStatus,
@@ -20,6 +19,14 @@ import { cn } from "@/shared/utils/cn";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
 import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import {
+  OperationalLocationField,
+  validateOperationalLocation,
+} from "@/modules/catalog/components/OperationalLocationField";
+import {
+  useProductLocationLock,
+  type ProductLocationLock,
+} from "@/modules/catalog/hooks/useProductLocationLock";
 import { processImageUpload } from "@/shared/application/services/processImageUpload";
 import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
 import {
@@ -189,6 +196,21 @@ export function ProductForm({
       value.productType === ProductType.physical &&
       value.tracking.stock &&
       editorData.access.canReadLocations,
+  });
+  // Lo cargado del backend: sirve para saber si el producto es heredado (sin asignacion) y para no
+  // enviar un PUT de settings cuando el usuario no cambio nada.
+  const [baselineSettings, setBaselineSettings] =
+    useState<ProductEditorDto["inventorySettings"]>(undefined);
+  const locationLock = useProductLocationLock({
+    enabled:
+      isEdit &&
+      detail?.product.productType === ProductType.physical &&
+      Boolean(detail.product.tracking.stock),
+    tenantId: editorTenantId,
+    productId: editorProductId,
+    branchId,
+    tracking: detail?.product.tracking,
+    canReadStock: editorData.access.canReadInventorySettings,
   });
   const deferredEditorData = useMemo<ProductEditorData>(
     () => ({
@@ -396,17 +418,18 @@ export function ProductForm({
     void productInventorySettings
       .load(editorTenantId, editorProductId, branchId)
       .then((inventorySettings) => {
+        // Tipado explicito: "" es un NumericInputValue valido (sin punto de reorden) y evita que el
+        // literal se ensanche a string.
+        const loaded: NonNullable<ProductEditorDto["inventorySettings"]> = {
+          branchId,
+          minStock: inventorySettings?.minStock ?? 0,
+          reorderPoint: inventorySettings?.reorderPoint ?? "",
+          defaultLocationId: inventorySettings?.defaultLocationId ?? "",
+        };
+        setBaselineSettings((current) => current ?? loaded);
         setValue((current) =>
           current.productType === ProductType.physical && current.inventorySettings === undefined
-            ? {
-                ...current,
-                inventorySettings: {
-                  branchId,
-                  minStock: inventorySettings?.minStock ?? 0,
-                  reorderPoint: inventorySettings?.reorderPoint ?? "",
-                  defaultLocationId: inventorySettings?.defaultLocationId ?? "",
-                },
-              }
+            ? { ...current, inventorySettings: loaded }
             : current,
         );
       })
@@ -436,6 +459,18 @@ export function ProductForm({
     if (tab !== "suppliers") return;
     value.supplierProducts.forEach((item) => {
       if (item.id && item.costTiers === undefined) loadSupplierCostTiers(item.id);
+    });
+  }
+
+  // Politica del formulario: un producto fisico NUEVO que controla stock exige una ubicacion
+  // operativa activa de la sucursal (nunca se elige una por defecto).
+  function requiredLocationError(candidate: ProductEditorDto) {
+    return validateOperationalLocation({
+      isEdit,
+      productType: candidate.productType,
+      tracksStock: candidate.tracking.stock,
+      selectedLocationId: candidate.inventorySettings?.defaultLocationId ?? "",
+      activeLocationIds: deferredEditorData.storageLocations.map((location) => location.id),
     });
   }
 
@@ -518,6 +553,11 @@ export function ProductForm({
         if (validation[field]) nextErrors[field] = validation[field];
         else delete nextErrors[field];
       }
+      if (affectedFields.includes("defaultLocationId")) {
+        const locationError = requiredLocationError(validatedValue);
+        if (locationError) nextErrors.defaultLocationId = locationError;
+        else delete nextErrors.defaultLocationId;
+      }
       return nextErrors;
     });
   }
@@ -534,6 +574,8 @@ export function ProductForm({
     );
     const pilotErrors = validateProductFormPilot(nextValue);
     const nextErrors = validateProductFormFields(nextValue);
+    const locationError = requiredLocationError(nextValue);
+    if (locationError) nextErrors.defaultLocationId = locationError;
     const nextEditorError =
       pilotErrors.tracking ?? validateEditor(nextValue, deferredEditorData, options.units);
     setErrors(nextErrors);
@@ -544,7 +586,17 @@ export function ProductForm({
     }
     submittingRef.current = true;
     try {
-      await onSubmit(nextValue);
+      // Sin cambios en la configuracion de inventario no se reenvia el PUT de settings: una edicion
+      // comercial independiente no debe fallar por la ubicacion de un producto heredado.
+      const settings = nextValue.inventorySettings;
+      const settingsUnchanged =
+        isEdit &&
+        settings !== undefined &&
+        baselineSettings !== undefined &&
+        String(settings.minStock) === String(baselineSettings.minStock) &&
+        String(settings.reorderPoint ?? "") === String(baselineSettings.reorderPoint ?? "") &&
+        settings.defaultLocationId === baselineSettings.defaultLocationId;
+      await onSubmit(settingsUnchanged ? { ...nextValue, inventorySettings: undefined } : nextValue);
     } finally {
       submittingRef.current = false;
     }
@@ -695,7 +747,10 @@ export function ProductForm({
                 error={editorError}
                 errors={errors}
                 kitEligibleProductsState={kitEligibleProductsState}
+                baselineLocationId={baselineSettings?.defaultLocationId ?? null}
+                isEdit={isEdit}
                 loadState={inventorySettingsLoadState}
+                locationLock={locationLock}
                 locationsState={locationsState}
                 onLoad={loadInventorySettings}
                 onChange={updateValue}
@@ -1256,22 +1311,29 @@ function UnitsTab({
 
 function TrackingTab({
   value,
+  baselineLocationId,
   capabilities,
   editorData,
   error,
   errors,
+  isEdit,
   kitEligibleProductsState,
   loadState,
+  locationLock,
   locationsState,
   units,
   onLoad,
   onChange,
 }: {
   value: ProductEditorDto;
+  /** Ubicacion cargada del backend; null/"" = producto heredado sin asignacion (o aun sin cargar). */
+  baselineLocationId: string | null;
   capabilities: ProductFormOptions["businessCapabilities"];
   editorData: ProductEditorData;
   error: string | null;
   errors: ProductFormErrors;
+  isEdit: boolean;
+  locationLock: ProductLocationLock;
   kitEligibleProductsState: DeferredLoadState<Product[]> & { retry: () => Promise<void> };
   loadState: ProductInventorySettingsLoadState;
   locationsState: DeferredLoadState<{
@@ -1293,12 +1355,6 @@ function TrackingTab({
         (location) => location.id === inventorySettings.defaultLocationId,
       ) ?? null)
     : null;
-  const assignedUnavailableDefaultLocation =
-    currentDefaultLocation &&
-    currentDefaultLocation.id === inventorySettings?.defaultLocationId &&
-    !editorData.storageLocations.some((location) => location.id === currentDefaultLocation.id);
-  const unavailableDefaultLocationStatus =
-    currentDefaultLocation?.status === LocationStatus.inactive ? "inactiva" : "archivada";
   const options = [
     {
       key: "stock",
@@ -1533,53 +1589,25 @@ function TrackingTab({
                 reabastecimiento.
               </p>
             </FormField>
-            <FormField
-              id="default-location-id"
-              label="Ubicación predeterminada"
+            <OperationalLocationField
+              baselineLocationId={baselineLocationId}
+              currentLocation={currentDefaultLocation}
+              disabled={
+                inventorySettingsReadOnly ||
+                !editorData.access.canReadLocations ||
+                locationsState.status !== "loaded"
+              }
+              editorError={error}
               error={errors.defaultLocationId}
-            >
-              <Select
-                disabled={
-                  inventorySettingsReadOnly ||
-                  !editorData.access.canReadLocations ||
-                  locationsState.status !== "loaded"
-                }
-                id="default-location-id"
-                onChange={(event) =>
-                  onChange({
-                    inventorySettings: {
-                      ...inventorySettings,
-                      defaultLocationId: event.target.value,
-                    },
-                  })
-                }
-                value={inventorySettings.defaultLocationId}
-              >
-                <option value="">Sin ubicación predeterminada</option>
-                {assignedUnavailableDefaultLocation ? (
-                  <option disabled value={currentDefaultLocation.id}>
-                    {currentDefaultLocation.name} ({unavailableDefaultLocationStatus})
-                  </option>
-                ) : null}
-                {editorData.storageLocations.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.name}
-                  </option>
-                ))}
-              </Select>
-              {error?.includes("ubicacion") ? (
-                <p className="mt-2 text-sm font-semibold text-[var(--color-danger)]">{error}</p>
-              ) : assignedUnavailableDefaultLocation ? (
-                <p className="mt-2 text-xs font-semibold text-[var(--color-danger)]">
-                  La ubicacion asignada actualmente esta {unavailableDefaultLocationStatus}. Elige
-                  una activa o deja el campo sin ubicacion.
-                </p>
-              ) : (
-                <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                  Solo se muestran ubicaciones activas de la sucursal actual.
-                </p>
-              )}
-            </FormField>
+              isEdit={isEdit}
+              locationsLoaded={locationsState.status === "loaded"}
+              lock={locationLock}
+              locations={editorData.storageLocations}
+              onChange={(defaultLocationId) =>
+                onChange({ inventorySettings: { ...inventorySettings, defaultLocationId } })
+              }
+              value={inventorySettings.defaultLocationId}
+            />
             {renderOption(options[0], true)}
           </div>
         </>
@@ -3265,7 +3293,7 @@ function validateEditor(
       (location) => location.id === value.inventorySettings?.defaultLocationId,
     )
   ) {
-    return "Selecciona una ubicacion predeterminada activa o deja el campo sin ubicacion.";
+    return "Selecciona una ubicacion operativa activa para este producto.";
   }
   return null;
 }

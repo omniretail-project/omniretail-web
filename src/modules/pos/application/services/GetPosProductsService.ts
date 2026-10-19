@@ -6,6 +6,7 @@ import { fromBaseQuantity, resolveUnitConversion } from "@/core/units";
 import type { InventoryStockListItem } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { PosProductDto } from "@/modules/pos/application/dto/PosProductDto";
+import { createAssignedLocationResolver } from "@/shared/application/services/assignedLocationResolver";
 
 export interface GetPosProductsInput {
   tenantId: string;
@@ -24,6 +25,10 @@ export class GetPosProductsService {
     }
     const at = new Date().toISOString();
     const locations = await this.repositories.inventory.getLocations(input.branchId);
+    const resolveAssignedLocation = createAssignedLocationResolver(
+      this.repositories.inventory,
+      input.branchId,
+    );
 
     const units = await this.repositories.units.getByTenant(input.tenantId);
     const items = await Promise.all(
@@ -68,6 +73,7 @@ export class GetPosProductsService {
                 lots,
                 serials,
                 locations,
+                assignedLocationId: await resolveAssignedLocation(product.id),
                 at,
               })
             : null;
@@ -87,6 +93,9 @@ export class GetPosProductsService {
                         productId: component.componentProductId,
                         balances: componentBalances,
                         locations,
+                        assignedLocationId: await resolveAssignedLocation(
+                          component.componentProductId,
+                        ),
                       });
                       return Math.floor(available / component.quantityPerKit);
                     }),

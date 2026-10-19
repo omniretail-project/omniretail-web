@@ -99,7 +99,7 @@ export function reserveOrderItemInDatabase(
             ? getSerialAwareBalances(db, input)
             : db.inventoryBalances,
     locations: db.storageLocations,
-    preferredLocationId: settings?.defaultLocationId,
+    assignedLocationId: settings?.defaultLocationId ?? null,
   });
   const now = dependencies.now();
   const allocations: InventoryReservationAllocation[] = plannedAllocations.map((allocation) => ({

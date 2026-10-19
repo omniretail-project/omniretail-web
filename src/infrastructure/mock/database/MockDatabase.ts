@@ -80,6 +80,17 @@ import type {
   UnitConversion,
   User,
 } from "@/core/entities";
+import type { LocationRegularizationResult } from "@/core/repositories";
+
+export interface InventoryLocationRegularizationRecord {
+  id: string;
+  tenantId: string;
+  idempotencyKey: string;
+  /** Huella de la solicitud: una misma clave con otros datos es KEY_REUSED. */
+  requestFingerprint: string;
+  result: LocationRegularizationResult;
+  createdAt: string;
+}
 
 export interface MockDatabase {
   tenants: Tenant[];
@@ -118,6 +129,8 @@ export interface MockDatabase {
   inventoryMovements: InventoryMovement[];
   inventoryReservations: InventoryReservation[];
   inventoryReservationConsumeOperations: InventoryReservationConsumeOperation[];
+  /** Regularizaciones explicitas de saldo heredado (idempotencia por clave dentro del tenant). */
+  inventoryLocationRegularizations: InventoryLocationRegularizationRecord[];
   inventoryAdjustments: InventoryAdjustment[];
   inventoryTransfers: InventoryTransfer[];
   inventoryTransferItems: InventoryTransferItem[];

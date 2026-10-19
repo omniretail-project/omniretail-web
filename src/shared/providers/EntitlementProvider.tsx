@@ -52,7 +52,7 @@ export function shouldRevalidateEntitlementsOnIdentityChanged(
  * Entitlement (¿qué puede comprar/usar tu negocio?) son capas completamente distintas, y una
  * Subscription suspendida no es motivo para cerrar la sesión de nadie.
  *
- * Expone enforcement READ; la mutación de Plan vive en ChangeTenantPlanService (administration) y
+ * Expone enforcement READ; el plan y los add-ons los gestiona MARJYM (solo lectura en la UI) y
  * llega acá SOLO como `tenant-subscription.changed`, que dispara un reload. Cancel/renew/billing
  * siguen fuera de scope.
  */

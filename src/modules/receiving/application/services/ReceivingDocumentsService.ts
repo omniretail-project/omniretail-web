@@ -47,7 +47,7 @@ export class ReceivingDocumentsService {
     await ensureUserCanOperateBranch(this.repositories, user, activeBranchId);
 
     if (this.repositories.receivingDataSource === "api") {
-      return this.getApiDocuments(tenantId, activeBranchId);
+      return this.getApiDocuments(tenantId, activeBranchId, permissions);
     }
 
     const [purchaseOrders, suppliers, branches, transfers, receipts, incidentTypes, users] =
@@ -251,6 +251,7 @@ export class ReceivingDocumentsService {
   private async getApiDocuments(
     tenantId: string,
     activeBranchId: string,
+    permissions: readonly string[],
   ): Promise<ReceivingReadModel> {
     const entries = Object.entries(PURCHASE_ORDER_STREAMS) as Array<
       [ReceivingPurchaseOrderStream, PurchaseOrderStatus]
@@ -270,7 +271,8 @@ export class ReceivingDocumentsService {
             ] as const,
         ),
       ),
-      this.repositories.inventoryTransfersDataSource === "api"
+      this.repositories.inventoryTransfersDataSource === "api" &&
+      canReadIncomingTransfers(permissions)
         ? Promise.all(
             [InventoryTransferStatus.inTransit, InventoryTransferStatus.received].map((status) =>
               this.repositories.inventoryTransfers.query({
@@ -705,4 +707,15 @@ function normalize(value: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+}
+
+/**
+ * El backend lista traslados con inventory.transfers.manage o receiving.receipts.confirm. Sin ninguno
+ * (lectura de recepciones solamente) se omiten para no tumbar el listado de órdenes de compra con un 403.
+ */
+function canReadIncomingTransfers(permissions: readonly string[]): boolean {
+  return (
+    permissions.includes("inventory.transfers.manage") ||
+    permissions.includes("receiving.receipts.confirm")
+  );
 }

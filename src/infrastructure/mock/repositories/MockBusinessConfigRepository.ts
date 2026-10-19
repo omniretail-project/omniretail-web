@@ -1,3 +1,4 @@
+import { normalizeInventoryLocationCapabilities } from "@/core/inventory/operationalCapabilities";
 import type { BusinessConfigRepository } from "@/core/repositories";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 
@@ -12,9 +13,10 @@ export class MockBusinessConfigRepository
     );
   }
   async createCapabilities(input: Parameters<BusinessConfigRepository["createCapabilities"]>[0]) {
+    const normalized = normalizeInventoryLocationCapabilities(input);
     const created = this.store.mutate((db) => {
-      db.businessCapabilities.push(input);
-      return input;
+      db.businessCapabilities.push(normalized);
+      return normalized;
     });
     this.emit("business-config.changed", { tenantId: input.tenantId, action: "created" });
     return created;
@@ -26,7 +28,10 @@ export class MockBusinessConfigRepository
     const updated = this.store.mutate((db) => {
       const index = db.businessCapabilities.findIndex((item) => item.tenantId === tenantId);
       if (index < 0) throw this.missing("BusinessCapabilitiesConfig", tenantId);
-      db.businessCapabilities[index] = { ...db.businessCapabilities[index], ...input };
+      db.businessCapabilities[index] = normalizeInventoryLocationCapabilities({
+        ...db.businessCapabilities[index],
+        ...input,
+      });
       return db.businessCapabilities[index];
     });
     this.emit("business-config.changed", { tenantId, action: "updated" });

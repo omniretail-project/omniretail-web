@@ -3,7 +3,9 @@
 .github
 .ai
 .atl
+.kilo
 .next
+.next-demo
 node_modules
 coverage
 docs
