@@ -64,15 +64,6 @@ const COMMON_OR_COMPROMISED_PASSWORDS = new Set([
   "letmein123!",
 ]);
 
-/**
- * BCrypt solo usa los primeros 72 bytes: lo que sigue se ignora en silencio. El backend rechaza una
- * contraseña de mas de 72 bytes en UTF-8 con este mismo mensaje. Las tildes y la ñ ocupan 2 bytes y
- * los emojis 4, asi que una contraseña de 64 caracteres o menos tambien puede pasarse.
- */
-export const PASSWORD_MAX_UTF8_BYTES = 72;
-export const PASSWORD_TOO_MANY_BYTES_MESSAGE =
-  "La contraseña es demasiado larga. Las tildes, la ñ y los emojis ocupan más espacio: usa una más corta o con menos caracteres especiales.";
-
 const HAS_UPPERCASE = /\p{Lu}/u;
 const HAS_LOWERCASE = /\p{Ll}/u;
 const HAS_NUMBER = /\p{N}/u;
@@ -108,9 +99,6 @@ export function validatePasswordAgainstPolicy(
 
   if (password.length < policy.MIN_LENGTH || password.length > policy.MAX_LENGTH) {
     return getPasswordRequirementsMessage(policy);
-  }
-  if (new TextEncoder().encode(password).length > PASSWORD_MAX_UTF8_BYTES) {
-    return PASSWORD_TOO_MANY_BYTES_MESSAGE;
   }
   if (!policy.ALLOW_SPACES && /\s/.test(password)) {
     return "La contraseña no puede contener espacios.";
