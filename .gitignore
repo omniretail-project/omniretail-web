@@ -18,6 +18,8 @@
 
 # next.js
 /.next/
+# Builds con distDir alternativo: Tailwind v4 escanea lo que no esté ignorado y rompe con su caché binaria.
+/.next-demo/
 /out/
 
 # production
