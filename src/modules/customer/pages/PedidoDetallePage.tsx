@@ -2,7 +2,6 @@
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { toReceiptInput } from "@/modules/customer/application/services/orderReceiptAdapter";
 import { useCustomerOrderDetail } from "@/modules/customer/hooks/useCustomerOrderDetail";
 import { downloadStorefrontReceiptPdf } from "@/modules/storefront/application/services/StorefrontReceiptPdfService";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
@@ -26,7 +25,7 @@ function SectionIcon({ children }: { children: ReactNode }) {
 export function PedidoDetallePage({ orderId }: { orderId: string }) {
   const routes = useStorefrontRoutes();
   const { order, loading, error } = useCustomerOrderDetail(orderId);
-  const { config } = usePublicTenant();
+  const { tenantSlug } = usePublicTenant();
   const { showToast } = useToast();
   const [downloading, setDownloading] = useState(false);
 
@@ -54,8 +53,8 @@ export function PedidoDetallePage({ orderId }: { orderId: string }) {
     setDownloading(true);
     try {
       await downloadStorefrontReceiptPdf({
-        storeName: config?.storeName ?? "Tienda",
-        result: toReceiptInput(order),
+        tenantSlug,
+        trackingToken: order.trackingToken,
       });
     } catch {
       showToast({

@@ -202,6 +202,13 @@ export default defineConfig({
         "src/proxy.ts",
         "src/app/not-found.tsx",
         "src/infrastructure/api/sessionHeartbeat.ts",
+        // Descarga unificada del comprobante del storefront (PR de carrito y correo).
+        "src/app/api/public/[slug]/receipt/[token]/route.ts",
+        "src/modules/storefront/application/services/StorefrontReceiptPdfService.ts",
+        "src/modules/storefront/components/StorefrontHeader.tsx",
+        "src/modules/storefront/providers/StorefrontCartProvider.tsx",
+        "src/modules/storefront/pages/OrderConfirmationPage.tsx",
+        "src/modules/customer/pages/PedidoDetallePage.tsx",
         // Lote 1 PR #191: archivos con pruebas existentes que no estaban instrumentados.
         "src/modules/catalog/components/OperationalLocationField.tsx",
         "src/modules/information-request/pages/InformationRequestPage.tsx",
