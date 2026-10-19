@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { UserType } from "@/core/enums";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
@@ -12,13 +12,20 @@ import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProv
 import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 
 export function StorefrontHeader() {
-  const { itemCount } = useStorefrontCart();
+  const { itemCount, lastAddedAt } = useStorefrontCart();
   const { products } = useStorefrontDiscovery();
   const { user, loading } = useCurrentSession();
   const { config } = usePublicTenant();
   const routes = useStorefrontRoutes();
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [cartJustUpdated, setCartJustUpdated] = useState(false);
+  useEffect(() => {
+    if (!lastAddedAt) return;
+    setCartJustUpdated(true);
+    const timeout = window.setTimeout(() => setCartJustUpdated(false), 900);
+    return () => window.clearTimeout(timeout);
+  }, [lastAddedAt]);
   const normalizedSearch = search.trim().toLocaleLowerCase();
   const suggestions = useMemo(() => {
     if (!normalizedSearch) return [];
@@ -73,7 +80,10 @@ export function StorefrontHeader() {
             href={routes.cart()}
           >
             Carrito{" "}
-            <span className="ml-1 rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-xs text-[var(--color-topbar)]">
+            <span
+              aria-live="polite"
+              className={`ml-1 inline-block rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-xs text-[var(--color-topbar)] transition ${cartJustUpdated ? "scale-125 animate-pulse ring-4 ring-[var(--color-primary)]/35" : "scale-100"}`}
+            >
               {itemCount}
             </span>
           </Link>
