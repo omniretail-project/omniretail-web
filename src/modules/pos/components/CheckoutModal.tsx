@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { PHONE_POLICY } from "@/config/contact-policy";
 import type { BankAccountType } from "@/core/entities";
 import type {
   CardTerminalOutcome,
@@ -9,6 +10,7 @@ import type {
   CheckoutPaymentMode,
 } from "@/modules/pos/application/dto/CheckoutDto";
 import type { CheckoutValidationErrors } from "@/modules/pos/validation/checkout.validation";
+import type { SaleTicketItemDto } from "@/modules/pos/application/dto/SaleTicketDto";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
@@ -24,6 +26,10 @@ const accountTypeLabels: Record<BankAccountType, string> = {
   monetary: "Monetaria",
   savings: "Ahorro",
 };
+
+function sanitizePhoneInput(phone: string): string {
+  return phone.replace(/\D/g, "").slice(0, PHONE_POLICY.DIGITS);
+}
 
 interface CheckoutModalProps {
   open: boolean;
@@ -48,6 +54,7 @@ interface CheckoutModalProps {
   hasPosSalesPermission: boolean;
   hasCurrentBranchAccess: boolean;
   hasUnsupportedTraceability: boolean;
+  ticketItems?: SaleTicketItemDto[];
   /** El ticket incluye kits: solo admiten entrega inmediata. */
   hasKitItems?: boolean;
   validated: boolean;
@@ -67,6 +74,7 @@ interface CheckoutModalProps {
   onStorePickupContactChange: (patch: Partial<NonNullable<CheckoutDto["storePickupContact"]>>) => void;
   onValidate: () => void;
   onConfirm: () => void;
+  onSelectTraceability?: (productId: string) => void;
 }
 
 export function CheckoutModal({
@@ -92,6 +100,7 @@ export function CheckoutModal({
   hasPosSalesPermission,
   hasCurrentBranchAccess,
   hasUnsupportedTraceability,
+  ticketItems = [],
   hasKitItems = false,
   validated,
   readyToConfirm,
@@ -110,6 +119,7 @@ export function CheckoutModal({
   onStorePickupContactChange,
   onValidate,
   onConfirm,
+  onSelectTraceability,
 }: CheckoutModalProps) {
   const kitDeferredBlocked = isKitDeferredSale(checkout.deliveryMethod, hasKitItems);
   const showCash =
@@ -121,6 +131,9 @@ export function CheckoutModal({
   const showTransfer =
     availablePaymentModes.includes("transfer") &&
     (checkout.paymentMode === "transfer" || checkout.paymentMode === "mixed");
+  const traceableItems = ticketItems.filter(
+    (item) => item.requiresTraceabilitySelection && !item.requiresUnsupportedTraceability,
+  );
 
   return (
     <Modal
@@ -256,7 +269,11 @@ export function CheckoutModal({
 
           <section className="space-y-3 rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm sm:p-4">
             <h3 className="font-bold text-[var(--color-title)]">Entrega</h3>
-          <FormField id="checkout-delivery-method" label="Modalidad">
+          <FormField
+            id="checkout-delivery-method"
+            label="Modalidad"
+            error={errors.deliveryMethod}
+          >
             <Select
               id="checkout-delivery-method"
               onChange={(event) => {
@@ -273,6 +290,7 @@ export function CheckoutModal({
               }}
               value={checkout.deliveryMethod}
             >
+              <option value="">Seleccione una opción</option>
               <option value={DeliveryMethod.immediate}>Entrega inmediata</option>
               <option disabled={hasKitItems} value={DeliveryMethod.store_pickup}>
                 Retiro en tienda
@@ -304,8 +322,11 @@ export function CheckoutModal({
                 <Input
                   id="delivery-phone"
                   inputMode="numeric"
+                  maxLength={PHONE_POLICY.DIGITS}
                   onChange={(event) =>
-                    onDeliveryAddressChange({ recipientPhone: event.target.value })
+                    onDeliveryAddressChange({
+                      recipientPhone: sanitizePhoneInput(event.target.value),
+                    })
                   }
                   value={checkout.deliveryAddress?.recipientPhone ?? ""}
                 />
@@ -412,9 +433,11 @@ export function CheckoutModal({
                 <Input
                   id="pickup-phone"
                   inputMode="numeric"
-                  maxLength={8}
+                  maxLength={PHONE_POLICY.DIGITS}
                   onChange={(event) =>
-                    onStorePickupContactChange({ recipientPhone: event.target.value })
+                    onStorePickupContactChange({
+                      recipientPhone: sanitizePhoneInput(event.target.value),
+                    })
                   }
                   value={checkout.storePickupContact?.recipientPhone ?? ""}
                 />
@@ -423,6 +446,10 @@ export function CheckoutModal({
             ) : null}
           </section>
         </div>
+
+        {checkout.deliveryMethod === DeliveryMethod.immediate && traceableItems.length > 0 ? (
+          <TraceabilityCheckoutSection items={traceableItems} onSelect={onSelectTraceability} />
+        ) : null}
 
         <section className="space-y-3 rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm sm:p-4">
           <h3 className="font-bold text-[var(--color-title)]">Método de pago</h3>
@@ -622,7 +649,88 @@ export function CheckoutModal({
   );
 }
 
-function getDeliveryMethodMessage(deliveryMethod: DeliveryMethod) {
+function TraceabilityCheckoutSection({
+  items,
+  onSelect,
+}: {
+  items: SaleTicketItemDto[];
+  onSelect?: (productId: string) => void;
+}) {
+  return (
+    <section className="space-y-3 rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm sm:p-4">
+      <div>
+        <h3 className="font-bold text-[var(--color-title)]">Inventario físico</h3>
+        <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+          Completa la selección de las líneas trazables antes de confirmar la entrega inmediata.
+        </p>
+      </div>
+      <ul className="space-y-3">
+        {items.map((item) => {
+          const prepared = (item.trackingSelections?.length ?? 0) > 0;
+          return (
+            <li
+              className="rounded-lg border border-[var(--color-border)] bg-slate-50 p-3"
+              key={item.productId}
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="font-semibold text-[var(--color-title)]">{item.name}</p>
+                  <p className="text-sm text-[var(--color-text-muted)]">
+                    {item.sku} · {prepared ? "Selección completa" : "Selección pendiente"}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant={prepared ? "secondary" : "primary"}
+                  onClick={() => onSelect?.(item.productId)}
+                >
+                  {prepared ? "Corregir selección" : "Seleccionar inventario"}
+                </Button>
+              </div>
+              {prepared ? (
+                <ul className="mt-3 space-y-2 text-sm text-[var(--color-text-muted)]">
+                  {(item.trackingSelectionSummary ?? []).map((selection) => (
+                    <li
+                      className="rounded-md border border-[var(--color-border)] bg-white px-3 py-2"
+                      key={`${selection.locationId}:${selection.lotId ?? ""}`}
+                    >
+                      <span className="font-semibold text-[var(--color-text)]">
+                        {selection.locationCode} · {selection.locationName}
+                      </span>
+                      {selection.lotNumber ? ` · Lote ${selection.lotNumber}` : ""}
+                      {selection.expirationDate
+                        ? ` · vence ${formatCalendarDate(selection.expirationDate)}`
+                        : ""}
+                      {` · ${selection.quantity} unidades base`}
+                      {selection.serialNumbers.length > 0 ? (
+                        <p className="mt-1">Series guardadas: {selection.serialNumbers.join(", ")}</p>
+                      ) : null}
+                    </li>
+                  ))}
+                  {(item.trackingSelectionSummary?.length ?? 0) === 0 ? (
+                    <li>
+                      Selección física guardada para {item.baseQuantity ?? 0} unidades base.
+                    </li>
+                  ) : null}
+                </ul>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+function formatCalendarDate(value: string) {
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+function getDeliveryMethodMessage(deliveryMethod: CheckoutDto["deliveryMethod"]) {
+  if (!deliveryMethod) {
+    return "Selecciona cómo se entregará la venta.";
+  }
   if (deliveryMethod === DeliveryMethod.immediate) {
     return "No requiere preparación en bodega.";
   }

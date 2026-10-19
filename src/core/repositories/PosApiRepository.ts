@@ -226,6 +226,15 @@ export interface PosApiSaleDetail {
   payments: PosApiPayment[];
 }
 
+/** Seleccion fisica que el backend descuenta al confirmar una venta POS. */
+export interface PosApiTrackingSelection {
+  productId: string;
+  locationId: string;
+  lotId?: string | null;
+  quantity: number;
+  serialNumbers?: string[];
+}
+
 export interface PosApiConfirmSaleCommand {
   branchId: string;
   cashShiftId: string;
@@ -235,7 +244,7 @@ export interface PosApiConfirmSaleCommand {
     productId: string;
     quantity: number;
     discount: number;
-    trackingSelections: [];
+    trackingSelections: PosApiTrackingSelection[];
   }>;
   payments: Array<{
     method: Exclude<PaymentMethod, "mixed">;

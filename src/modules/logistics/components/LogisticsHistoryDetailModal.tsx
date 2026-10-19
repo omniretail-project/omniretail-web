@@ -1,7 +1,12 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { DeliveryMethod } from "@/core/enums";
+import type { StorePickupHandoverResult } from "@/core/repositories";
 import type { LogisticsHistoryDetailDto } from "@/modules/logistics/application/dto/LogisticsHistoryDto";
 import { LogisticsTracePanel } from "@/modules/logistics/components/LogisticsTracePanel";
+import { Button } from "@/shared/components/Button";
+import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Modal } from "@/shared/components/Modal";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -11,18 +16,79 @@ interface LogisticsHistoryDetailModalProps {
   detail: LogisticsHistoryDetailDto | null;
   loading: boolean;
   error: string | null;
+  handoverEligible: boolean;
+  handoverSubmitting: boolean;
+  handoverMutationInFlight: boolean;
+  handoverError: string | null;
+  handoverErrorUncertain: boolean;
   onClose: () => void;
+  onConfirmStorePickupHandover: (
+    orderId: string,
+  ) => Promise<StorePickupHandoverResult | null>;
 }
+
+type HandoverNotice =
+  | { tone: "success"; title: string; description: string }
+  | { tone: "warning"; title: string; description: string };
 
 export function LogisticsHistoryDetailModal({
   open,
   detail,
   loading,
   error,
+  handoverEligible,
+  handoverSubmitting,
+  handoverMutationInFlight,
+  handoverError,
+  handoverErrorUncertain,
   onClose,
+  onConfirmStorePickupHandover,
 }: LogisticsHistoryDetailModalProps) {
   const summary = detail?.summary;
   const homeDelivery = summary?.deliveryMethod === DeliveryMethod.home_delivery;
+  const [handoverConfirmationOpen, setHandoverConfirmationOpen] = useState(false);
+  const [handoverNotice, setHandoverNotice] = useState<HandoverNotice | null>(null);
+  const handoverInvocationRef = useRef(false);
+  const activeOrderIdRef = useRef<string | null>(open ? summary?.orderId ?? null : null);
+
+  useLayoutEffect(() => {
+    const orderId = open ? summary?.orderId ?? null : null;
+    activeOrderIdRef.current = orderId;
+    return () => {
+      if (activeOrderIdRef.current === orderId) activeOrderIdRef.current = null;
+    };
+  }, [open, summary?.orderId]);
+
+  const handoverBusy = handoverSubmitting || handoverMutationInFlight;
+
+  async function confirmHandover() {
+    const orderId = summary?.orderId;
+    if (!orderId || !handoverEligible || handoverBusy || handoverInvocationRef.current) return;
+    handoverInvocationRef.current = true;
+    setHandoverNotice(null);
+    try {
+      const result = await onConfirmStorePickupHandover(orderId);
+      if (activeOrderIdRef.current !== orderId || !result) return;
+      setHandoverConfirmationOpen(false);
+      setHandoverNotice(
+        result.idempotent
+          ? {
+              tone: "warning",
+              title: "Entrega ya confirmada",
+              description:
+                "El Backend informó que la entrega ya estaba registrada. El detalle se vuelve a consultar para mostrar su estado autoritativo.",
+            }
+          : {
+              tone: "success",
+              title: "Entrega confirmada",
+              description:
+                "El Backend confirmó la entrega física al cliente. El detalle se vuelve a consultar para mostrar su estado autoritativo.",
+            },
+      );
+    } finally {
+      handoverInvocationRef.current = false;
+    }
+  }
 
   return (
     <Modal
@@ -127,6 +193,45 @@ export function LogisticsHistoryDetailModal({
             </article>
           </section>
 
+          {handoverNotice ? (
+            <InlineAlert
+              description={handoverNotice.description}
+              title={handoverNotice.title}
+              tone={handoverNotice.tone}
+            />
+          ) : null}
+          {handoverError ? (
+            <InlineAlert
+              description={
+                handoverErrorUncertain
+                  ? `${handoverError} Verifica el estado actualizado del pedido antes de intentar nuevamente.`
+                  : handoverError
+              }
+              title={
+                handoverErrorUncertain
+                  ? "No se pudo verificar la entrega"
+                  : "No se pudo confirmar la entrega"
+              }
+            />
+          ) : null}
+          {handoverEligible ? (
+            <div className="flex justify-end border-t border-[var(--color-border)] pt-4">
+              <Button
+                aria-busy={handoverSubmitting}
+                disabled={handoverBusy}
+                onClick={() => {
+                  setHandoverNotice(null);
+                  setHandoverConfirmationOpen(true);
+                }}
+                type="button"
+              >
+                {handoverSubmitting
+                  ? "Confirmando entrega..."
+                  : "Confirmar entrega al cliente"}
+              </Button>
+            </div>
+          ) : null}
+
           <LogisticsTracePanel
             error={null}
             items={detail.items}
@@ -134,6 +239,21 @@ export function LogisticsHistoryDetailModal({
           />
         </div>
       ) : null}
+
+      <ConfirmDialog
+        cancelLabel="Volver"
+        confirmDisabled={!handoverEligible || handoverBusy}
+        confirmLabel={handoverSubmitting ? "Confirmando..." : "Confirmar entrega"}
+        message={handoverEligible
+          ? "¿Confirma que el pedido fue entregado al cliente?"
+          : "El pedido dejó de ser elegible para entrega. Cierra este diálogo y actualiza el detalle antes de intentar otra acción."}
+        onCancel={() => {
+          if (!handoverBusy) setHandoverConfirmationOpen(false);
+        }}
+        onConfirm={() => void confirmHandover()}
+        open={handoverConfirmationOpen}
+        title="Confirmar entrega al cliente"
+      />
     </Modal>
   );
 }

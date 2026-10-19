@@ -52,5 +52,6 @@ export type * from "./DispatchReadRepository";
 export type * from "./LogisticsHistoryReadRepository";
 export type * from "./DispatchCommandRepository";
 export type * from "./StorePickupDeliveryRepository";
+export type * from "./StorePickupHandoverCommandRepository";
 export type * from "./NotificationRepository";
 export type * from "./AuditLogRepository";

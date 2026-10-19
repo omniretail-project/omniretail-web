@@ -66,10 +66,17 @@ export function LogisticsHistoryPage() {
       </section>
 
       <LogisticsHistoryDetailModal
+        key={history.detail?.summary.orderId ?? "history-detail-closed"}
         detail={history.detail}
         error={history.detailError}
+        handoverEligible={history.storePickupHandoverEligible}
+        handoverError={history.storePickupHandoverError}
+        handoverErrorUncertain={history.storePickupHandoverErrorUncertain}
+        handoverMutationInFlight={history.storePickupHandoverMutationInFlight}
+        handoverSubmitting={history.storePickupHandoverSubmitting}
         loading={history.detailLoading}
         open={history.detailOpen}
+        onConfirmStorePickupHandover={history.confirmStorePickupHandover}
         onClose={history.closeDetail}
       />
       <LogisticsHistoryDispatchModal

@@ -10,8 +10,12 @@ import {
   SalesChannel,
   TransportMode,
 } from "@/core/enums";
+import type { PosApiTrackingSelection } from "@/core/repositories";
 import type { CheckoutDto } from "@/modules/pos/application/dto/CheckoutDto";
-import type { SaleTicketDto } from "@/modules/pos/application/dto/SaleTicketDto";
+import type {
+  SaleTicketDto,
+  SaleTicketItemDto,
+} from "@/modules/pos/application/dto/SaleTicketDto";
 import {
   mapApiReturnResult,
   mapApiVoidResult,
@@ -52,6 +56,10 @@ function ticket(overrides: Partial<SaleTicketDto> = {}): SaleTicketDto {
         saleUnitId: id(50),
         saleUnitName: "Unidad",
         tracksStock: true,
+        requiresTraceabilitySelection: false,
+        requiresLot: false,
+        requiresSerial: false,
+        requiresExpiration: false,
         requiresUnsupportedTraceability: false,
       },
     ],
@@ -61,6 +69,39 @@ function ticket(overrides: Partial<SaleTicketDto> = {}): SaleTicketDto {
     hasUnsupportedTraceability: false,
     ...overrides,
   };
+}
+
+function traceableTicket(
+  selectionOverrides: Partial<PosApiTrackingSelection> = {},
+  itemOverrides: Partial<SaleTicketItemDto> = {},
+): SaleTicketDto {
+  const productId = selectionOverrides.productId ?? ids.product;
+  return ticket({
+    items: [
+      {
+        ...ticket().items[0]!,
+        productId,
+        baseUnitId: id(50),
+        baseQuantity: 2,
+        saleUnitToBaseFactor: 1,
+        requiresTraceabilitySelection: true,
+        requiresLot: true,
+        requiresSerial: true,
+        requiresExpiration: true,
+        trackingSelections: [
+          {
+            productId,
+            locationId: ids.location,
+            lotId: ids.lot,
+            quantity: 2,
+            serialNumbers: ["SER-001", "SER-002"],
+            ...selectionOverrides,
+          },
+        ],
+        ...itemOverrides,
+      },
+    ],
+  });
 }
 
 function checkout(overrides: Partial<CheckoutDto> = {}): CheckoutDto {
@@ -129,6 +170,200 @@ describe("ConfirmSaleService en modo API", () => {
     });
   });
 
+  it("conserva las selecciones fisicas preparadas al construir el comando API", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    const trackingSelections = [
+      {
+        productId: ids.product,
+        locationId: ids.location,
+        lotId: ids.lot,
+        quantity: 2,
+        serialNumbers: ["SER-001", "SER-002"],
+      },
+    ];
+
+    await new ConfirmSaleService(repositories).execute(
+      confirmInput({
+        ticket: ticket({
+          items: [
+            {
+              ...ticket().items[0]!,
+              baseUnitId: id(50),
+              baseQuantity: 2,
+              saleUnitToBaseFactor: 1,
+              requiresTraceabilitySelection: true,
+              requiresLot: true,
+              requiresSerial: true,
+              requiresExpiration: true,
+              trackingSelections,
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(posApi.confirmSale.mock.calls[0]?.[0].items[0]?.trackingSelections).toEqual(
+      trackingSelections,
+    );
+  });
+
+  it("confirma un ticket mixto sin agregar trazabilidad a la línea ordinaria", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    const traceable = {
+      ...ticket().items[0]!,
+      productId: id(90),
+      name: "Producto trazable",
+      quantity: 1,
+      subtotal: 50,
+      baseUnitId: id(50),
+      baseQuantity: 2,
+      saleUnitToBaseFactor: 2,
+      requiresTraceabilitySelection: true,
+      requiresLot: true,
+      requiresSerial: false,
+      requiresExpiration: true,
+      trackingSelections: [
+        { productId: id(90), locationId: ids.location, lotId: ids.lot, quantity: 2 },
+      ],
+    };
+
+    await new ConfirmSaleService(repositories).execute(
+      confirmInput({
+        ticket: ticket({
+          items: [{ ...ticket().items[0]!, quantity: 1, subtotal: 50 }, traceable],
+          subtotal: 100,
+          total: 100,
+        }),
+      }),
+    );
+
+    expect(posApi.confirmSale.mock.calls[0]?.[0].items).toEqual([
+      expect.objectContaining({ productId: ids.product, trackingSelections: [] }),
+      expect.objectContaining({
+        productId: id(90),
+        trackingSelections: traceable.trackingSelections,
+      }),
+    ]);
+  });
+
+  it("rechaza selecciones incompletas, duplicadas o ajenas antes del POST", async () => {
+    const invalidSelections = [
+      [],
+      [
+        {
+          productId: id(99),
+          locationId: ids.location,
+          lotId: ids.lot,
+          quantity: 2,
+          serialNumbers: ["SER-001", "SER-002"],
+        },
+      ],
+      [
+        {
+          productId: ids.product,
+          locationId: ids.location,
+          lotId: ids.lot,
+          quantity: 2,
+          serialNumbers: ["SER-001", "SER-001"],
+        },
+      ],
+    ];
+
+    for (const trackingSelections of invalidSelections) {
+      const { repositories, posApi } = createPosRepositories();
+      await expect(
+        new ConfirmSaleService(repositories).execute(
+          confirmInput({
+            ticket: ticket({
+              items: [
+                {
+                  ...ticket().items[0]!,
+                  baseUnitId: id(50),
+                  baseQuantity: 2,
+                  saleUnitToBaseFactor: 1,
+                  requiresTraceabilitySelection: true,
+                  requiresLot: true,
+                  requiresSerial: true,
+                  requiresExpiration: true,
+                  trackingSelections,
+                },
+              ],
+            }),
+          }),
+        ),
+      ).rejects.toThrow();
+      expect(posApi.confirmSale).not.toHaveBeenCalled();
+    }
+  });
+
+  it("bloquea una venta trazable diferida porque el Backend la resuelve en Picking", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    const traceableItem = {
+      ...ticket().items[0]!,
+      baseUnitId: id(50),
+      baseQuantity: 2,
+      saleUnitToBaseFactor: 1,
+      requiresTraceabilitySelection: true,
+      requiresLot: true,
+      requiresSerial: true,
+      requiresExpiration: true,
+      trackingSelections: [
+        {
+          productId: ids.product,
+          locationId: ids.location,
+          lotId: ids.lot,
+          quantity: 2,
+          serialNumbers: ["SER-001", "SER-002"],
+        },
+      ],
+    };
+
+    await expect(
+      new ConfirmSaleService(repositories).execute(
+        confirmInput({
+          ticket: ticket({ items: [traceableItem] }),
+          orderIdempotencyKey: "order-traceable",
+          checkout: checkout({
+            deliveryMethod: DeliveryMethod.store_pickup,
+            transportMode: TransportMode.customer,
+            storePickupContact: { recipientName: "Ana", recipientPhone: "55550101" },
+          }),
+        }),
+      ),
+    ).rejects.toThrow("solo pueden venderse con entrega inmediata");
+    expect(posApi.confirmSale).not.toHaveBeenCalled();
+  });
+
+  it("confirma una venta trazable diferida sin selección física para que Picking la resuelva", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    const traceableItem = {
+      ...traceableTicket().items[0]!,
+      baseQuantity: undefined,
+      trackingSelections: undefined,
+    };
+
+    await new ConfirmSaleService(repositories).execute(
+      confirmInput({
+        ticket: ticket({ items: [traceableItem] }),
+        orderIdempotencyKey: "order-traceable-picking",
+        checkout: checkout({
+          deliveryMethod: DeliveryMethod.store_pickup,
+          transportMode: TransportMode.customer,
+          storePickupContact: { recipientName: "Ana", recipientPhone: "55550101" },
+        }),
+      }),
+    );
+
+    expect(posApi.confirmSale).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [expect.objectContaining({ trackingSelections: [] })],
+        deferredOrder: expect.objectContaining({
+          deliveryMethod: DeliveryMethod.store_pickup,
+        }),
+      }),
+    );
+  });
+
   it("envía el pedido de retiro en tienda con el contacto recortado y la clave de pedido", async () => {
     const { repositories, posApi } = createPosRepositories();
 
@@ -191,6 +426,7 @@ describe("ConfirmSaleService en modo API", () => {
     ["sin pedido de origen en modo API", { sourceOrderId: ids.order }, "pedidos existentes"],
     ["ticket vacío", { ticket: ticket({ items: [], total: 0 }) }, "El ticket está vacío."],
     ["sin confirmationId", { confirmationId: "  " }, "intento de confirmación"],
+    ["sin modalidad de entrega", { checkout: checkout({ deliveryMethod: "" }) }, "revisarse"],
     ["trazabilidad no soportada", { ticket: ticket({ hasUnsupportedTraceability: true }) }, "lote, serial o kit"],
     [
       "pedido diferido sin clave",
@@ -314,7 +550,15 @@ describe("GetPosProductsService en modo API", () => {
     ...extra,
   });
 
-  function catalogRepositories(products: ReturnType<typeof product>[]) {
+  function catalogRepositories(
+    products: ReturnType<typeof product>[],
+    conversions?: Array<{
+      productId: string | null;
+      fromUnitId: string;
+      toUnitId: string;
+      factor: number;
+    }>,
+  ) {
     const calls = { applicable: vi.fn(), conversionsByProduct: vi.fn() };
     const { repositories } = createPosRepositories({
       extra: {
@@ -328,16 +572,21 @@ describe("GetPosProductsService en modo API", () => {
               totalPages: 2,
             })
             .mockResolvedValueOnce({
-              items: [{ productId: products[1]!.id, productType: ProductType.physical, availableQuantity: 0 }],
+              items: [
+                { productId: products[1]!.id, productType: ProductType.physical, availableQuantity: 0 },
+                { productId: products[3]!.id, productType: ProductType.physical, availableQuantity: 3 },
+              ],
               totalPages: 2,
             }),
         },
         units: {
           getByTenant: vi.fn().mockResolvedValue([{ id: unitId, name: "Unidad" }]),
-          getAllConversionsByTenant: vi.fn().mockResolvedValue([
-            { productId: products[0]!.id, fromUnitId: unitId, toUnitId: unitId, factor: 1 },
-            { productId: null, fromUnitId: unitId, toUnitId: otherUnit, factor: 12 },
-          ]),
+          getAllConversionsByTenant: vi.fn().mockResolvedValue(
+            conversions ?? [
+              { productId: products[0]!.id, fromUnitId: unitId, toUnitId: unitId, factor: 1 },
+              { productId: null, fromUnitId: otherUnit, toUnitId: unitId, factor: 12 },
+            ],
+          ),
           getConversionsByProductScoped: calls.conversionsByProduct,
         },
         promotions: {
@@ -395,15 +644,189 @@ describe("GetPosProductsService en modo API", () => {
       isAvailableForSale: true,
       salesPriceTiers: [{ minQuantity: 10, unitPrice: 80, active: true }],
       saleUnitName: "Unidad",
+      baseUnitId: unitId,
+      saleUnitToBaseFactor: 1,
     });
     expect(byId.get(products[1]!.id)).toMatchObject({ effectivePrice: 100, isAvailableForSale: false });
     expect(byId.get(products[2]!.id)).toMatchObject({ availableQuantity: null, isAvailableForSale: true });
     expect(byId.get(products[3]!.id)).toMatchObject({
+      requiresTraceabilitySelection: true,
+      requiresUnsupportedTraceability: false,
+      isAvailableForSale: true,
+    });
+    expect(byId.get(products[4]!.id)).toMatchObject({
+      availableQuantity: 0,
+      saleUnitToBaseFactor: 12,
+      isAvailableForSale: false,
+    });
+    expect(result.map((item) => item.name)).toEqual([...result.map((item) => item.name)].sort());
+  });
+
+  it("resuelve factor 1 sin inventar una conversion cuando venta y base usan la misma unidad", async () => {
+    const products = [
+      product(11, { tracking: { stock: true, lot: true, serial: false, expiration: false } }),
+      product(12),
+      product(13),
+      product(14),
+      product(15),
+    ];
+    const { repositories } = catalogRepositories(products, []);
+
+    const result = await new GetPosProductsService(repositories).execute({
+      tenantId: ids.tenant,
+      branchId: ids.branch,
+    });
+
+    expect(result.find((item) => item.productId === products[0]!.id)).toMatchObject({
+      saleUnitToBaseFactor: 1,
+      requiresTraceabilitySelection: true,
+      isAvailableForSale: true,
+    });
+  });
+
+  it("bloquea un producto trazable cuando falta la conversion real a la unidad base", async () => {
+    const products = [
+      product(21, {
+        saleUnitId: otherUnit,
+        tracking: { stock: true, lot: true, serial: false, expiration: false },
+      }),
+      product(22),
+      product(23),
+      product(24),
+      product(25),
+    ];
+    const { repositories } = catalogRepositories(products, []);
+
+    const result = await new GetPosProductsService(repositories).execute({
+      tenantId: ids.tenant,
+      branchId: ids.branch,
+    });
+
+    expect(result.find((item) => item.productId === products[0]!.id)).toMatchObject({
+      availableQuantity: 0,
+      saleUnitToBaseFactor: 0,
+      requiresTraceabilitySelection: true,
+      isAvailableForSale: false,
+    });
+  });
+
+  it("aplica una conversion valida y conserva disponibilidad en la unidad de venta", async () => {
+    const products = [
+      product(26, {
+        saleUnitId: otherUnit,
+        tracking: { stock: true, lot: true, serial: false, expiration: false },
+      }),
+      product(27),
+      product(28),
+      product(29),
+      product(30),
+    ];
+    const { repositories } = catalogRepositories(products, [
+      { productId: products[0]!.id, fromUnitId: otherUnit, toUnitId: unitId, factor: 2 },
+    ]);
+
+    const result = await new GetPosProductsService(repositories).execute({
+      tenantId: ids.tenant,
+      branchId: ids.branch,
+    });
+
+    expect(result.find((item) => item.productId === products[0]!.id)).toMatchObject({
+      availableQuantity: 2.5,
+      saleUnitToBaseFactor: 2,
+      requiresTraceabilitySelection: true,
+      isAvailableForSale: true,
+    });
+  });
+
+  it.each([0, -2, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rechaza un factor de conversion invalido: %s",
+    async (factor) => {
+      const products = [
+        product(31, {
+          saleUnitId: otherUnit,
+          tracking: { stock: true, lot: true, serial: false, expiration: false },
+        }),
+        product(32),
+        product(33),
+        product(34),
+        product(35),
+      ];
+      const { repositories } = catalogRepositories(products, [
+        { productId: null, fromUnitId: otherUnit, toUnitId: unitId, factor },
+      ]);
+
+      const result = await new GetPosProductsService(repositories).execute({
+        tenantId: ids.tenant,
+        branchId: ids.branch,
+      });
+
+      expect(result.find((item) => item.productId === products[0]!.id)).toMatchObject({
+        availableQuantity: 0,
+        saleUnitToBaseFactor: 0,
+        requiresTraceabilitySelection: true,
+        isAvailableForSale: false,
+      });
+    },
+  );
+
+  it("conserva una conversion finita cuya cantidad se validara al preparar trazabilidad", async () => {
+    const products = [
+      product(36, {
+        saleUnitId: otherUnit,
+        tracking: { stock: true, lot: true, serial: false, expiration: false },
+      }),
+      product(37),
+      product(38),
+      product(39),
+      product(40),
+    ];
+    const { repositories } = catalogRepositories(products, [
+      { productId: products[0]!.id, fromUnitId: otherUnit, toUnitId: unitId, factor: 1.0001 },
+    ]);
+
+    const result = await new GetPosProductsService(repositories).execute({
+      tenantId: ids.tenant,
+      branchId: ids.branch,
+    });
+
+    expect(result.find((item) => item.productId === products[0]!.id)).toMatchObject({
+      saleUnitToBaseFactor: 1.0001,
+      requiresTraceabilitySelection: true,
+      isAvailableForSale: true,
+    });
+  });
+
+  it("mantiene bloqueadas configuraciones fisicas incompatibles", async () => {
+    const products = [
+      product(41, {
+        tracking: { stock: true, lot: false, serial: false, expiration: true },
+      }),
+      product(42, {
+        productType: ProductType.kit,
+        tracking: { stock: true, lot: true, serial: false, expiration: false },
+      }),
+      product(43),
+      product(44),
+      product(45),
+    ];
+    const { repositories } = catalogRepositories(products, []);
+
+    const result = await new GetPosProductsService(repositories).execute({
+      tenantId: ids.tenant,
+      branchId: ids.branch,
+    });
+    const byId = new Map(result.map((item) => [item.productId, item]));
+
+    expect(byId.get(products[0]!.id)).toMatchObject({
+      requiresTraceabilitySelection: false,
       requiresUnsupportedTraceability: true,
       isAvailableForSale: false,
     });
-    expect(byId.get(products[4]!.id)).toMatchObject({ availableQuantity: 0, isAvailableForSale: false });
-    expect(result.map((item) => item.name)).toEqual([...result.map((item) => item.name)].sort());
+    expect(byId.get(products[1]!.id)).toMatchObject({
+      requiresTraceabilitySelection: false,
+      requiresUnsupportedTraceability: true,
+      isAvailableForSale: false,
+    });
   });
 });
 
@@ -808,6 +1231,19 @@ describe("devoluciones y anulaciones en modo API", () => {
 });
 
 describe("ConfirmSaleService: beforeSend", () => {
+  const invalidUuidInputs: Array<[string, () => ReturnType<typeof confirmInput>]> = [
+    ["confirmationId", () => confirmInput({ confirmationId: "confirmation-invalida" })],
+    [
+      "productId",
+      () => confirmInput({ ticket: traceableTicket({ productId: "producto-invalido" }) }),
+    ],
+    [
+      "locationId",
+      () => confirmInput({ ticket: traceableTicket({ locationId: "ubicacion-invalida" }) }),
+    ],
+    ["lotId", () => confirmInput({ ticket: traceableTicket({ lotId: "lote-invalido" }) })],
+  ];
+
   it("se invoca justo antes del POST y, si lanza, la venta no se envía", async () => {
     const { repositories, posApi } = createPosRepositories();
     const beforeSend = vi.fn();
@@ -842,4 +1278,57 @@ describe("ConfirmSaleService: beforeSend", () => {
     expect(beforeSend).not.toHaveBeenCalled();
     expect(posApi.confirmSale).not.toHaveBeenCalled();
   });
+
+  it.each(invalidUuidInputs)(
+    "valida el UUID de %s antes de persistir o enviar",
+    async (_field, createInput) => {
+      const { repositories, posApi } = createPosRepositories();
+      const beforeSend = vi.fn();
+
+      await expect(
+        new ConfirmSaleService(repositories).execute({ ...createInput(), beforeSend }),
+      ).rejects.toThrow("La confirmacion de venta contiene datos invalidos.");
+
+      expect(beforeSend).not.toHaveBeenCalled();
+      expect(posApi.confirmSale).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rechaza una serie que excede el contrato antes de persistir o enviar", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    const beforeSend = vi.fn();
+
+    await expect(
+      new ConfirmSaleService(repositories).execute(
+        confirmInput({
+          beforeSend,
+          ticket: traceableTicket({ serialNumbers: ["S".repeat(101), "SER-002"] }),
+        }),
+      ),
+    ).rejects.toThrow("La confirmacion de venta contiene datos invalidos.");
+
+    expect(beforeSend).not.toHaveBeenCalled();
+    expect(posApi.confirmSale).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["serie vacia", { serialNumbers: ["", "SER-002"] }],
+    ["cantidad fisica invalida", { quantity: 0 }],
+    ["series duplicadas", { serialNumbers: ["SER-001", "SER-001"] }],
+  ] satisfies Array<[string, Partial<PosApiTrackingSelection>]>)(
+    "mantiene como local el error de %s",
+    async (_scenario, selectionOverrides) => {
+      const { repositories, posApi } = createPosRepositories();
+      const beforeSend = vi.fn();
+
+      await expect(
+        new ConfirmSaleService(repositories).execute(
+          confirmInput({ beforeSend, ticket: traceableTicket(selectionOverrides) }),
+        ),
+      ).rejects.toThrow();
+
+      expect(beforeSend).not.toHaveBeenCalled();
+      expect(posApi.confirmSale).not.toHaveBeenCalled();
+    },
+  );
 });

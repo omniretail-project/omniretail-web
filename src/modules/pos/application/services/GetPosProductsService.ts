@@ -2,7 +2,7 @@ import { ProductType, SalesChannel } from "@/core/enums";
 import { getBranchAvailableQuantity } from "@/core/inventory/stockAvailability";
 import { getCanonicalProductAvailability } from "@/core/inventory/canonicalAvailability";
 import { calculateEffectivePrice, isPromotionApplicable } from "@/core/pricing";
-import { fromBaseQuantity } from "@/core/units";
+import { fromBaseQuantity, resolveUnitConversion } from "@/core/units";
 import type { InventoryStockListItem } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { PosProductDto } from "@/modules/pos/application/dto/PosProductDto";
@@ -110,17 +110,23 @@ export class GetPosProductsService {
               : physicalAvailableQuantity;
           let hasValidSaleConversion = true;
           let availableQuantity: number | null = canonicalAvailableQuantity;
-          if (canonicalAvailableQuantity !== null) {
-            try {
+          let saleUnitToBaseFactor = 0;
+          try {
+            saleUnitToBaseFactor = resolveUnitConversion({
+              sourceUnitId: saleUnitId,
+              baseUnitId: product.baseUnitId,
+              conversions,
+            });
+            if (canonicalAvailableQuantity !== null) {
               availableQuantity = fromBaseQuantity(canonicalAvailableQuantity, {
                 targetUnitId: saleUnitId,
                 baseUnitId: product.baseUnitId,
                 conversions,
               });
-            } catch {
-              hasValidSaleConversion = false;
-              availableQuantity = 0;
             }
+          } catch {
+            hasValidSaleConversion = false;
+            availableQuantity = 0;
           }
           const requiresLot = product.tracking.lot;
           const requiresSerial = product.tracking.serial;
@@ -143,11 +149,15 @@ export class GetPosProductsService {
               .map(({ minQuantity, unitPrice, active }) => ({ minQuantity, unitPrice, active })),
             promotion: promotion ?? undefined,
             availableQuantity,
+            baseUnitId: product.baseUnitId,
             saleUnitId,
             saleUnitName: units.find((unit) => unit.id === saleUnitId)?.name ?? saleUnitId,
+            saleUnitToBaseFactor,
             tracksStock,
             requiresLot,
             requiresSerial,
+            requiresExpiration: product.tracking.expiration,
+            requiresTraceabilitySelection: false,
             requiresUnsupportedTraceability,
             isAvailableForSale:
               hasValidSaleConversion &&
@@ -220,6 +230,7 @@ export class GetPosProductsService {
     ]);
     const stockByProductId = new Map(stockItems.map((item) => [item.productId, item]));
     const conversionsByProductId = new Map<string, typeof allConversions>();
+    const tenantConversions = allConversions.filter((conversion) => !conversion.productId);
     for (const conversion of allConversions) {
       if (!conversion.productId) continue;
       const group = conversionsByProductId.get(conversion.productId) ?? [];
@@ -240,7 +251,10 @@ export class GetPosProductsService {
               branchId: input.branchId,
             }),
           ) ?? null;
-        const conversions = conversionsByProductId.get(product.id) ?? [];
+        const conversions = [
+          ...(conversionsByProductId.get(product.id) ?? []),
+          ...tenantConversions,
+        ];
         const salesPriceTiers = await this.repositories.productSalesPriceTiers.getByProduct(
           product.id,
         );
@@ -251,22 +265,33 @@ export class GetPosProductsService {
         const canonicalAvailableQuantity = getApiAvailableQuantity(product.productType, stock);
         let availableQuantity = canonicalAvailableQuantity;
         let hasValidSaleConversion = true;
-        if (canonicalAvailableQuantity !== null) {
-          try {
+        let saleUnitToBaseFactor = 0;
+        try {
+          saleUnitToBaseFactor = resolveUnitConversion({
+            sourceUnitId: saleUnitId,
+            baseUnitId: product.baseUnitId,
+            conversions,
+          });
+          if (canonicalAvailableQuantity !== null) {
             availableQuantity = fromBaseQuantity(canonicalAvailableQuantity, {
               targetUnitId: saleUnitId,
               baseUnitId: product.baseUnitId,
               conversions,
             });
-          } catch {
-            availableQuantity = 0;
-            hasValidSaleConversion = false;
           }
+        } catch {
+          availableQuantity = 0;
+          hasValidSaleConversion = false;
         }
-        // El contrato de venta exige selecciones explicitas para trazabilidad. La terminal actual
-        // no ofrece ese selector, por lo que falla cerrado en vez de enviar selecciones vacias.
-        const requiresUnsupportedTraceability =
+        const requiresPhysicalTraceability =
           product.tracking.lot || product.tracking.serial || product.tracking.expiration;
+        const requiresUnsupportedTraceability =
+          (product.tracking.expiration && !product.tracking.lot) ||
+          (product.productType === ProductType.kit && requiresPhysicalTraceability);
+        const requiresTraceabilitySelection =
+          product.productType !== ProductType.kit &&
+          requiresPhysicalTraceability &&
+          !requiresUnsupportedTraceability;
 
         return {
           productId: product.id,
@@ -285,11 +310,15 @@ export class GetPosProductsService {
             .map(({ minQuantity, unitPrice, active }) => ({ minQuantity, unitPrice, active })),
           promotion: promotion ?? undefined,
           availableQuantity,
+          baseUnitId: product.baseUnitId,
           saleUnitId,
           saleUnitName: units.find((unit) => unit.id === saleUnitId)?.name ?? saleUnitId,
+          saleUnitToBaseFactor,
           tracksStock,
           requiresLot: product.tracking.lot,
           requiresSerial: product.tracking.serial,
+          requiresExpiration: product.tracking.expiration,
+          requiresTraceabilitySelection,
           requiresUnsupportedTraceability,
           isAvailableForSale:
             hasValidSaleConversion &&

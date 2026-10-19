@@ -453,6 +453,103 @@ describe("validación de comandos POS", () => {
   });
 });
 
+describe("contrato de selecciones fisicas POS", () => {
+  const captureError = (run: () => unknown) => {
+    try {
+      run();
+    } catch (error) {
+      return error;
+    }
+    throw new Error("La peticion debia rechazarse");
+  };
+
+  it("acepta selecciones validas y conserva el arreglo vacio de ventas normales", () => {
+    const normal = parseConfirmSaleCommand(confirmSaleCommand);
+    const tracked = parseConfirmSaleCommand({
+      ...confirmSaleCommand,
+      items: [
+        {
+          productId: ids.product,
+          quantity: 2,
+          discount: 0,
+          trackingSelections: [
+            {
+              productId: ids.product,
+              locationId: ids.location,
+              lotId: ids.lot,
+              quantity: 2,
+              serialNumbers: ["SER-001", "SER-002"],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(normal.items[0]?.trackingSelections).toEqual([]);
+    expect(tracked.items[0]?.trackingSelections).toEqual([
+      {
+        productId: ids.product,
+        locationId: ids.location,
+        lotId: ids.lot,
+        quantity: 2,
+        serialNumbers: ["SER-001", "SER-002"],
+      },
+    ]);
+  });
+
+  it.each([
+    ["ubicacion invalida", [{ productId: ids.product, locationId: "location", quantity: 1 }]],
+    [
+      "cantidad con mas de tres decimales",
+      [{ productId: ids.product, locationId: ids.location, quantity: 1.0001 }],
+    ],
+    [
+      "serie vacia",
+      [
+        {
+          productId: ids.product,
+          locationId: ids.location,
+          quantity: 1,
+          serialNumbers: ["   "],
+        },
+      ],
+    ],
+    [
+      "serie duplicada entre selecciones",
+      [
+        {
+          productId: ids.product,
+          locationId: ids.location,
+          quantity: 1,
+          serialNumbers: ["SER-001"],
+        },
+        {
+          productId: ids.product,
+          locationId: ids.branch,
+          quantity: 1,
+          serialNumbers: [" SER-001 "],
+        },
+      ],
+    ],
+  ])("rechaza %s", (_label, trackingSelections) => {
+    const error = captureError(() =>
+      parseConfirmSaleCommand({
+        ...confirmSaleCommand,
+        items: [
+          {
+            productId: ids.product,
+            quantity: 2,
+            discount: 0,
+            trackingSelections,
+          },
+        ],
+      }),
+    );
+
+    expect(error).toMatchObject({ status: 400, code: "INVALID_POS_REQUEST" });
+  });
+});
+
 describe("withApiPos", () => {
   it("decora el registro sin mutar el original", () => {
     const original = { posDataSource: "mock", marker: true } as unknown as RepositoryRegistry;

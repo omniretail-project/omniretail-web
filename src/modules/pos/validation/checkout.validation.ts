@@ -21,6 +21,7 @@ export type CheckoutValidationErrors = Partial<
     | "recipientName"
     | "recipientPhone"
     | "notificationEmail"
+    | "deliveryMethod"
     | "deliveryCity"
     | "deliveryAddress",
     string
@@ -122,6 +123,14 @@ export function validateCheckout(checkout: CheckoutDto, total: number): Checkout
 }
 
 function validateDelivery(checkout: CheckoutDto, errors: CheckoutValidationErrors) {
+  if (
+    checkout.deliveryMethod !== DeliveryMethod.immediate &&
+    checkout.deliveryMethod !== DeliveryMethod.store_pickup &&
+    checkout.deliveryMethod !== DeliveryMethod.home_delivery
+  ) {
+    errors.deliveryMethod = "Selecciona una modalidad de entrega.";
+    return;
+  }
   if (checkout.deliveryMethod === DeliveryMethod.store_pickup) {
     const contact = checkout.storePickupContact;
     if (!contact?.recipientName.trim()) {
