@@ -6,12 +6,15 @@ import { parseApiPickingAction } from "@/infrastructure/api/repositories/picking
 import { withApiLogisticsPickingRead } from "@/infrastructure/api/withApiLogisticsPickingRead";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import {
+  buildPickingAutoFefoSelection,
   buildPickingPhysicalSelection,
   buildPickingSerialReplacement,
   getPickingLineUpdateAvailability,
   getPickingLocationLots,
   getPickingLocationSerials,
+  isPickingAutoFefoEligible,
   normalizePickingQuantity,
+  sortPickingTrackingSelectionsForDisplay,
 } from "@/modules/logistics/application/pickingPhysicalSelection";
 import type { PickingDetailLineDto } from "@/modules/logistics/application/dto/PickingReadModelDto";
 import { PickingApplicationService } from "@/modules/logistics/application/services/PickingApplicationService";
@@ -114,6 +117,7 @@ async function verifyApplicationIsolationAndReadBack() {
   let commandCalls = 0;
   let detailReads = 0;
   const operationIds: string[] = [];
+  const autoAllocateLotsValues: Array<boolean | undefined> = [];
   const forbiddenMock = new Proxy({}, {
     get() {
       return () => {
@@ -135,9 +139,15 @@ async function verifyApplicationIsolationAndReadBack() {
   const commandRepository = {
     assign: async () => { commandCalls += 1; return action; },
     release: async () => { commandCalls += 1; return release; },
-    updateItem: async (_scope: unknown, _pickingId: string, _itemId: string, command: { operationId: string }) => {
+    updateItem: async (
+      _scope: unknown,
+      _pickingId: string,
+      _itemId: string,
+      command: { operationId: string; autoAllocateLots?: boolean },
+    ) => {
       commandCalls += 1;
       operationIds.push(command.operationId);
+      autoAllocateLotsValues.push(command.autoAllocateLots);
       return lineResponse;
     },
     createIncident: async () => { commandCalls += 1; return incident; },
@@ -196,6 +206,13 @@ async function verifyApplicationIsolationAndReadBack() {
   );
   await service.updateLine(ids.branch, { ...updateCommand, operationId: retryOperationId });
   assert.deepEqual(operationIds, ["operation-retry", "operation-retry"]);
+  await service.updateLine(ids.branch, {
+    ...updateCommand,
+    operationId: "operation-auto-fefo",
+    locationId: ids.location,
+    autoAllocateLots: true,
+  });
+  assert.deepEqual(autoAllocateLotsValues, [undefined, undefined, true]);
   const differentOperationId = getOrCreatePickingOperationId(
     pendingOperationIds,
     createPickingUpdateFingerprint({
@@ -211,8 +228,8 @@ async function verifyApplicationIsolationAndReadBack() {
   await service.registerIncident(ids.branch, { pickingOrderId: ids.picking, type: PickingIncidentType.damaged, comment: "Daño" });
   await service.resolveIncident(ids.branch, ids.picking, ids.incident);
   await service.complete(ids.branch, ids.picking);
-  assert.equal(commandCalls, 7);
-  assert.equal(detailReads, 2);
+  assert.equal(commandCalls, 8);
+  assert.equal(detailReads, 3);
   assert.equal(mockCalls, 0);
 }
 
@@ -242,6 +259,13 @@ async function verifyRoutesBodiesAndErrors() {
       operationId: "stable-operation",
       trackingSelections: [],
     });
+    await repository.updateItem(scope, ids.picking, ids.item, {
+      pickedQuantity: 3.75,
+      locationId: ids.location,
+      operationId: "stable-auto-fefo-operation",
+      autoAllocateLots: true,
+      trackingSelections: [],
+    });
     await repository.createIncident(scope, ids.picking, {
       pickingLineId: ids.item, type: PickingIncidentType.quantity_difference, quantityAffected: 0.25, comment: "Diferencia",
     });
@@ -251,6 +275,7 @@ async function verifyRoutesBodiesAndErrors() {
     assert.deepEqual(calls.map((call) => [call.method, call.url]), [
       ["POST", `/api/backend/logistics/picking/${ids.picking}/assign?branchId=${ids.branch}`],
       ["POST", `/api/backend/logistics/picking/${ids.picking}/release?branchId=${ids.branch}`],
+      ["PATCH", `/api/backend/logistics/picking/${ids.picking}/items/${ids.item}?branchId=${ids.branch}`],
       ["PATCH", `/api/backend/logistics/picking/${ids.picking}/items/${ids.item}?branchId=${ids.branch}`],
       ["POST", `/api/backend/logistics/picking/${ids.picking}/incidents?branchId=${ids.branch}`],
       ["PATCH", `/api/backend/logistics/picking/${ids.picking}/incidents/${ids.incident}/resolve?branchId=${ids.branch}`],
@@ -262,6 +287,11 @@ async function verifyRoutesBodiesAndErrors() {
       trackingSelections: [],
     });
     assert.deepEqual(calls[3].body, {
+      pickedQuantity: 3.75, locationId: ids.location,
+      operationId: "stable-auto-fefo-operation", autoAllocateLots: true,
+      trackingSelections: [],
+    });
+    assert.deepEqual(calls[4].body, {
       pickingLineId: ids.item, type: "quantity_difference", quantityAffected: 0.25, comment: "Diferencia",
     });
 
@@ -270,6 +300,28 @@ async function verifyRoutesBodiesAndErrors() {
       await assert.rejects(
         repository.assign(scope, ids.picking),
         (error) => error instanceof BackendRequestError && error.status === status,
+      );
+    }
+    for (const [status, code] of [
+      [422, "AUTO_FEFO_NOT_SUPPORTED"],
+      [409, "AUTO_FEFO_SELECTION_CONFLICT"],
+      [409, "PICKING_OPERATION_ID_REUSED"],
+    ] as const) {
+      globalThis.fetch = async () => Response.json(
+        { message: code, code },
+        { status },
+      );
+      await assert.rejects(
+        repository.updateItem(scope, ids.picking, ids.item, {
+          pickedQuantity: 3.75,
+          locationId: ids.location,
+          operationId: "failed-auto-fefo-operation",
+          autoAllocateLots: true,
+          trackingSelections: [],
+        }),
+        (error) => error instanceof BackendRequestError &&
+          error.status === status &&
+          error.code === code,
       );
     }
   } finally {
@@ -318,6 +370,34 @@ function verifyPhysicalSelections() {
     { lotId: ids.lotA, quantity: 2.5 }, { lotId: ids.lotB, quantity: 1.25 },
   ]);
 
+  assert.equal(isPickingAutoFefoEligible(lotLine), true);
+  assert.deepEqual(buildPickingAutoFefoSelection(lotLine, ids.location), {
+    locationId: ids.location,
+    autoAllocateLots: true,
+    trackingSelections: [],
+  });
+  assert.deepEqual(
+    sortPickingTrackingSelectionsForDisplay([
+      {
+        locationId: ids.location,
+        lotId: ids.lotB,
+        lotNumber: "LOT-B",
+        expirationDate: "2030-02-01",
+        quantity: 1.25,
+        serialNumbers: [],
+      },
+      {
+        locationId: ids.location,
+        lotId: ids.lotA,
+        lotNumber: "LOT-A",
+        expirationDate: "2030-01-01",
+        quantity: 2.5,
+        serialNumbers: [],
+      },
+    ]).map(({ lotId }) => lotId),
+    [ids.lotA, ids.lotB],
+  );
+
   const serialLine = {
     ...lotLine,
     requiredQuantity: 2,
@@ -327,6 +407,11 @@ function verifyPhysicalSelections() {
     serialNumbers: ["SER-A"],
     trackingSelections: [{ ...lotLine.trackingSelections[0], quantity: 1, serialNumbers: ["SER-A"] }],
   } as PickingDetailLineDto;
+  assert.equal(isPickingAutoFefoEligible(serialLine), false);
+  assert.throws(
+    () => buildPickingAutoFefoSelection(serialLine, ids.location),
+    /no admite asignacion automatica FEFO/,
+  );
   const serial = buildPickingPhysicalSelection(serialLine, 2, {
     locationId: ids.location, lotId: ids.lotB, serialNumbers: ["SER-B"],
   });
@@ -486,6 +571,22 @@ function verifyCanonicalOperationFingerprint() {
     getOrCreatePickingOperationId(pending, changedFingerprint, createId),
     firstId,
   );
+  const autoFefoFingerprint = createPickingUpdateFingerprint({
+    pickingOrderId: ids.picking,
+    pickingLineId: ids.item,
+    targetQuantity: 0.375,
+    locationId: ids.location,
+    autoAllocateLots: true,
+    trackingSelections: [],
+  });
+  const manualEmptyFingerprint = createPickingUpdateFingerprint({
+    pickingOrderId: ids.picking,
+    pickingLineId: ids.item,
+    targetQuantity: 0.375,
+    locationId: ids.location,
+    trackingSelections: [],
+  });
+  assert.notEqual(autoFefoFingerprint, manualEmptyFingerprint);
 }
 
 void main();

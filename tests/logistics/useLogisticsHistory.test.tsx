@@ -1,4 +1,4 @@
-import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DeliveryMethod, OrderStatus, PackingStatus, PickingStatus, TransportMode } from "@/core/enums";
 import type {
@@ -6,7 +6,10 @@ import type {
   LogisticsHistoryPageDto,
 } from "@/modules/logistics/application/dto/LogisticsHistoryDto";
 import { LogisticsHistoryTable } from "@/modules/logistics/components/LogisticsHistoryTable";
-import { LogisticsTracePanel } from "@/modules/logistics/components/LogisticsTracePanel";
+import {
+  formatLogisticsExpirationDate,
+  LogisticsTracePanel,
+} from "@/modules/logistics/components/LogisticsTracePanel";
 import {
   LOGISTICS_HISTORY_SEARCH_DEBOUNCE_MS,
   useLogisticsHistory,
@@ -497,5 +500,54 @@ describe("componentes del historial", () => {
     );
     expect(screen.getByText("3 de 3 · empacado 3 · despachado 2")).toBeInTheDocument();
     expect(screen.getByText("Ubicación registrada")).toBeInTheDocument();
+  });
+
+  it("muestra vencimientos como fechas de calendario sin desplazarlos por zona horaria", () => {
+    render(
+      <LogisticsTracePanel
+        error={null}
+        state="data"
+        items={[
+          {
+            pickingItemId: "line-fefo",
+            orderItemId: "order-line-fefo",
+            productId: "product-fefo",
+            sku: "MED-001",
+            name: "Acetaminofén 400MG Tableta",
+            requestedQuantity: 5000,
+            pickedQuantity: 5000,
+            packedQuantity: 5000,
+            dispatchedQuantity: 5000,
+            allocations: [
+              {
+                reservationId: "reservation-1",
+                quantity: 4245,
+                location: { id: "location-1", code: "A-01", name: "Estante A" },
+                lot: { id: "lot-1", number: "121401", expiresAt: "2027-11-17" },
+                serial: null,
+              },
+              {
+                reservationId: "reservation-2",
+                quantity: 755,
+                location: { id: "location-1", code: "A-01", name: "Estante A" },
+                lot: { id: "lot-2", number: "526398", expiresAt: "2027-11-20" },
+                serial: null,
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+
+    const firstLotRow = screen.getByRole("cell", { name: "121401" }).closest("tr");
+    const secondLotRow = screen.getByRole("cell", { name: "526398" }).closest("tr");
+    expect(firstLotRow).not.toBeNull();
+    expect(secondLotRow).not.toBeNull();
+    expect(within(firstLotRow!).getByRole("cell", { name: "4245" })).toBeInTheDocument();
+    expect(within(firstLotRow!).getByRole("cell", { name: "17/11/2027" })).toBeInTheDocument();
+    expect(within(secondLotRow!).getByRole("cell", { name: "755" })).toBeInTheDocument();
+    expect(within(secondLotRow!).getByRole("cell", { name: "20/11/2027" })).toBeInTheDocument();
+    expect(formatLogisticsExpirationDate("2027-11-17")).toBe("17/11/2027");
+    expect(formatLogisticsExpirationDate("2027-11-20")).toBe("20/11/2027");
   });
 });

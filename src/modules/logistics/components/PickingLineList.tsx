@@ -1,19 +1,28 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { PickingIncidentStatus } from "@/core/enums";
 import type {
   PickingDetailLineDto,
+  PickingFefoPreviewDto,
   PickingIncidentDto,
 } from "@/modules/logistics/application/dto/PickingReadModelDto";
 import {
+  buildPickingAutoFefoSelection,
   buildPickingPhysicalSelection,
   buildPickingSerialReplacement,
   getPickingCanonicalLocationIds,
   getPickingLineUpdateAvailability,
   getPickingLocationLots,
   getPickingLocationSerials,
+  isPickingAutoFefoEligible,
+  sortPickingTrackingSelectionsForDisplay,
   type PickingPhysicalSelectionResult,
 } from "@/modules/logistics/application/pickingPhysicalSelection";
 import { validatePickingLineUpdate } from "@/modules/logistics/validation/picking.validation";
+import {
+  areFefoSelectionsEquivalent,
+  PickingFefoPreview,
+} from "@/modules/logistics/components/PickingFefoPreview";
+import type { PickingFefoPreviewState } from "@/modules/logistics/hooks/usePickingFefoPreview";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { InlineAlert } from "@/shared/components/InlineAlert";
@@ -22,6 +31,8 @@ import { Select } from "@/shared/components/Select";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
 interface PickingLineListProps {
+  autoFefoEnabled: boolean;
+  pickingOrderId?: string;
   disabled: boolean;
   editable: boolean;
   incidents: PickingIncidentDto[];
@@ -33,39 +44,51 @@ interface PickingLineListProps {
   ) => Promise<boolean>;
 }
 
-export function PickingLineList({ disabled, editable, incidents, lines, onUpdate }: PickingLineListProps) {
+export function PickingLineList({ autoFefoEnabled, pickingOrderId, disabled, editable, incidents, lines, onUpdate }: PickingLineListProps) {
   return (
     <section className="space-y-2.5">
       <div>
         <h3 className="font-bold text-[var(--color-title)]">Productos por preparar</h3>
         <p className="text-sm text-[var(--color-text-muted)]">
-          Las ubicaciones, lotes y vencimientos provienen de la reserva autoritativa.
+          Las ubicaciones, lotes y vencimientos corresponden a las existencias reservadas para este pedido.
         </p>
       </div>
-      {lines.map((line) => (
+      {lines.map((line) => {
+        const autoFefo = autoFefoEnabled && isPickingAutoFefoEligible(line);
+        return (
         <PickingLineCard
+          autoFefoEnabled={autoFefoEnabled}
           disabled={disabled}
           editable={editable}
           incidents={incidents.filter((incident) => incident.pickingLineId === line.pickingLineId)}
-          key={`${line.pickingLineId}-${line.pickedQuantity}-${line.serialNumbers.join(",")}`}
+          key={autoFefo
+            ? `${pickingOrderId ?? line.inventory.pickingOrderId}-${line.pickingLineId}`
+            : `${line.pickingLineId}-${line.pickedQuantity}-${line.serialNumbers.join(",")}`}
           line={line}
           onUpdate={onUpdate}
+          pickingOrderId={pickingOrderId ?? line.inventory.pickingOrderId}
         />
-      ))}
+        );
+      })}
     </section>
   );
 }
 
 interface PickingLineCardProps {
+  autoFefoEnabled: boolean;
   disabled: boolean;
   editable: boolean;
   incidents: PickingIncidentDto[];
   line: PickingDetailLineDto;
   onUpdate: PickingLineListProps["onUpdate"];
+  pickingOrderId: string;
 }
 
-function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: PickingLineCardProps) {
-  const [targetText, setTargetText] = useState(String(line.pickedQuantity));
+function PickingLineCard({ autoFefoEnabled, disabled, editable, incidents, line, onUpdate, pickingOrderId }: PickingLineCardProps) {
+  const [targetDraft, setTargetDraft] = useState(() => ({
+    pickedQuantity: line.pickedQuantity,
+    text: String(line.pickedQuantity),
+  }));
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(
     line.location?.id ?? line.trackingSelections[0]?.locationId ?? null,
   );
@@ -80,6 +103,20 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
   const [replacementSerialSearch, setReplacementSerialSearch] = useState("");
   const [showReplacementSerials, setShowReplacementSerials] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [completionPreviewState, setCompletionPreviewState] = useState<PickingFefoPreviewState>({
+    status: "idle",
+    data: null,
+    error: null,
+  });
+  const [enteredPreviewState, setEnteredPreviewState] = useState<PickingFefoPreviewState>({
+    status: "idle",
+    data: null,
+    error: null,
+  });
+  const [submittedPreview, setSubmittedPreview] = useState<PickingFefoPreviewDto | null>(null);
+  const targetText = targetDraft.pickedQuantity === line.pickedQuantity
+    ? targetDraft.text
+    : String(line.pickedQuantity);
   const targetQuantity = Number(targetText);
   const serialDelta = Number.isFinite(targetQuantity)
     ? Math.max(targetQuantity - line.pickedQuantity, 0)
@@ -109,7 +146,69 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
   const serialControlsLocked = !editable || disabled;
   const locationLots = getPickingLocationLots(line, selectedLocationId);
   const traceable = line.tracking.lot || line.tracking.expiration || line.tracking.serial;
+  const autoFefo = autoFefoEnabled && isPickingAutoFefoEligible(line);
   const updateAvailability = getPickingLineUpdateAvailability(line);
+  const confirmedLotSelections = sortPickingTrackingSelectionsForDisplay(
+    line.trackingSelections.filter(
+      (selection) => selection.lotId || selection.lotNumber || selection.expirationDate,
+    ),
+  );
+  const confirmedLotQuantity = confirmedLotSelections.reduce(
+    (total, selection) => total + selection.quantity,
+    0,
+  );
+  const previewInputError = autoFefo && targetText !== String(line.pickedQuantity)
+    ? validatePickingLineUpdate(line, targetQuantity, [])
+    : null;
+  const completionPreviewQuery = useMemo(() =>
+    autoFefo && selectedLocationId && line.remainingQuantity > 0
+      ? {
+          pickingOrderId,
+          pickingLineId: line.pickingLineId,
+          productId: line.productId,
+          locationId: selectedLocationId,
+          pickedQuantity: line.requiredQuantity,
+        }
+      : null,
+  [autoFefo, line.pickingLineId, line.productId, line.remainingQuantity, line.requiredQuantity, pickingOrderId, selectedLocationId]);
+  const enteredPreviewQuery = useMemo(() =>
+    autoFefo && !previewInputError && selectedLocationId && Number.isFinite(targetQuantity) &&
+      targetQuantity > line.pickedQuantity && targetQuantity < line.requiredQuantity
+      ? {
+          pickingOrderId,
+          pickingLineId: line.pickingLineId,
+          productId: line.productId,
+          locationId: selectedLocationId,
+          pickedQuantity: targetQuantity,
+        }
+      : null,
+  [autoFefo, line.pickedQuantity, line.pickingLineId, line.productId, line.requiredQuantity, pickingOrderId, previewInputError, selectedLocationId, targetQuantity]);
+  const activePreviewQuery = targetQuantity === line.requiredQuantity
+    ? completionPreviewQuery
+    : enteredPreviewQuery;
+  const activePreviewState = targetQuantity === line.requiredQuantity
+    ? completionPreviewState
+    : enteredPreviewState;
+  const previewIsCurrent = Boolean(
+    activePreviewQuery &&
+      activePreviewState.status === "loaded" &&
+      activePreviewState.data?.pickingOrderId === activePreviewQuery.pickingOrderId &&
+      activePreviewState.data.pickingLineId === activePreviewQuery.pickingLineId &&
+      activePreviewState.data.productId === activePreviewQuery.productId &&
+      activePreviewState.data.location.id === activePreviewQuery.locationId &&
+      activePreviewState.data.targetPickedQuantity === activePreviewQuery.pickedQuantity,
+  );
+  const handleCompletionPreviewState = useCallback((state: PickingFefoPreviewState) => {
+    setCompletionPreviewState(state);
+  }, []);
+  const handleEnteredPreviewState = useCallback((state: PickingFefoPreviewState) => {
+    setEnteredPreviewState(state);
+  }, []);
+  const confirmedDiffersFromPreview = Boolean(
+    submittedPreview &&
+      line.pickedQuantity === submittedPreview.targetPickedQuantity &&
+      !areFefoSelectionsEquivalent(submittedPreview, line.trackingSelections),
+  );
 
   const submit = async () => {
     const validationError = validatePickingLineUpdate(line, targetQuantity, selectedSerials);
@@ -117,17 +216,22 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
     if (validationError) return;
     let physicalSelection: PickingPhysicalSelectionResult;
     try {
-      physicalSelection = buildPickingPhysicalSelection(line, targetQuantity, {
-        locationId: selectedLocationId,
-        lotId: selectedLotId,
-        serialNumbers: selectedSerials,
-      });
+      physicalSelection = autoFefo
+        ? buildPickingAutoFefoSelection(line, selectedLocationId)
+        : buildPickingPhysicalSelection(line, targetQuantity, {
+            locationId: selectedLocationId,
+            lotId: selectedLotId,
+            serialNumbers: selectedSerials,
+          });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "La seleccion fisica no es valida.");
       return;
     }
     const saved = await onUpdate(line, targetQuantity, physicalSelection);
     if (!saved) return;
+    if (autoFefo && previewIsCurrent && activePreviewState.data) {
+      setSubmittedPreview(activePreviewState.data);
+    }
     setError(null);
   };
 
@@ -184,8 +288,10 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
         <div><p className="text-xs text-[var(--color-text-muted)]">Ubicación asignada</p><p>{line.location ? `${line.location.code} · ${line.location.name}` : "Según reserva"}</p></div>
         <div>
           <p className="text-xs text-[var(--color-text-muted)]">Lote / vencimiento</p>
-          <p>{line.lot?.number ?? (line.tracking.lot ? "Según FEFO" : "No aplica")}</p>
-          {selectedLot?.expirationDate ? <p className="text-xs text-[var(--color-text-muted)]">Vence {formatExpirationDate(selectedLot.expirationDate)}</p> : null}
+          <p>{confirmedLotSelections.length > 0
+            ? `${confirmedLotSelections.length} lote(s) confirmado(s)`
+            : line.lot?.number ?? (line.tracking.lot ? "Según fecha de vencimiento" : "No aplica")}</p>
+          {selectedLot?.expirationDate && confirmedLotSelections.length === 0 ? <p className="text-xs text-[var(--color-text-muted)]">Vence {formatExpirationDate(selectedLot.expirationDate)}</p> : null}
         </div>
         <div><p className="text-xs text-[var(--color-text-muted)]">Series recogidas</p><p>{!line.tracking.serial ? "No aplica" : line.serialNumbers.length ? line.serialNumbers.join(", ") : "Ninguna"}</p></div>
       </div>
@@ -219,6 +325,52 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
         </div>
       ) : null}
 
+      {confirmedLotSelections.length > 0 ? (
+        <div
+          aria-label={`Lotes confirmados de ${line.name}`}
+          className="mt-2.5 rounded-lg border border-[var(--color-border)] bg-white px-3 py-2.5"
+          role="region"
+        >
+          <p className="text-xs font-semibold text-[var(--color-text-muted)]">
+            Lotes recogidos
+          </p>
+          <div className="mt-2 space-y-1.5">
+            {confirmedLotSelections.map((selection, index) => (
+              <div
+                className="grid gap-1 rounded-md bg-slate-50 px-2.5 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center"
+                key={`${selection.locationId ?? "no-location"}-${selection.lotId ?? "no-lot"}-${index}`}
+              >
+                <span className="font-semibold text-[var(--color-title)]">
+                  Lote {selection.lotNumber ?? selection.lotId ?? "No informado"}
+                </span>
+                <span className="text-[var(--color-text-muted)]">
+                  {selection.expirationDate
+                    ? `Vence ${formatExpirationDate(selection.expirationDate)}`
+                    : "Sin vencimiento informado"}
+                  {` · ${getPickingSelectionLocationLabel(line, selection.locationId)}`}
+                </span>
+                <span className="font-bold text-[var(--color-title)]">
+                  {selection.quantity} unidades
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-right text-sm font-bold text-[var(--color-title)]">
+            Total recogido: {formatPickingQuantity(confirmedLotQuantity)} unidades
+          </p>
+        </div>
+      ) : null}
+
+      {confirmedDiffersFromPreview ? (
+        <div className="mt-2.5">
+          <InlineAlert
+            description="La disponibilidad cambió desde la recomendación. Revisa los lotes que quedaron registrados."
+            title="Los lotes recogidos cambiaron"
+            tone="info"
+          />
+        </div>
+      ) : null}
+
       {!updateAvailability.available ? (
         <div className="mt-2.5">
           <InlineAlert
@@ -232,7 +384,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
       {editable && !disabled && updateAvailability.available && line.remainingQuantity > 0 ? (
         <div className="mt-3 space-y-3 border-t border-[var(--color-border)] pt-3">
           {traceable ? (
-            <div className="grid gap-2.5 sm:grid-cols-2">
+            <div className={`grid gap-2.5 ${autoFefo ? "" : "sm:grid-cols-2"}`}>
               <FormField id={`location-${line.pickingLineId}`} label="Ubicacion fisica *">
                 <Select
                   disabled={disabled || Boolean(line.location)}
@@ -255,7 +407,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
                   ))}
                 </Select>
               </FormField>
-              {line.tracking.lot ? (
+              {line.tracking.lot && !autoFefo ? (
                 <FormField id={`lot-${line.pickingLineId}`} label="Lote para el incremento *">
                   <Select
                     disabled={disabled || !selectedLocationId || line.tracking.serial}
@@ -277,15 +429,32 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
               ) : null}
             </div>
           ) : null}
-          <div className="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-            <FormField id={`target-${line.pickingLineId}`} label="Cantidad total recogida">
+          {autoFefo ? (
+            <InlineAlert
+              description="Recoge primero los productos con fecha de vencimiento más próxima. Verifica los lotes y las cantidades indicadas antes de registrar la recolección."
+              title="Selección de lotes por vencimiento"
+              tone="info"
+            />
+          ) : null}
+          {autoFefo ? (
+            <PickingFefoPreview
+              onStateChange={handleCompletionPreviewState}
+              purpose="completion"
+              query={completionPreviewQuery}
+            />
+          ) : null}
+          <div className="space-y-2.5">
+            <FormField id={`target-${line.pickingLineId}`} label="Cantidad recogida hasta ahora">
               <Input
                 disabled={disabled}
                 id={`target-${line.pickingLineId}`}
                 max={line.requiredQuantity}
                 min={line.pickedQuantity + 0.001}
                 onChange={(event) => {
-                  setTargetText(event.target.value);
+                  setTargetDraft({
+                    pickedQuantity: line.pickedQuantity,
+                    text: event.target.value,
+                  });
                   setSelectedSerials([]);
                   setError(null);
                 }}
@@ -294,9 +463,16 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
                 value={targetText}
               />
             </FormField>
-            <Button disabled={disabled} onClick={() => void submit()} type="button">
-              Registrar progreso
+            {autoFefo && previewInputError ? (
+              <InlineAlert description={previewInputError} title="Cantidad no valida" tone="warning" />
+            ) : autoFefo && enteredPreviewQuery ? (
+              <PickingFefoPreview query={enteredPreviewQuery} onStateChange={handleEnteredPreviewState} />
+            ) : null}
+            <div className="flex justify-end">
+            <Button disabled={disabled || (autoFefo && !previewIsCurrent)} onClick={() => void submit()} type="button">
+              Guardar recolección
             </Button>
+            </div>
           </div>
 
           {line.tracking.serial ? (
@@ -500,7 +676,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
           ) : null}
         </div>
       ) : null}
-      {error ? <InlineAlert description={error} title="Revisa el progreso" tone="warning" /> : null}
+      {error ? <InlineAlert description={error} title="Revisa la recolección" tone="warning" /> : null}
     </article>
   );
 }
@@ -549,4 +725,19 @@ export function filterAvailableSerialNumbers(serialNumbers: string[], search: st
   const normalizedSearch = search.trim().toLocaleLowerCase();
   if (!normalizedSearch) return serialNumbers;
   return serialNumbers.filter((serial) => serial.toLocaleLowerCase().includes(normalizedSearch));
+}
+
+function getPickingSelectionLocationLabel(
+  line: PickingDetailLineDto,
+  locationId: string | null,
+): string {
+  const location = line.inventory.locations.find((candidate) => candidate.locationId === locationId);
+  if (!location) return locationId ?? "Ubicacion no informada";
+  return [location.locationCode, location.locationName].filter(Boolean).join(" · ") ||
+    locationId ||
+    "Ubicacion no informada";
+}
+
+function formatPickingQuantity(value: number): string {
+  return new Intl.NumberFormat("es-GT", { maximumFractionDigits: 3 }).format(value);
 }

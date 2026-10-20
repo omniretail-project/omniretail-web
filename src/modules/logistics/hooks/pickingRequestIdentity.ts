@@ -38,6 +38,7 @@ export interface PickingUpdateFingerprintInput {
   pickingLineId: string;
   targetQuantity: number;
   locationId: string | null;
+  autoAllocateLots?: boolean;
   trackingSelections: PickingTrackingSelectionCommand[];
 }
 
@@ -60,6 +61,7 @@ export function createPickingUpdateFingerprint(input: PickingUpdateFingerprintIn
     input.pickingLineId,
     normalizePickingQuantity(input.targetQuantity),
     input.locationId,
+    input.autoAllocateLots === true,
     canonicalizePickingTrackingSelections(input.trackingSelections),
   ]);
 }

@@ -18,6 +18,7 @@ import { Modal } from "@/shared/components/Modal";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
 interface PickingWorkspaceProps {
+  autoFefoEnabled: boolean;
   canComplete: boolean;
   canStart: boolean;
   commandsReadOnly: boolean;
@@ -162,11 +163,13 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
               {!props.commandsReadOnly && !props.canStart ? <InlineAlert description="Tu rol no posee logistics.picking.start. El detalle está disponible únicamente para consulta." title="Acciones restringidas" tone="warning" /> : null}
 
               <PickingLineList
+                autoFefoEnabled={props.autoFefoEnabled}
                 disabled={props.submitting}
                 editable={assignedToCurrentUser && props.canStart}
                 incidents={detail.incidents}
                 lines={detail.lines}
                 onUpdate={props.onUpdateLine}
+                pickingOrderId={detail.pickingOrderId}
               />
               <PickingIncidentPanel canManage={assignedToCurrentUser && props.canStart} disabled={props.submitting} incidents={detail.incidents} lines={detail.lines} onRegister={props.onRegisterIncident} onResolve={props.onResolveIncident} />
 

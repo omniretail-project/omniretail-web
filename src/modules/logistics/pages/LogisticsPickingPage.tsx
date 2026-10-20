@@ -35,6 +35,7 @@ export function LogisticsPickingPage() {
             selectedPickingOrderId={picking.selectedPickingOrderId}
           />
           <PickingWorkspace
+            autoFefoEnabled={picking.autoFefoEnabled}
             canComplete={picking.canComplete}
             canStart={picking.canStart}
             commandsReadOnly={picking.commandsReadOnly}
@@ -70,7 +71,7 @@ export function LogisticsPickingPage() {
             }}
             onUpdateLine={async (line, targetQuantity, physicalSelection) => {
               const result = await picking.updateLine(line, targetQuantity, physicalSelection);
-              if (result) showToast({ title: "Progreso actualizado", description: `${line.name}: ${targetQuantity} de ${line.requiredQuantity}.`, tone: "success" });
+              if (result) showToast({ title: "Recolección guardada", description: `${line.name}: ${targetQuantity} de ${line.requiredQuantity}.`, tone: "success" });
               return result;
             }}
             selected={picking.workspaceOpen}
