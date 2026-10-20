@@ -9,6 +9,7 @@ export interface PickingPhysicalSelectionInput {
 
 export interface PickingPhysicalSelectionResult {
   locationId: string | null;
+  autoAllocateLots?: boolean;
   trackingSelections: PickingTrackingSelectionCommand[];
 }
 
@@ -28,6 +29,55 @@ export interface PickingCanonicalLocationCandidates {
 }
 
 const QUANTITY_SCALE = 1_000;
+
+export function isPickingAutoFefoEligible(line: PickingDetailLineDto): boolean {
+  return Boolean(
+    line.tracking.stock &&
+    line.tracking.lot &&
+    line.tracking.expiration &&
+    !line.tracking.serial,
+  );
+}
+
+export function buildPickingAutoFefoSelection(
+  line: PickingDetailLineDto,
+  locationId: string | null,
+): PickingPhysicalSelectionResult {
+  if (!isPickingAutoFefoEligible(line)) {
+    throw new Error("Esta linea no admite asignacion automatica FEFO.");
+  }
+  const availability = getPickingLineUpdateAvailability(line);
+  if (!availability.available) throw new Error(availability.reason ?? "Trazabilidad no disponible.");
+  if (!locationId) throw new Error("Selecciona la ubicacion fisica.");
+  const canonicalLocation = resolvePickingCanonicalCandidates(line).find(
+    (candidate) => candidate.location.locationId === locationId,
+  );
+  if (!canonicalLocation) throw new Error("La ubicacion seleccionada no es canonica.");
+  if (
+    line.trackingSelections.some(
+      (selection) => selection.locationId && selection.locationId !== locationId,
+    )
+  ) {
+    throw new Error("La seleccion existente pertenece a otra ubicacion.");
+  }
+  return { locationId, autoAllocateLots: true, trackingSelections: [] };
+}
+
+export function sortPickingTrackingSelectionsForDisplay(
+  selections: PickingDetailLineDto["trackingSelections"],
+): PickingDetailLineDto["trackingSelections"] {
+  return selections
+    .map((selection) => ({
+      ...selection,
+      serialNumbers: [...selection.serialNumbers],
+    }))
+    .sort((left, right) =>
+      compareNullableText(left.expirationDate, right.expirationDate) ||
+      compareText(left.lotNumber, right.lotNumber) ||
+      compareText(left.locationId, right.locationId) ||
+      compareText(left.lotId, right.lotId),
+    );
+}
 
 export function getPickingLineUpdateAvailability(
   line: PickingDetailLineDto,
@@ -230,4 +280,19 @@ function requireLocation(locationId: string | null): string {
 
 function isTraceable(line: PickingDetailLineDto) {
   return line.tracking.lot || line.tracking.expiration || line.tracking.serial;
+}
+
+export function compareNullableText(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): number {
+  if (left === right) return 0;
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
+  return left.localeCompare(right);
+}
+
+function compareText(left: string | null, right: string | null): number {
+  return (left ?? "").localeCompare(right ?? "");
 }

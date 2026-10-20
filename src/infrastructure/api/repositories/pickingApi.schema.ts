@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { PickingDetailReadModel, PickingQueueReadModel } from "@/core/repositories";
+import type {
+  PickingDetailReadModel,
+  PickingFefoPreviewReadModel,
+  PickingQueueReadModel,
+} from "@/core/repositories";
 import type {
   PickingCommandActionResult,
   PickingIncidentReadModel,
@@ -213,12 +217,74 @@ const detailSchema = queueItemSchema.safeExtend({
   releases: z.array(releaseSchema),
 });
 
+const fefoPreviewAllocationSchema = z.object({
+  locationId: apiUuidSchema,
+  locationCode: z.string(),
+  locationName: z.string(),
+  lotId: apiUuidSchema,
+  lotNumber: z.string(),
+  expirationDate: localDateSchema,
+  quantity: decimalSchema.refine((value) => value > 0),
+}).strict();
+
+const fefoPreviewSchema = z.object({
+  pickingOrderId: apiUuidSchema,
+  pickingLineId: apiUuidSchema,
+  productId: apiUuidSchema,
+  branchId: apiUuidSchema,
+  location: z.object({ id: apiUuidSchema, code: z.string(), name: z.string() }).strict(),
+  currentPickedQuantity: nonNegativeDecimalSchema,
+  targetPickedQuantity: nonNegativeDecimalSchema,
+  incrementalQuantity: nonNegativeDecimalSchema,
+  existingSelections: z.array(fefoPreviewAllocationSchema),
+  incrementalAllocations: z.array(fefoPreviewAllocationSchema),
+  resultingSelections: z.array(fefoPreviewAllocationSchema),
+  calculatedAt: instantSchema,
+  provisional: z.literal(true),
+}).strict().superRefine((preview, context) => {
+  const closeTo = (left: number, right: number) => Math.abs(left - right) < 0.0005;
+  const total = (items: Array<{ quantity: number }>) =>
+    items.reduce((sum, item) => sum + item.quantity, 0);
+  if (preview.targetPickedQuantity < preview.currentPickedQuantity) {
+    context.addIssue({ code: "custom", message: "La cantidad objetivo retrocede el progreso." });
+  }
+  if (!closeTo(
+    preview.incrementalQuantity,
+    preview.targetPickedQuantity - preview.currentPickedQuantity,
+  )) {
+    context.addIssue({ code: "custom", message: "La cantidad incremental es inconsistente." });
+  }
+  if (!closeTo(total(preview.existingSelections), preview.currentPickedQuantity)) {
+    context.addIssue({ code: "custom", message: "Las selecciones existentes son inconsistentes." });
+  }
+  if (!closeTo(total(preview.incrementalAllocations), preview.incrementalQuantity)) {
+    context.addIssue({ code: "custom", message: "Las asignaciones incrementales son inconsistentes." });
+  }
+  if (!closeTo(total(preview.resultingSelections), preview.targetPickedQuantity)) {
+    context.addIssue({ code: "custom", message: "La distribucion resultante es inconsistente." });
+  }
+  for (const allocation of [
+    ...preview.existingSelections,
+    ...preview.incrementalAllocations,
+    ...preview.resultingSelections,
+  ]) {
+    if (allocation.locationId !== preview.location.id) {
+      context.addIssue({ code: "custom", message: "Una asignacion pertenece a otra ubicacion." });
+      break;
+    }
+  }
+});
+
 export function parseApiPickingQueue(value: unknown): PickingQueueReadModel[] {
   return parse(z.array(queueItemSchema), value, "cola") as unknown as PickingQueueReadModel[];
 }
 
 export function parseApiPickingDetail(value: unknown): PickingDetailReadModel {
   return parse(detailSchema, value, "detalle") as unknown as PickingDetailReadModel;
+}
+
+export function parseApiPickingFefoPreview(value: unknown): PickingFefoPreviewReadModel {
+  return parse(fefoPreviewSchema, value, "vista previa FEFO") as PickingFefoPreviewReadModel;
 }
 
 export function parseApiPickingAction(value: unknown): PickingCommandActionResult {

@@ -110,6 +110,15 @@ export default defineConfig({
         "src/modules/logistics/components/LogisticsHistoryDetailModal.tsx",
         "src/modules/logistics/components/LogisticsTracePanel.tsx",
         "src/modules/logistics/pages/LogisticsHistoryPage.tsx",
+        // Vista previa FEFO de Picking (lectura provisional previa al PATCH autoritativo).
+        "src/infrastructure/api/repositories/ApiPickingRepository.ts",
+        "src/infrastructure/api/repositories/pickingApi.schema.ts",
+        "src/modules/logistics/application/mappers/PickingApiMapper.ts",
+        "src/modules/logistics/application/services/PickingApplicationService.ts",
+        "src/modules/logistics/application/pickingPhysicalSelection.ts",
+        "src/modules/logistics/components/PickingFefoPreview.tsx",
+        "src/modules/logistics/components/PickingLineList.tsx",
+        "src/modules/logistics/hooks/usePickingFefoPreview.ts",
         // Ubicaciones operativas y regularizacion de inventario (PR #168).
         "src/infrastructure/api/repositories/ApiInventoryAdjustmentRepository.ts",
         "src/infrastructure/api/repositories/ApiInventoryStockRepository.ts",
@@ -129,6 +138,7 @@ export default defineConfig({
         "src/modules/inventory/hooks/useInventoryAlerts.ts",
         "src/modules/inventory/application/services/InventoryCountService.ts",
         "src/modules/inventory/application/services/InventoryRegularizationService.ts",
+        "src/modules/inventory/application/services/resolveInventoryMovementPresentation.ts",
         "src/modules/inventory/application/services/RegisterInventoryAdjustmentService.ts",
         "src/modules/inventory/application/services/inventoryRegularizationAttempt.ts",
         "src/modules/inventory/application/services/inventoryRegularizationMessages.ts",
@@ -218,6 +228,10 @@ export default defineConfig({
         // Descarga unificada del comprobante del storefront (PR de carrito y correo).
         "src/app/api/public/[slug]/receipt/[token]/route.ts",
         "src/modules/storefront/application/services/StorefrontReceiptPdfService.ts",
+        // Detalle público: atributos y disponibilidad por sucursal.
+        "src/modules/storefront/application/services/ApiStorefrontCatalogService.ts",
+        "src/modules/storefront/hooks/useStorefrontProductDetail.ts",
+        "src/modules/storefront/pages/ProductDetailPage.tsx",
         "src/modules/storefront/components/StorefrontHeader.tsx",
         "src/modules/storefront/providers/StorefrontCartProvider.tsx",
         "src/modules/storefront/pages/OrderConfirmationPage.tsx",

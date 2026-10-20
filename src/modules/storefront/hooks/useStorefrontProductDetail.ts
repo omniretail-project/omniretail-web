@@ -69,7 +69,8 @@ export function useStorefrontProductDetail(productId: string) {
               media: apiProduct.imageSource
                 ? [{ source: apiProduct.imageSource, alt: apiProduct.imageAlt }]
                 : [],
-              attributes: [],
+              attributes: apiProduct.attributes ?? [],
+              availability: apiProduct.availability,
               availableQuantity: apiProduct.availableQuantity,
             }
           : await service.execute(tenantSlug, tenantId, productId);

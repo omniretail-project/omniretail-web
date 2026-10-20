@@ -52,6 +52,11 @@ OrderRepository, PickingRepository, DispatchRepository, InventoryRepository
 - `/logistica/picking` consume exclusivamente `PickingApplicationService` con contexto confiable de tenant y sucursal.
 - La cola muestra pedidos pendientes, asignados y en progreso, con cliente, modalidad de entrega y progreso autoritativo.
 - La UI registra cantidades objetivo y series canonicas; las allocations, FEFO, reservas y movimientos permanecen bajo autoridad del repository.
+- En modo API, los productos con stock+lote+vencimiento y sin series delegan la asignacion FEFO al backend; la UI envia cantidad acumulada y trata las asignaciones confirmadas por el read-back como resultado autoritativo.
+- Antes del registro, esas lineas consultan una vista previa FEFO provisional con la cantidad
+  acumulada objetivo. La consulta es de solo lectura y no reserva inventario; el PATCH mantiene
+  `autoAllocateLots: true` y `trackingSelections: []`, y el detalle recargado sigue siendo la
+  unica fuente autoritativa.
 - Assignment, incidencias, liberacion y completion conservan permisos, idempotencia y transiciones del dominio existentes.
 - Completar una entrega domiciliaria la deja disponible automaticamente para `/logistica/despachos`.
 

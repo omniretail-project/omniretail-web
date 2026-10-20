@@ -141,8 +141,45 @@ export interface PickingDetailReadModel extends PickingQueueReadModel {
   releases: PickingReleaseReadModel[];
 }
 
+export interface PickingFefoPreviewAllocationReadModel {
+  locationId: string;
+  locationCode: string;
+  locationName: string;
+  lotId: string;
+  lotNumber: string;
+  expirationDate: string;
+  quantity: number;
+}
+
+export interface PickingFefoPreviewReadModel {
+  pickingOrderId: string;
+  pickingLineId: string;
+  productId: string;
+  branchId: string;
+  location: { id: string; code: string; name: string };
+  currentPickedQuantity: number;
+  targetPickedQuantity: number;
+  incrementalQuantity: number;
+  existingSelections: PickingFefoPreviewAllocationReadModel[];
+  incrementalAllocations: PickingFefoPreviewAllocationReadModel[];
+  resultingSelections: PickingFefoPreviewAllocationReadModel[];
+  calculatedAt: string;
+  provisional: true;
+}
+
+export interface PickingFefoPreviewQuery {
+  locationId: string;
+  pickedQuantity: number;
+}
+
 /** Proyeccion agregada read-only; el tenant lo deriva el backend de la sesion. */
 export interface PickingReadRepository {
   getQueue(scope: PickingScope): Promise<PickingQueueReadModel[]>;
   getDetail(scope: PickingScope, pickingOrderId: string): Promise<PickingDetailReadModel>;
+  getFefoPreview(
+    scope: PickingScope,
+    pickingOrderId: string,
+    pickingItemId: string,
+    query: PickingFefoPreviewQuery,
+  ): Promise<PickingFefoPreviewReadModel>;
 }

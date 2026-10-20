@@ -1,13 +1,29 @@
 import type {
   PickingDetailReadModel,
+  PickingFefoPreviewReadModel,
   PickingQueueReadModel,
   PickingReadInventoryAvailability,
 } from "@/core/repositories";
 import type {
   PickingDetailDto,
+  PickingFefoPreviewDto,
   PickingDetailLineDto,
   PickingQueueItemDto,
 } from "@/modules/logistics/application/dto/PickingReadModelDto";
+
+export function toPickingFefoPreviewDto(
+  model: PickingFefoPreviewReadModel,
+): PickingFefoPreviewDto {
+  const copyAllocations = (items: PickingFefoPreviewReadModel["resultingSelections"]) =>
+    items.map((item) => ({ ...item }));
+  return {
+    ...model,
+    location: { ...model.location },
+    existingSelections: copyAllocations(model.existingSelections),
+    incrementalAllocations: copyAllocations(model.incrementalAllocations),
+    resultingSelections: copyAllocations(model.resultingSelections),
+  };
+}
 
 export function toPickingQueueItemDto(model: PickingQueueReadModel): PickingQueueItemDto {
   return {

@@ -3,6 +3,7 @@ import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { ApiPickingRepository } from "@/infrastructure/api/repositories/ApiPickingRepository";
 import {
   parseApiPickingDetail,
+  parseApiPickingFefoPreview,
   parseApiPickingQueue,
 } from "@/infrastructure/api/repositories/pickingApi.schema";
 import { withApiLogisticsPickingRead } from "@/infrastructure/api/withApiLogisticsPickingRead";
@@ -291,17 +292,59 @@ const serialOnlyDetailResponse = {
   releases: [],
 };
 
+const fefoPreviewResponse = {
+  pickingOrderId: ids.picking,
+  pickingLineId: ids.line,
+  productId: ids.product,
+  branchId: ids.branch,
+  location: { id: ids.locationA, code: "A-01", name: "Estante A" },
+  currentPickedQuantity: 100,
+  targetPickedQuantity: 150,
+  incrementalQuantity: 50,
+  existingSelections: [{
+    locationId: ids.locationA,
+    locationCode: "A-01",
+    locationName: "Estante A",
+    lotId: ids.lot,
+    lotNumber: "LOT-001",
+    expirationDate: "2030-02-20",
+    quantity: 100,
+  }],
+  incrementalAllocations: [{
+    locationId: ids.locationA,
+    locationCode: "A-01",
+    locationName: "Estante A",
+    lotId: ids.lot,
+    lotNumber: "LOT-001",
+    expirationDate: "2030-02-20",
+    quantity: 50,
+  }],
+  resultingSelections: [{
+    locationId: ids.locationA,
+    locationCode: "A-01",
+    locationName: "Estante A",
+    lotId: ids.lot,
+    lotNumber: "LOT-001",
+    expirationDate: "2030-02-20",
+    quantity: 150,
+  }],
+  calculatedAt: "2026-10-19T14:30:00-06:00",
+  provisional: true,
+};
+
 async function main() {
   const queue = parseApiPickingQueue([orderQueueResponse, transferQueueResponse]);
   const detail = parseApiPickingDetail(detailResponse);
   const transferDetail = parseApiPickingDetail(transferDetailResponse);
   const serialOnlyDetail = parseApiPickingDetail(serialOnlyDetailResponse);
+  const fefoPreview = parseApiPickingFefoPreview(fefoPreviewResponse);
   const mappedOrder = toPickingDetailDto(detail);
   const mappedTransfer = toPickingQueueItemDto(queue[1]);
   const mappedTransferDetail = toPickingDetailDto(transferDetail);
   const mappedSerialOnlyDetail = toPickingDetailDto(serialOnlyDetail);
 
   assert.equal(mappedOrder.lines[0].requiredQuantity, 3.75);
+  assert.equal(fefoPreview.incrementalQuantity, 50);
   assert.equal(mappedOrder.lines[0].inventory.otherReservedQuantity, 2.75);
   assert.equal(mappedOrder.lines[0].inventory.locations.length, 2);
   assert.equal(mappedOrder.lines[0].availableLots[0].expirationDate, "2030-02-20");
@@ -418,17 +461,26 @@ async function verifyRepositoryRoutesAndErrors() {
   try {
     globalThis.fetch = async (input) => {
       calls.push(String(input));
-      const body = String(input).includes(`/${ids.picking}`)
-        ? detailResponse
-        : [orderQueueResponse];
+      const body = String(input).includes("/fefo-preview")
+        ? fefoPreviewResponse
+        : String(input).includes(`/${ids.picking}`)
+          ? detailResponse
+          : [orderQueueResponse];
       return Response.json(body);
     };
     const repository = new ApiPickingRepository();
     await repository.getQueue({ tenantId: ids.tenant, branchId: ids.branch });
     await repository.getDetail({ tenantId: ids.tenant, branchId: ids.branch }, ids.picking);
+    await repository.getFefoPreview(
+      { tenantId: ids.tenant, branchId: ids.branch },
+      ids.picking,
+      ids.line,
+      { locationId: ids.locationA, pickedQuantity: 150 },
+    );
     assert.deepEqual(calls, [
       `/api/backend/logistics/picking?branchId=${ids.branch}`,
       `/api/backend/logistics/picking/${ids.picking}?branchId=${ids.branch}`,
+      `/api/backend/logistics/picking/${ids.picking}/items/${ids.line}/fefo-preview?branchId=${ids.branch}&locationId=${ids.locationA}&pickedQuantity=150`,
     ]);
 
     for (const status of [401, 403, 404]) {

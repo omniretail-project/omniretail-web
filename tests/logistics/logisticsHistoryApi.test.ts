@@ -359,6 +359,53 @@ describe("LogisticsHistoryApiMapper", () => {
       expect.objectContaining({ quantity: 1, serial: { id: "S-2", number: "S-2" } }),
     ]);
   });
+
+  it("conserva fechas calendario, lotes y cantidades FEFO distintos en el detalle", async () => {
+    const response = {
+      ...detailJson,
+      lines: [{
+        ...detailJson.lines[0],
+        requestedQuantity: 5000,
+        pickedQuantity: 5000,
+        packedQuantity: 5000,
+        dispatchedQuantity: 5000,
+        trackingSelections: [
+          {
+            locationId: ids.location,
+            lotId: ids.lot,
+            lotNumber: "121401",
+            expirationDate: "2027-11-17",
+            quantity: 4245,
+            serialNumbers: [],
+          },
+          {
+            locationId: ids.location,
+            lotId: id(15),
+            lotNumber: "526398",
+            expirationDate: "2027-11-20",
+            quantity: 755,
+            serialNumbers: [],
+          },
+        ],
+      }],
+    };
+    stubFetch(() => Response.json(response));
+
+    const detail = toLogisticsHistoryDetailDto(
+      await new ApiLogisticsHistoryRepository().getDetail(ids.branch, "order", ids.order),
+    );
+
+    expect(detail.items[0]?.allocations).toEqual([
+      expect.objectContaining({
+        quantity: 4245,
+        lot: { id: ids.lot, number: "121401", expiresAt: "2027-11-17" },
+      }),
+      expect.objectContaining({
+        quantity: 755,
+        lot: { id: id(15), number: "526398", expiresAt: "2027-11-20" },
+      }),
+    ]);
+  });
 });
 
 describe("GetLogisticsHistoryService en modo API", () => {
