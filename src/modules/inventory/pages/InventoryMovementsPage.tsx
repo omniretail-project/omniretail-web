@@ -17,6 +17,10 @@ import {
 } from "@/modules/inventory/application/dto/InventoryMovementsDto";
 import { exportInventoryMovementsXlsx } from "@/modules/inventory/application/services/exportInventoryMovementsXlsx";
 import {
+  resolveInventoryMovementPresentation,
+  type InventoryMovementPresentation,
+} from "@/modules/inventory/application/services/resolveInventoryMovementPresentation";
+import {
   MOVEMENT_PERIOD_OPTIONS,
   useInventoryMovements,
 } from "@/modules/inventory/hooks/useInventoryMovements";
@@ -551,6 +555,7 @@ function MovementTable({
           ) : (
             rows.map((row) => {
               const dateParts = formatDateParts(row.createdAt);
+              const presentation = resolveInventoryMovementPresentation(row);
               return (
                 <tr
                   className={cn(
@@ -580,10 +585,12 @@ function MovementTable({
                     </p>
                   </td>
                   <td className="px-3 py-2.5">
-                    <MovementTypeBadge row={row} />
+                    <MovementTypeBadge presentation={presentation} />
                   </td>
                   <td className="hidden px-3 py-2.5 font-medium text-[var(--color-structure)] md:table-cell">
-                    <span className="block truncate" title={row.referenceLabel}>{row.referenceLabel}</span>
+                    <span className="block truncate" title={presentation.referenceLabel}>
+                      {presentation.referenceLabel}
+                    </span>
                   </td>
                   <td className="hidden px-3 py-2.5 text-right tabular-nums text-[var(--color-text-muted)] xl:table-cell">
                     {formatOptionalQuantity(row.quantityBefore)}
@@ -622,8 +629,12 @@ function MovementTable({
   );
 }
 
-function MovementTypeBadge({ row }: { row: InventoryMovementRow }) {
-  const config = movementDisplayConfig[row.displayType];
+function MovementTypeBadge({
+  presentation,
+}: {
+  presentation: InventoryMovementPresentation;
+}) {
+  const config = movementDisplayConfig[presentation.displayType];
   const Icon = config.icon;
 
   return (
@@ -634,7 +645,7 @@ function MovementTypeBadge({ row }: { row: InventoryMovementRow }) {
       )}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">{config.label}</span>
+      <span className="truncate">{presentation.typeLabel}</span>
     </span>
   );
 }
@@ -721,6 +732,7 @@ function MovementDetailPanel({
 }) {
   const isTransfer = Boolean(movement.transferDetail);
   const isAdjustment = Boolean(movement.adjustmentDetail);
+  const presentation = resolveInventoryMovementPresentation(movement);
 
   return (
     <>
@@ -742,10 +754,12 @@ function MovementDetailPanel({
               Movimiento historico
             </p>
             <h2 className="mt-1 break-words text-lg font-bold text-[var(--color-title)]">
-              {movement.referenceLabel !== "-" ? movement.referenceLabel : movement.typeLabel}
+              {presentation.referenceLabel !== "-"
+                ? presentation.referenceLabel
+                : presentation.typeLabel}
             </h2>
             <div className="mt-2">
-              <MovementTypeBadge row={movement} />
+              <MovementTypeBadge presentation={presentation} />
             </div>
           </div>
           <button
@@ -782,7 +796,7 @@ function MovementDetailPanel({
               <DetailItem label="Usuario" value={movement.userLabel} />
               <DetailItem label="Sucursal" value={movement.branchName} />
               <DetailItem label="Ubicacion" value={movement.locationLabel} />
-              <DetailItem label="Referencia" value={movement.referenceLabel} />
+              <DetailItem label="Referencia" value={presentation.referenceLabel} />
               <DetailItem label="Motivo" value={movement.reason || "-"} />
             </dl>
 
