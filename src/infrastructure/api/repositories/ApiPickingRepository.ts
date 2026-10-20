@@ -3,6 +3,8 @@ import type {
   PickingCommandActionResult,
   PickingCommandRepository,
   PickingDetailReadModel,
+  PickingFefoPreviewQuery,
+  PickingFefoPreviewReadModel,
   PickingIncidentReadModel,
   PickingQueueReadModel,
   PickingReadLine,
@@ -11,10 +13,11 @@ import type {
   PickingScope,
   UpdatePickingLineCommand,
 } from "@/core/repositories";
-import { backendFetch } from "@/infrastructure/api/backendClient";
+import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendClient";
 import { assertApiUuid } from "@/infrastructure/api/uuid";
 import {
   parseApiPickingDetail,
+  parseApiPickingFefoPreview,
   parseApiPickingAction,
   parseApiPickingIncident,
   parseApiPickingLine,
@@ -39,6 +42,36 @@ export class ApiPickingRepository implements PickingReadRepository, PickingComma
       await backendFetch<unknown>(`/logistics/picking/${pickingOrderId}`, {
         query: { branchId: scope.branchId },
       }),
+    );
+  }
+
+  async getFefoPreview(
+    scope: PickingScope,
+    pickingOrderId: string,
+    pickingItemId: string,
+    query: PickingFefoPreviewQuery,
+  ): Promise<PickingFefoPreviewReadModel> {
+    this.assertCommandIds(scope, pickingOrderId);
+    assertApiUuid(pickingItemId, "pickingItemId");
+    assertApiUuid(query.locationId, "locationId");
+    if (!Number.isFinite(query.pickedQuantity) || query.pickedQuantity < 0) {
+      throw new BackendRequestError(
+        "pickedQuantity debe ser una cantidad acumulada valida.",
+        400,
+        "INVALID_PICKING_QUANTITY",
+      );
+    }
+    return parseApiPickingFefoPreview(
+      await backendFetch<unknown>(
+        `/logistics/picking/${pickingOrderId}/items/${pickingItemId}/fefo-preview`,
+        {
+          query: {
+            branchId: scope.branchId,
+            locationId: query.locationId,
+            pickedQuantity: query.pickedQuantity,
+          },
+        },
+      ),
     );
   }
 

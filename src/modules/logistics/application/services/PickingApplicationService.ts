@@ -11,6 +11,8 @@ import type {
   PickingActionResultDto,
   PickingDetailDto,
   PickingDetailLineDto,
+  PickingFefoPreviewDto,
+  PickingFefoPreviewQueryDto,
   PickingIncidentDto,
   PickingProgressDto,
   PickingQueueItemDto,
@@ -18,6 +20,7 @@ import type {
 } from "@/modules/logistics/application/dto/PickingReadModelDto";
 import {
   toPickingDetailDto,
+  toPickingFefoPreviewDto,
   toPickingQueueItemDto,
 } from "@/modules/logistics/application/mappers/PickingApiMapper";
 import { resolveTrustedPickingContext } from "@/modules/logistics/application/services/PickingAuthorizationContext";
@@ -35,6 +38,7 @@ type PickingRepositories = Pick<
   | "customers"
   | "picking"
   | "pickingRead"
+  | "pickingReadDataSource"
   | "pickingCommands"
   | "pickingCommandsEnabled"
   | "orders"
@@ -49,6 +53,7 @@ export type PickingLineUpdateCommand = {
   locationId?: string;
   lotId?: string;
   serialNumbers?: string[];
+  autoAllocateLots?: boolean;
   status?: PickingItemStatus;
   trackingSelections?: PickingTrackingSelectionCommand[];
 } & (
@@ -149,6 +154,43 @@ export class PickingApplicationService {
       );
     }
     return this.buildDetail(context, pickingOrderId);
+  }
+
+  async getFefoPreview(
+    selectedBranchId: string,
+    query: PickingFefoPreviewQueryDto,
+  ): Promise<PickingFefoPreviewDto> {
+    const context = await this.context(selectedBranchId, PICKING_START);
+    if (this.repositories.pickingReadDataSource !== "api" || !this.repositories.pickingRead) {
+      throw new BackendRequestError(
+        "La vista previa FEFO solo esta disponible en modo API.",
+        409,
+        "PICKING_FEFO_PREVIEW_NOT_AVAILABLE",
+      );
+    }
+    const preview = toPickingFefoPreviewDto(
+      await this.repositories.pickingRead.getFefoPreview(
+        context,
+        query.pickingOrderId,
+        query.pickingLineId,
+        { locationId: query.locationId, pickedQuantity: query.pickedQuantity },
+      ),
+    );
+    if (
+      preview.pickingOrderId !== query.pickingOrderId ||
+      preview.pickingLineId !== query.pickingLineId ||
+      preview.productId !== query.productId ||
+      preview.branchId !== context.branchId ||
+      preview.location.id !== query.locationId ||
+      preview.targetPickedQuantity !== query.pickedQuantity
+    ) {
+      throw new BackendRequestError(
+        "El backend devolvio una vista previa FEFO de otro contexto.",
+        502,
+        "INVALID_BACKEND_RESPONSE",
+      );
+    }
+    return preview;
   }
 
   async assign(selectedBranchId: string, pickingOrderId: string): Promise<PickingActionResultDto> {
@@ -318,6 +360,7 @@ export class PickingApplicationService {
           pickedQuantity: command.pickedQuantity,
           locationId: command.locationId ?? null,
           operationId: command.operationId,
+          ...(command.autoAllocateLots === true ? { autoAllocateLots: true } : {}),
           trackingSelections: command.trackingSelections ?? [],
         },
       );

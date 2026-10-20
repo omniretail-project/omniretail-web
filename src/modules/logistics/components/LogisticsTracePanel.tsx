@@ -39,7 +39,7 @@ export function LogisticsTracePanel({ items, state, error }: LogisticsTracePanel
                       <td className="px-4 py-2">{allocation.quantity}</td>
                       <td className="px-4 py-2">{formatTraceLocation(allocation.location)}</td>
                       <td className="px-4 py-2">{allocation.lot?.number ?? "No aplica"}</td>
-                      <td className="px-4 py-2">{allocation.lot?.expiresAt ? new Date(allocation.lot.expiresAt).toLocaleDateString("es-GT") : "No aplica"}</td>
+                      <td className="px-4 py-2">{allocation.lot?.expiresAt ? formatLogisticsExpirationDate(allocation.lot.expiresAt) : "No aplica"}</td>
                       <td className="px-4 py-2">{allocation.serial?.number ?? "No aplica"}</td>
                     </tr>
                   ))}</tbody>
@@ -71,4 +71,12 @@ function formatStageQuantity(quantity: number | null) {
 function formatTraceLocation(location: LogisticsTraceAllocationDto["location"]) {
   if (!location) return "No aplica";
   return [location.code, location.name].filter(Boolean).join(" · ") || "Ubicación registrada";
+}
+
+/** Los vencimientos son fechas de calendario, no instantes sujetos a zona horaria. */
+export function formatLogisticsExpirationDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
+  if (!match) return value;
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
 }

@@ -11,6 +11,7 @@ import type {
 } from "@/modules/logistics/application/dto/PickingReadModelDto";
 import {
   getPickingLineUpdateAvailability,
+  isPickingAutoFefoEligible,
   type PickingPhysicalSelectionResult,
 } from "@/modules/logistics/application/pickingPhysicalSelection";
 import {
@@ -65,6 +66,7 @@ export function useLogisticsPicking() {
   );
   const canRead = hasPermission("logistics.picking.read");
   const commandsReadOnly = repositories.pickingCommandsEnabled === false;
+  const autoFefoEnabled = repositories.pickingReadDataSource === "api";
   const canStart = !commandsReadOnly && hasPermission("logistics.picking.start");
   const canComplete = !commandsReadOnly && hasPermission("logistics.picking.complete");
 
@@ -225,6 +227,11 @@ export function useLogisticsPicking() {
     physicalSelection: PickingPhysicalSelectionResult,
   ) => {
     if (!currentBranch || !detail || !canStart) return false;
+    const autoAllocateLots = physicalSelection.autoAllocateLots === true;
+    if (autoAllocateLots && (!autoFefoEnabled || !isPickingAutoFefoEligible(line))) {
+      setWorkspaceError("Esta linea no admite asignacion automatica FEFO.");
+      return false;
+    }
     const availability = getPickingLineUpdateAvailability(line);
     if (!availability.available) {
       setWorkspaceError(availability.reason);
@@ -240,6 +247,7 @@ export function useLogisticsPicking() {
       pickingLineId: line.pickingLineId,
       targetQuantity,
       locationId: physicalSelection.locationId,
+      autoAllocateLots,
       trackingSelections: normalizedSelections,
     });
     const sequence = beginMutation();
@@ -255,10 +263,14 @@ export function useLogisticsPicking() {
         pickedQuantity: targetQuantity,
         operationId,
         locationId: physicalSelection.locationId ?? undefined,
-        lotId: normalizedSelections[0]?.lotId ?? undefined,
-        serialNumbers: line.tracking.serial
-          ? normalizedSelections.flatMap((selection) => selection.serialNumbers)
-          : undefined,
+        ...(autoAllocateLots
+          ? { autoAllocateLots: true }
+          : {
+              lotId: normalizedSelections[0]?.lotId ?? undefined,
+              serialNumbers: line.tracking.serial
+                ? normalizedSelections.flatMap((selection) => selection.serialNumbers)
+                : undefined,
+            }),
         trackingSelections: normalizedSelections,
       });
       pendingOperationIdsRef.current.delete(fingerprint);
@@ -274,7 +286,7 @@ export function useLogisticsPicking() {
     } finally {
       finishMutation(sequence);
     }
-  }, [beginMutation, canApplyMutationResult, canStart, currentBranch, detail, finishMutation, reload, service]);
+  }, [autoFefoEnabled, beginMutation, canApplyMutationResult, canStart, currentBranch, detail, finishMutation, reload, service]);
 
   const registerIncident = useCallback(async (values: PickingIncidentFormValues) => {
     if (!currentBranch || !detail || !canStart) return false;
@@ -396,6 +408,7 @@ export function useLogisticsPicking() {
     canStart,
     canComplete,
     commandsReadOnly,
+    autoFefoEnabled,
     queue: filteredQueue,
     search,
     setSearch,

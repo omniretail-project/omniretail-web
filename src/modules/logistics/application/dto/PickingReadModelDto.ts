@@ -120,6 +120,40 @@ export interface PickingDetailDto {
   releases: PickingReleaseDto[];
 }
 
+export interface PickingFefoPreviewAllocationDto {
+  locationId: string;
+  locationCode: string;
+  locationName: string;
+  lotId: string;
+  lotNumber: string;
+  expirationDate: string;
+  quantity: number;
+}
+
+export interface PickingFefoPreviewDto {
+  pickingOrderId: string;
+  pickingLineId: string;
+  productId: string;
+  branchId: string;
+  location: { id: string; code: string; name: string };
+  currentPickedQuantity: number;
+  targetPickedQuantity: number;
+  incrementalQuantity: number;
+  existingSelections: PickingFefoPreviewAllocationDto[];
+  incrementalAllocations: PickingFefoPreviewAllocationDto[];
+  resultingSelections: PickingFefoPreviewAllocationDto[];
+  calculatedAt: string;
+  provisional: true;
+}
+
+export interface PickingFefoPreviewQueryDto {
+  pickingOrderId: string;
+  pickingLineId: string;
+  productId: string;
+  locationId: string;
+  pickedQuantity: number;
+}
+
 export interface PickingActionResultDto {
   pickingOrderId: string;
   orderId?: string;

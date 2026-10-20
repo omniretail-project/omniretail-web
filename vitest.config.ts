@@ -110,6 +110,14 @@ export default defineConfig({
         "src/modules/logistics/components/LogisticsHistoryDetailModal.tsx",
         "src/modules/logistics/components/LogisticsTracePanel.tsx",
         "src/modules/logistics/pages/LogisticsHistoryPage.tsx",
+        // Vista previa FEFO de Picking (lectura provisional previa al PATCH autoritativo).
+        "src/infrastructure/api/repositories/ApiPickingRepository.ts",
+        "src/infrastructure/api/repositories/pickingApi.schema.ts",
+        "src/modules/logistics/application/mappers/PickingApiMapper.ts",
+        "src/modules/logistics/application/services/PickingApplicationService.ts",
+        "src/modules/logistics/components/PickingFefoPreview.tsx",
+        "src/modules/logistics/components/PickingLineList.tsx",
+        "src/modules/logistics/hooks/usePickingFefoPreview.ts",
         // Ubicaciones operativas y regularizacion de inventario (PR #168).
         "src/infrastructure/api/repositories/ApiInventoryAdjustmentRepository.ts",
         "src/infrastructure/api/repositories/ApiInventoryStockRepository.ts",

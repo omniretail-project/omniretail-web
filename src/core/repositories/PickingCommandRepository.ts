@@ -17,6 +17,7 @@ export interface UpdatePickingLineCommand {
   pickedQuantity: number;
   locationId: string | null;
   operationId: string;
+  autoAllocateLots?: boolean;
   trackingSelections: PickingTrackingSelectionCommand[];
 }
 
