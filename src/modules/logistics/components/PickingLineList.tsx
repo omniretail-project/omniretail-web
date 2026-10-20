@@ -85,7 +85,10 @@ interface PickingLineCardProps {
 }
 
 function PickingLineCard({ autoFefoEnabled, disabled, editable, incidents, line, onUpdate, pickingOrderId }: PickingLineCardProps) {
-  const [targetText, setTargetText] = useState(String(line.pickedQuantity));
+  const [targetDraft, setTargetDraft] = useState(() => ({
+    pickedQuantity: line.pickedQuantity,
+    text: String(line.pickedQuantity),
+  }));
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(
     line.location?.id ?? line.trackingSelections[0]?.locationId ?? null,
   );
@@ -111,6 +114,9 @@ function PickingLineCard({ autoFefoEnabled, disabled, editable, incidents, line,
     error: null,
   });
   const [submittedPreview, setSubmittedPreview] = useState<PickingFefoPreviewDto | null>(null);
+  const targetText = targetDraft.pickedQuantity === line.pickedQuantity
+    ? targetDraft.text
+    : String(line.pickedQuantity);
   const targetQuantity = Number(targetText);
   const serialDelta = Number.isFinite(targetQuantity)
     ? Math.max(targetQuantity - line.pickedQuantity, 0)
@@ -445,7 +451,10 @@ function PickingLineCard({ autoFefoEnabled, disabled, editable, incidents, line,
                 max={line.requiredQuantity}
                 min={line.pickedQuantity + 0.001}
                 onChange={(event) => {
-                  setTargetText(event.target.value);
+                  setTargetDraft({
+                    pickedQuantity: line.pickedQuantity,
+                    text: event.target.value,
+                  });
                   setSelectedSerials([]);
                   setError(null);
                 }}

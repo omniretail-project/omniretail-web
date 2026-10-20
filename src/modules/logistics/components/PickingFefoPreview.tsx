@@ -134,10 +134,10 @@ function FefoAllocationGroup({
   return (
     <div aria-label={label} className="mt-3 space-y-1.5" role="group">
       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">{label}</p>
-      {allocations.map((allocation) => (
+      {allocations.map((allocation, index) => (
         <div
           className="grid gap-1 rounded-md bg-slate-50 px-2.5 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center"
-          key={`${allocation.expirationDate}-${allocation.lotNumber}-${allocation.locationCode}-${allocation.lotId}`}
+          key={`${allocation.expirationDate}-${allocation.lotNumber}-${allocation.locationCode}-${allocation.lotId}-${index}`}
         >
           <span className="font-semibold text-[var(--color-title)]">Lote {allocation.lotNumber}</span>
           <span className="text-[var(--color-text-muted)]">
@@ -180,4 +180,3 @@ export function areFefoSelectionsEquivalent(
       .sort();
   return JSON.stringify(canonical(preview.resultingSelections)) === JSON.stringify(canonical(confirmed));
 }
-

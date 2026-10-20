@@ -119,5 +119,29 @@ describe("PickingFefoPreview", () => {
     })) }, persisted)).toBe(true);
     expect(areFefoSelectionsEquivalent(preview, persisted)).toBe(false);
   });
-});
 
+  it("renderiza asignaciones repetidas sin claves duplicadas", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(
+      <PickingFefoPreviewContent
+        state={{
+          status: "loaded",
+          data: {
+            ...preview,
+            resultingSelections: [
+              preview.existingSelections[0]!,
+              { ...preview.existingSelections[0]!, quantity: 30 },
+            ],
+          },
+          error: null,
+        }}
+      />,
+    );
+    const reportedErrors = errorSpy.mock.calls.flat().join(" ");
+    errorSpy.mockRestore();
+
+    const result = screen.getByRole("group", { name: "Resultado estimado después de guardar" });
+    expect(within(result).getAllByText("Lote A")).toHaveLength(2);
+    expect(reportedErrors).not.toContain("same key");
+  });
+});

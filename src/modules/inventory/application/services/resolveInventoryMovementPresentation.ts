@@ -16,12 +16,16 @@ export interface InventoryMovementPresentation {
   referenceLabel: string;
 }
 
+export type InventoryMovementPresentationInput = Omit<InventoryMovementRow, "reason"> & {
+  reason?: string | null;
+};
+
 /**
  * Resuelve etiquetas exclusivamente visuales. Los identificadores originales del movimiento
  * permanecen intactos para filtros, operaciones y auditoria.
  */
 export function resolveInventoryMovementPresentation(
-  movement: InventoryMovementRow,
+  movement: InventoryMovementPresentationInput,
 ): InventoryMovementPresentation {
   const reason = normalizeReason(movement.reason);
   const transferFromReason = TRANSFER_REASON_PATTERN.exec(reason);
@@ -81,6 +85,7 @@ function getFriendlyReference(value: string | null | undefined) {
   return normalized;
 }
 
-function normalizeReason(value: string) {
+function normalizeReason(value: string | null | undefined): string {
+  if (!value) return "";
   return value.normalize("NFC").replace(/\s+/g, " ").trim();
 }

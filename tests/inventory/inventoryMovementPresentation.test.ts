@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { InventoryMovementType } from "@/core/enums";
-import type { InventoryMovementRow } from "@/modules/inventory/application/dto/InventoryMovementsDto";
-import { resolveInventoryMovementPresentation } from "@/modules/inventory/application/services/resolveInventoryMovementPresentation";
+import {
+  resolveInventoryMovementPresentation,
+  type InventoryMovementPresentationInput,
+} from "@/modules/inventory/application/services/resolveInventoryMovementPresentation";
 
 const MOVEMENT_UUID = "a60a028c-12c1-4013-8493-66cdda7e85bf";
 
-function movement(overrides: Partial<InventoryMovementRow> = {}): InventoryMovementRow {
+function movement(
+  overrides: Partial<InventoryMovementPresentationInput> = {},
+): InventoryMovementPresentationInput {
   return {
     id: "movement-1",
     tenantId: "tenant-1",
@@ -146,6 +150,17 @@ describe("resolveInventoryMovementPresentation", () => {
 
   it("no reemplaza un UUID cuando el movimiento no se puede clasificar con seguridad", () => {
     expect(resolveInventoryMovementPresentation(movement())).toEqual({
+      displayType: "out",
+      typeLabel: "Salida",
+      referenceLabel: MOVEMENT_UUID,
+    });
+  });
+
+  it.each([
+    { label: "null", reason: null },
+    { label: "undefined", reason: undefined },
+  ])("conserva la presentacion original cuando reason es $label", ({ reason }) => {
+    expect(resolveInventoryMovementPresentation(movement({ reason }))).toEqual({
       displayType: "out",
       typeLabel: "Salida",
       referenceLabel: MOVEMENT_UUID,

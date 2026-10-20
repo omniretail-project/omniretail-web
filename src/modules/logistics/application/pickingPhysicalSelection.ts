@@ -282,10 +282,14 @@ function isTraceable(line: PickingDetailLineDto) {
   return line.tracking.lot || line.tracking.expiration || line.tracking.serial;
 }
 
-function compareNullableText(left: string | null, right: string | null): number {
+export function compareNullableText(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): number {
   if (left === right) return 0;
-  if (left === null) return 1;
-  if (right === null) return -1;
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
   return left.localeCompare(right);
 }
 

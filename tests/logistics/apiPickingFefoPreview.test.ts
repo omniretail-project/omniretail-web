@@ -96,4 +96,3 @@ describe("vista previa FEFO de Picking", () => {
     )).rejects.toMatchObject({ status: 409, code: "INSUFFICIENT_STOCK" });
   });
 });
-

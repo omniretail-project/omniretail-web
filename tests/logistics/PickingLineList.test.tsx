@@ -630,6 +630,83 @@ describe("PickingLineList FEFO automatico", () => {
     );
   });
 
+  it("sincroniza la cantidad editable despues de un avance parcial FEFO", async () => {
+    fefoPreviewMock.currentPickedQuantity = 100;
+    const onUpdate = vi.fn(async () => true);
+    const partial: PickingDetailLineDto = {
+      ...autoFefoLine(),
+      pickedQuantity: 100,
+      remainingQuantity: 50,
+      status: PickingItemStatus.partial,
+      trackingSelections: [{
+        locationId: ids.location,
+        lotId: ids.lotA,
+        lotNumber: "526397",
+        expirationDate: "2027-03-13",
+        quantity: 100,
+        serialNumbers: [],
+      }],
+    };
+    const view = render(
+      <PickingLineList
+        autoFefoEnabled
+        disabled={false}
+        editable
+        incidents={[]}
+        lines={[partial]}
+        onUpdate={onUpdate}
+        pickingOrderId={ids.picking}
+      />,
+    );
+    const quantity = screen.getByRole("spinbutton", {
+      name: "Cantidad recogida hasta ahora",
+    });
+    fireEvent.change(quantity, { target: { value: "125" } });
+    expect(quantity).toHaveValue(125);
+
+    const updated: PickingDetailLineDto = {
+      ...partial,
+      pickedQuantity: 125,
+      remainingQuantity: 25,
+      trackingSelections: [{
+        ...partial.trackingSelections[0]!,
+        quantity: 125,
+      }],
+    };
+    fefoPreviewMock.currentPickedQuantity = 125;
+    view.rerender(
+      <PickingLineList
+        autoFefoEnabled
+        disabled={false}
+        editable
+        incidents={[]}
+        lines={[updated]}
+        onUpdate={onUpdate}
+        pickingOrderId={ids.picking}
+      />,
+    );
+
+    const synchronizedQuantity = screen.getByRole("spinbutton", {
+      name: "Cantidad recogida hasta ahora",
+    });
+    expect(synchronizedQuantity).toHaveValue(125);
+    fireEvent.change(synchronizedQuantity, { target: { value: "150" } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Guardar recolección" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Guardar recolección" }));
+
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ pickedQuantity: 125 }),
+      150,
+      {
+        locationId: ids.location,
+        autoAllocateLots: true,
+        trackingSelections: [],
+      },
+    );
+  });
+
   it("conserva la seleccion manual de lotes en modo mock", () => {
     render(
       <PickingLineList

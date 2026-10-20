@@ -92,4 +92,3 @@ describe("PickingApplicationService vista previa FEFO", () => {
     })).rejects.toMatchObject({ status: 502, code: "INVALID_BACKEND_RESPONSE" });
   });
 });
-
