@@ -143,6 +143,7 @@ export class MockSaleConfirmationRepository
         subtotal: input.subtotal,
         discountTotal: input.discountTotal,
         taxTotal: input.taxTotal,
+        shippingTotal: input.shippingTotal ?? 0,
         total: input.total,
         createdByUserId: input.cashierUserId,
         createdAt: now,
@@ -386,7 +387,7 @@ export class MockSaleConfirmationRepository
       notificationContact,
       subtotal: input.subtotal,
       discountTotal: input.discountTotal,
-      shippingTotal: 0,
+      shippingTotal: input.shippingTotal ?? 0,
       total: input.total,
       trackingToken,
       idempotencyKey,
@@ -1158,7 +1159,7 @@ function getDeferredOrderFingerprint(input: ConfirmSaleInput, saleNumber: string
     deferredOrder,
     subtotal: roundMoney(input.subtotal),
     discountTotal: roundMoney(input.discountTotal),
-    shippingTotal: 0,
+    shippingTotal: roundMoney(input.shippingTotal ?? 0),
     total: roundMoney(input.total),
     items: input.items
       .map((item) => ({

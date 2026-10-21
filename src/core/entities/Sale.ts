@@ -27,6 +27,8 @@ export interface Sale {
   subtotal: number;
   discountTotal: number;
   taxTotal: number;
+  /** Envío a domicilio cobrado en la venta diferida; incluido en `total`. */
+  shippingTotal?: number;
   total: number;
   createdByUserId: string;
   createdAt: ISODateString;

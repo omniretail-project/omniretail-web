@@ -44,6 +44,10 @@ import { GetCheckoutBankAccountsService } from "@/modules/pos/application/servic
 import { GetPosProductsService } from "@/modules/pos/application/services/GetPosProductsService";
 import { GetOpenCashShiftService } from "@/modules/pos/application/services/GetOpenCashShiftService";
 import {
+  GetPosShippingQuoteService,
+  type PosShippingQuoteDto,
+} from "@/modules/pos/application/services/GetPosShippingQuoteService";
+import {
   calculateCheckoutAmounts,
   validateCheckout as validateCheckoutDto,
   type CheckoutValidationErrors,
@@ -107,6 +111,10 @@ export function usePosTerminal() {
   );
   const bankAccountsService = useMemo(
     () => new GetCheckoutBankAccountsService(repositories),
+    [repositories],
+  );
+  const shippingQuoteService = useMemo(
+    () => new GetPosShippingQuoteService(repositories),
     [repositories],
   );
   const [products, setProducts] = useState<PosProductDto[]>([]);
@@ -870,6 +878,46 @@ export function usePosTerminal() {
   const canOpenCheckout =
     ticket.items.length > 0 && toCents(ticket.total) > 0 && !ticketBlockingError;
 
+  // Envío a domicilio: se cotiza con el subtotal con descuentos del ticket y se suma al cobro. Los
+  // pagos deben cubrir `chargeTotal`; el backend recalcula el envío y rechaza un cobro distinto.
+  const shippingQuoteKey =
+    checkoutState.open && checkoutState.value.deliveryMethod === DeliveryMethod.home_delivery
+      ? String(toCents(ticket.total))
+      : null;
+  const [shippingQuote, setShippingQuote] = useState<ShippingQuoteState | null>(null);
+  const currentShippingQuote =
+    shippingQuoteKey && shippingQuote?.key === shippingQuoteKey ? shippingQuote : null;
+  const shippingTotal = currentShippingQuote?.quote?.shippingTotal ?? 0;
+  const shippingLoading = Boolean(shippingQuoteKey) && !currentShippingQuote;
+  const shippingError = currentShippingQuote?.error ?? null;
+  const chargeTotal = fromCents(toCents(ticket.total) + toCents(shippingTotal));
+
+  useEffect(() => {
+    if (!shippingQuoteKey) return;
+    let active = true;
+    // La clave es el subtotal en centavos: se cotiza exactamente ese monto.
+    const quotedTotal = fromCents(Number(shippingQuoteKey));
+    shippingQuoteService
+      .execute(quotedTotal)
+      .then((quote) => {
+        if (!active) return;
+        setShippingQuote({ key: shippingQuoteKey, quote, error: null });
+        const nextCharge = fromCents(toCents(quotedTotal) + toCents(quote.shippingTotal));
+        setCheckoutState((current) => withChargeTotal(current, nextCharge));
+      })
+      .catch((caughtError: unknown) => {
+        if (!active) return;
+        setShippingQuote({
+          key: shippingQuoteKey,
+          quote: null,
+          error: cleanPosError(caughtError, "No se pudo calcular el envío a domicilio."),
+        });
+      });
+    return () => {
+      active = false;
+    };
+  }, [shippingQuoteKey, shippingQuoteService]);
+
   const openCheckout = useCallback(() => {
     if (ticket.items.length === 0) {
       setTicketState((current) => ({ ...current, error: "Agrega productos antes de cobrar." }));
@@ -956,7 +1004,7 @@ export function usePosTerminal() {
       invalidateConfirmationAttempt();
       setCheckoutState((current) => ({
         ...current,
-        value: createPaymentModeValue(current.value, paymentMode, ticket.total),
+        value: createPaymentModeValue(current.value, paymentMode, chargeTotal),
         errors: {},
         validated: false,
         readyToConfirm: false,
@@ -967,8 +1015,8 @@ export function usePosTerminal() {
     [
       availablePaymentModes,
       cancelCardTerminalProcessing,
+      chargeTotal,
       invalidateConfirmationAttempt,
-      ticket.total,
     ],
   );
 
@@ -998,10 +1046,18 @@ export function usePosTerminal() {
             ? createIdleCardTerminalResult()
             : current.value.cardTerminalResult,
         };
-        const amounts = calculateCheckoutAmounts(nextValue, ticket.total);
+        // Al dejar la entrega a domicilio el cobro vuelve a ser solo el ticket; al elegirla, los
+        // montos se ajustan cuando llega la cotización del envío.
+        const leavesHomeDelivery =
+          patch.deliveryMethod !== undefined &&
+          patch.deliveryMethod !== DeliveryMethod.home_delivery &&
+          current.value.deliveryMethod === DeliveryMethod.home_delivery;
+        const total = leavesHomeDelivery ? ticket.total : chargeTotal;
+        const adjustedValue = leavesHomeDelivery ? withChargeAmounts(nextValue, total) : nextValue;
+        const amounts = calculateCheckoutAmounts(adjustedValue, total);
         return {
           ...current,
-          value: { ...nextValue, changeAmount: amounts.changeAmount },
+          value: { ...adjustedValue, changeAmount: amounts.changeAmount },
           errors: {},
           validated: false,
           readyToConfirm: false,
@@ -1010,7 +1066,7 @@ export function usePosTerminal() {
         };
       });
     },
-    [cancelCardTerminalProcessing, invalidateConfirmationAttempt, ticket.total],
+    [cancelCardTerminalProcessing, chargeTotal, invalidateConfirmationAttempt, ticket.total],
   );
 
   const processCardPayment = useCallback(
@@ -1166,9 +1222,9 @@ export function usePosTerminal() {
 
   const validateCheckout = useCallback(() => {
     setCheckoutState((current) => {
-      const amounts = calculateCheckoutAmounts(current.value, ticket.total);
+      const amounts = calculateCheckoutAmounts(current.value, chargeTotal);
       const value = { ...current.value, changeAmount: amounts.changeAmount };
-      const result = validateCheckoutDto(value, ticket.total);
+      const result = validateCheckoutDto(value, chargeTotal);
       const hasAllowedPaymentMode = availablePaymentModes.includes(value.paymentMode);
       const immediateTraceabilityError =
         value.deliveryMethod === DeliveryMethod.immediate
@@ -1186,7 +1242,9 @@ export function usePosTerminal() {
         !hasCurrentBranchAccess ||
         paymentMethodsLoading ||
         Boolean(paymentMethodsError) ||
-        !hasAllowedPaymentMode;
+        !hasAllowedPaymentMode ||
+        shippingLoading ||
+        Boolean(shippingError);
 
       return {
         ...current,
@@ -1216,19 +1274,21 @@ export function usePosTerminal() {
     availablePaymentModes,
     cashShiftError,
     cashShiftLoading,
+    chargeTotal,
     hasCurrentBranchAccess,
     hasOpenCashShift,
     hasPosSalesPermission,
     paymentMethodsError,
     paymentMethodsLoading,
+    shippingError,
+    shippingLoading,
     ticket.hasUnsupportedTraceability,
     ticket.items,
-    ticket.total,
   ]);
 
   const checkoutAmounts = useMemo(
-    () => calculateCheckoutAmounts(checkoutState.value, ticket.total),
-    [checkoutState.value, ticket.total],
+    () => calculateCheckoutAmounts(checkoutState.value, chargeTotal),
+    [checkoutState.value, chargeTotal],
   );
   const checkoutImmediateTraceabilityError =
     checkoutState.value.deliveryMethod === DeliveryMethod.immediate
@@ -1244,7 +1304,9 @@ export function usePosTerminal() {
     !hasCurrentBranchAccess ||
     paymentMethodsLoading ||
     Boolean(paymentMethodsError) ||
-    !availablePaymentModes.includes(checkoutState.value.paymentMode);
+    !availablePaymentModes.includes(checkoutState.value.paymentMode) ||
+    shippingLoading ||
+    Boolean(shippingError);
   const checkoutReadyToConfirm =
     checkoutState.validated && checkoutState.readyToConfirm && !checkoutHasOperationalBlock;
   const checkoutMessage = checkoutState.validated
@@ -1293,6 +1355,7 @@ export function usePosTerminal() {
           cashShiftId: cashShift.id,
           ticket,
           checkout: checkoutState.value,
+          shippingTotal,
         };
     const isDeferred = request.checkout.deliveryMethod !== DeliveryMethod.immediate;
     const attemptId = pending?.confirmationId ?? confirmationId ?? crypto.randomUUID();
@@ -1393,6 +1456,7 @@ export function usePosTerminal() {
     currentBranch,
     pendingStore,
     sessionId,
+    shippingTotal,
     ticket,
     user,
   ]);
@@ -1412,7 +1476,10 @@ export function usePosTerminal() {
       ? {
           confirmationId: pendingConfirmation.confirmationId,
           createdAt: pendingConfirmation.createdAt,
-          total: pendingConfirmation.input.ticket.total,
+          total: fromCents(
+            toCents(pendingConfirmation.input.ticket.total) +
+              toCents(pendingConfirmation.input.shippingTotal ?? 0),
+          ),
           itemCount: pendingConfirmation.input.ticket.items.length,
         }
       : null,
@@ -1439,6 +1506,10 @@ export function usePosTerminal() {
     subtotal: ticket.subtotal,
     discountTotal: ticket.discountTotal,
     total: ticket.total,
+    shippingTotal,
+    shippingLoading,
+    shippingError,
+    chargeTotal,
     hasUnsupportedTraceability: ticket.hasUnsupportedTraceability,
     ticketError: ticketState.error,
     canOpenCheckout,
@@ -1809,6 +1880,46 @@ function getAvailableCheckoutPaymentModes(
   const modes: CheckoutPaymentMode[] = [...methods];
   if (methods.length >= 2) modes.push("mixed");
   return modes;
+}
+
+interface ShippingQuoteState {
+  /** Subtotal en centavos con que se cotizó; una cotización de otro subtotal ya no aplica. */
+  key: string;
+  quote: PosShippingQuoteDto | null;
+  error: string | null;
+}
+
+/**
+ * Ajusta al nuevo total solo el monto del medio de pago único (en pago mixto el cajero reparte los
+ * montos). Un cambio en el monto de tarjeta invalida el resultado del terminal.
+ */
+function withChargeAmounts(value: CheckoutDto, total: number): CheckoutDto {
+  const totalAmount = fromCents(toCents(total));
+  if (value.paymentMode === "cash" && toCents(value.cashAmount) !== toCents(totalAmount)) {
+    return { ...value, cashAmount: totalAmount };
+  }
+  if (value.paymentMode === "card" && toCents(value.cardAmount) !== toCents(totalAmount)) {
+    return { ...value, cardAmount: totalAmount, cardTerminalResult: createIdleCardTerminalResult() };
+  }
+  if (value.paymentMode === "transfer" && toCents(value.transferAmount) !== toCents(totalAmount)) {
+    return { ...value, transferAmount: totalAmount };
+  }
+  return value;
+}
+
+function withChargeTotal(current: CheckoutState, total: number): CheckoutState {
+  const value = withChargeAmounts(current.value, total);
+  if (value === current.value) return current;
+  const amounts = calculateCheckoutAmounts(value, total);
+  return {
+    ...current,
+    value: { ...value, changeAmount: amounts.changeAmount },
+    errors: {},
+    validated: false,
+    readyToConfirm: false,
+    hasOperationalBlock: false,
+    message: null,
+  };
 }
 
 function createPaymentModeValue(

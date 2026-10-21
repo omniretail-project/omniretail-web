@@ -19,6 +19,7 @@ import type {
   PosApiSaleConfirmation,
   PosApiSaleDetail,
   PosApiSalesHistoryPage,
+  PosApiShippingQuote,
   PosApiVoidResult,
 } from "@/core/repositories";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
@@ -62,6 +63,13 @@ const cashMovementSchema = z.object({
   createdByUserId: uuidSchema,
   createdAt: dateSchema,
   saleNumber: optionalTextSchema,
+});
+
+const shippingQuoteSchema = z.object({
+  subtotal: moneySchema,
+  shippingTotal: moneySchema,
+  total: moneySchema,
+  freeShippingThreshold: optionalMoneySchema.optional(),
 });
 
 const cashShiftSummarySchema = z.object({
@@ -500,6 +508,8 @@ export const parsePosCashShift = (value: unknown): PosApiCashShift =>
   parse(cashShiftSchema, value, "El backend devolvio un turno de caja invalido.");
 export const parsePosCashShiftSummary = (value: unknown): PosApiCashShiftSummary =>
   parse(cashShiftSummarySchema, value, "El backend devolvio un resumen de caja invalido.");
+export const parsePosShippingQuote = (value: unknown): PosApiShippingQuote =>
+  parse(shippingQuoteSchema, value, "El backend devolvio una cotizacion de envio invalida.");
 export const parsePosCashMovements = (value: unknown): PosApiCashMovement[] =>
   parse(z.array(cashMovementSchema), value, "El backend devolvio movimientos de caja invalidos.");
 export const parsePosCashMovement = (value: unknown): PosApiCashMovement =>

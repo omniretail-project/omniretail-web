@@ -271,6 +271,14 @@ export interface PosApiConfirmSaleCommand {
   };
 }
 
+/** Envío a domicilio que el backend sumará a la venta diferida (`/pos/sales/shipping-quote`). */
+export interface PosApiShippingQuote {
+  subtotal: number;
+  shippingTotal: number;
+  total: number;
+  freeShippingThreshold?: number;
+}
+
 export interface PosApiRepository {
   getOpenCashShift(branchId: string): Promise<PosApiCashShift | null>;
   openCashShift(input: {
@@ -288,6 +296,8 @@ export interface PosApiRepository {
     reason: string;
   }): Promise<PosApiCashMovement>;
   confirmSale(input: PosApiConfirmSaleCommand): Promise<PosApiSaleConfirmation>;
+  /** Cotiza el envío a domicilio para el subtotal con descuentos del ticket. */
+  getShippingQuote(subtotal: number): Promise<PosApiShippingQuote>;
   getSalesHistory(input: {
     branchId: string;
     search?: string;

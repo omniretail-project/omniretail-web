@@ -52,6 +52,8 @@ export interface ConfirmSaleInput {
   subtotal: number;
   discountTotal: number;
   taxTotal: number;
+  /** Envío a domicilio de la venta diferida; ya incluido en `total`. */
+  shippingTotal?: number;
   total: number;
   payments: SaleConfirmationPaymentInput[];
 }
