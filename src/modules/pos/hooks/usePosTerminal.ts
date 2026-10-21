@@ -956,6 +956,8 @@ export function usePosTerminal() {
 
   const closeCheckout = useCallback(() => {
     setTraceabilityRequest(null);
+    // Al reabrir se vuelve a cotizar: la tarifa pudo cambiar mientras el cobro estaba cerrado.
+    setShippingQuote(null);
     setCheckoutState((current) => ({ ...current, open: false }));
   }, []);
 
@@ -964,6 +966,7 @@ export function usePosTerminal() {
     cancelCardTerminalProcessing();
     invalidateConfirmationAttempt();
     setTraceabilityRequest(null);
+    setShippingQuote(null);
     setTicketState((current) => ({
       ...current,
       items: current.items.map(clearTicketItemTracking),
@@ -1024,6 +1027,14 @@ export function usePosTerminal() {
     (patch: EditableCheckoutPatch) => {
       if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       if (patch.cardAmount !== undefined) cancelCardTerminalProcessing();
+      // Una cotización anterior no se reutiliza al volver a elegir la entrega a domicilio: se
+      // cotiza de nuevo y, mientras tanto, el cobro queda bloqueado y los montos se reajustan.
+      if (
+        patch.deliveryMethod !== undefined &&
+        patch.deliveryMethod !== DeliveryMethod.home_delivery
+      ) {
+        setShippingQuote(null);
+      }
       if (
         patch.deliveryMethod !== undefined &&
         patch.deliveryMethod !== DeliveryMethod.immediate
@@ -1907,9 +1918,12 @@ function withChargeAmounts(value: CheckoutDto, total: number): CheckoutDto {
   return value;
 }
 
+/**
+ * Aplica el nuevo total al cobro. Siempre invalida la validación previa: también en pago mixto,
+ * donde los montos no se tocan pero la diferencia contra el total sí cambia.
+ */
 function withChargeTotal(current: CheckoutState, total: number): CheckoutState {
   const value = withChargeAmounts(current.value, total);
-  if (value === current.value) return current;
   const amounts = calculateCheckoutAmounts(value, total);
   return {
     ...current,

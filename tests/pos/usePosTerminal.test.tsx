@@ -45,6 +45,7 @@ const mocks = vi.hoisted(() => ({
   openShift: vi.fn(),
   bankAccounts: vi.fn(),
   capabilities: vi.fn(),
+  shippingQuote: vi.fn(),
 }));
 
 vi.mock("@/infrastructure/providers/RepositoryProvider", () => ({
@@ -95,6 +96,13 @@ vi.mock("@/modules/pos/application/services/GetOpenCashShiftService", () => ({
   GetOpenCashShiftService: class {
     execute(input: unknown) {
       return mocks.openShift(input);
+    }
+  },
+}));
+vi.mock("@/modules/pos/application/services/GetPosShippingQuoteService", () => ({
+  GetPosShippingQuoteService: class {
+    execute(subtotal: number) {
+      return mocks.shippingQuote(subtotal);
     }
   },
 }));
@@ -229,6 +237,7 @@ describe("usePosTerminal", () => {
     mocks.openShift.mockImplementation(async ({ branchId }: { branchId: string }) => openShift(branchId));
     mocks.bankAccounts.mockResolvedValue([]);
     mocks.confirm.mockResolvedValue(saleResult);
+    mocks.shippingQuote.mockResolvedValue({ shippingTotal: 0 });
   });
 
   it("carga catálogo, caja, cuentas y métodos de pago del contexto activo", async () => {
@@ -269,6 +278,81 @@ describe("usePosTerminal", () => {
     expect(result.current.confirmationResult).toEqual(saleResult);
     expect(result.current.ticketItems).toEqual([]);
     expect(result.current.confirmationError).toBeNull();
+  });
+
+  describe("envío a domicilio", () => {
+    const homeDelivery = {
+      deliveryMethod: DeliveryMethod.home_delivery,
+      transportMode: TransportMode.own_fleet,
+      deliveryAddress: {
+        recipientName: "Ana López",
+        recipientPhone: "55550101",
+        line1: "6a avenida 1-23, zona 1",
+        city: "Guatemala",
+        country: "GT",
+      },
+      notificationContact: { emailMode: "not_applicable" as const },
+    };
+
+    it("suma el envío cotizado al cobro y ajusta el monto en efectivo", async () => {
+      mocks.shippingQuote.mockResolvedValue({ shippingTotal: 15 });
+      const { result } = await renderReadyTerminal();
+      act(() => result.current.addProduct(product));
+      act(() => result.current.openCheckout());
+      act(() => result.current.updateCheckout(homeDelivery));
+
+      expect(result.current.shippingLoading).toBe(true);
+      await waitFor(() => expect(result.current.shippingLoading).toBe(false));
+      expect(mocks.shippingQuote).toHaveBeenCalledWith(50);
+      expect(result.current.shippingTotal).toBe(15);
+      expect(result.current.chargeTotal).toBe(65);
+      expect(result.current.checkout.cashAmount).toBe(65);
+
+      act(() => result.current.updateCheckout({ cashReceived: 65 }));
+      act(() => result.current.validateCheckout());
+      await waitFor(() => expect(result.current.checkoutReadyToConfirm).toBe(true));
+      await act(async () => result.current.confirmSale());
+      expect(mocks.confirm.mock.calls[0]?.[0]).toMatchObject({ shippingTotal: 15 });
+    });
+
+    it("al volver a domicilio no reutiliza la cotización anterior", async () => {
+      mocks.shippingQuote.mockResolvedValueOnce({ shippingTotal: 15 });
+      const { result } = await renderReadyTerminal();
+      act(() => result.current.addProduct(product));
+      act(() => result.current.openCheckout());
+      act(() => result.current.updateCheckout(homeDelivery));
+      await waitFor(() => expect(result.current.shippingTotal).toBe(15));
+
+      act(() => result.current.updateCheckout({ deliveryMethod: DeliveryMethod.immediate }));
+      expect(result.current.chargeTotal).toBe(50);
+      expect(result.current.checkout.cashAmount).toBe(50);
+
+      const requote = deferred<{ shippingTotal: number }>();
+      mocks.shippingQuote.mockReturnValueOnce(requote.promise);
+      act(() => result.current.updateCheckout(homeDelivery));
+      // Mientras llega la nueva cotización el cobro queda bloqueado, sin el envío anterior.
+      expect(result.current.shippingLoading).toBe(true);
+      expect(result.current.checkoutHasOperationalBlock).toBe(true);
+
+      await act(async () => requote.resolve({ shippingTotal: 20 }));
+      await waitFor(() => expect(result.current.shippingLoading).toBe(false));
+      expect(result.current.chargeTotal).toBe(70);
+      expect(result.current.checkout.cashAmount).toBe(70);
+      expect(mocks.shippingQuote).toHaveBeenCalledTimes(2);
+    });
+
+    it("bloquea el cobro si la cotización falla", async () => {
+      mocks.shippingQuote.mockRejectedValue(new Error("sin conexión"));
+      const { result } = await renderReadyTerminal();
+      act(() => result.current.addProduct(product));
+      act(() => result.current.openCheckout());
+      act(() => result.current.updateCheckout(homeDelivery));
+
+      await waitFor(() => expect(result.current.shippingError).not.toBeNull());
+      act(() => result.current.updateCheckout({ cashReceived: 50 }));
+      act(() => result.current.validateCheckout());
+      expect(result.current.checkoutReadyToConfirm).toBe(false);
+    });
   });
 
   it("inicia el checkout sin modalidad y exige seleccionarla antes de confirmar", async () => {

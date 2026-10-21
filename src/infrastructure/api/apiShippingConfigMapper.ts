@@ -26,16 +26,22 @@ function toAmount(value: number | string | null | undefined): number | undefined
   return Number.isFinite(amount) ? amount : undefined;
 }
 
-/** Un canal ausente en la respuesta se trata como no configurado (sus valores por defecto). */
+/**
+ * Un canal o un campo ausente en la respuesta usa el valor por defecto. Un umbral en `null` es
+ * explícito ("nunca gratis") y se respeta: solo un umbral ausente toma el de por defecto.
+ */
 export function toShippingChannelConfig(
   response: ApiShippingChannelConfig | null | undefined,
   fallback: ShippingChannelConfig,
 ): ShippingChannelConfig {
   if (!response) return { ...fallback };
   return {
-    enabled: response.enabled === true,
-    deliveryFee: toAmount(response.deliveryFee) ?? 0,
-    freeShippingThreshold: toAmount(response.freeShippingThreshold),
+    enabled: response.enabled ?? fallback.enabled,
+    deliveryFee: toAmount(response.deliveryFee) ?? fallback.deliveryFee,
+    freeShippingThreshold:
+      response.freeShippingThreshold === undefined
+        ? fallback.freeShippingThreshold
+        : toAmount(response.freeShippingThreshold),
   };
 }
 

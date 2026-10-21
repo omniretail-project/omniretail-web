@@ -76,6 +76,27 @@ describe("validación del formulario de costo de envío", () => {
     ).toThrow();
   });
 
+  it("no bloquea el guardado de un canal desactivado con campos vacíos o inválidos", () => {
+    const value = formValue({
+      pos: { enabled: false, deliveryFee: "", freeShippingThreshold: "abc" },
+    });
+
+    expect(getShippingConfigFieldErrors(value)).toEqual({});
+    expect(toShippingConfigInput(value).pos).toEqual({
+      enabled: false,
+      deliveryFee: 0,
+      freeShippingThreshold: undefined,
+    });
+  });
+
+  it("conserva los montos válidos de un canal desactivado para cuando se reactive", () => {
+    expect(
+      toShippingConfigInput(
+        formValue({ pos: { enabled: false, deliveryFee: "18.50", freeShippingThreshold: "250" } }),
+      ).pos,
+    ).toEqual({ enabled: false, deliveryFee: 18.5, freeShippingThreshold: 250 });
+  });
+
   it("convierte la configuración guardada al formulario con 2 decimales", () => {
     expect(
       toShippingConfigFormValue({
@@ -100,6 +121,24 @@ describe("mapper de /administration/shipping-config", () => {
       tenantId: "tenant-1",
       ecommerce: { enabled: true, deliveryFee: 30, freeShippingThreshold: undefined },
       pos: DEFAULT_POS_SHIPPING,
+    });
+  });
+
+  it("completa campos ausentes con el valor por defecto pero respeta un umbral en null", () => {
+    expect(
+      toShippingConfig(
+        {
+          ecommerce: { enabled: true },
+          pos: { enabled: true, deliveryFee: 15, freeShippingThreshold: null },
+        },
+        "tenant-1",
+      ),
+    ).toEqual({
+      tenantId: "tenant-1",
+      // Sin tarifa ni umbral en la respuesta: Q25 y gratis desde Q300.
+      ecommerce: { enabled: true, deliveryFee: 25, freeShippingThreshold: 300 },
+      // `null` es "nunca gratis": no se reemplaza por el umbral por defecto.
+      pos: { enabled: true, deliveryFee: 15, freeShippingThreshold: undefined },
     });
   });
 

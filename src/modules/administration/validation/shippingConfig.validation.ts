@@ -32,6 +32,9 @@ export function getShippingConfigFieldErrors(
 ): ShippingConfigFieldErrors {
   const errors: ShippingConfigFieldErrors = {};
   for (const channel of SHIPPING_CHANNELS) {
+    // Un canal que no cobra envío tiene los campos deshabilitados: no se validan para no bloquear
+    // el guardado con valores que el usuario no puede corregir.
+    if (!value[channel].enabled) continue;
     const fee = amountError(value[channel].deliveryFee, "La tarifa de envío", true);
     if (fee) errors[`${channel}.deliveryFee`] = fee;
     const threshold = amountError(
@@ -44,12 +47,21 @@ export function getShippingConfigFieldErrors(
   return errors;
 }
 
+/** Monto válido del campo, o `undefined` si está vacío o no es un monto (solo en canales inactivos). */
+function parseAmount(value: string): number | undefined {
+  const trimmed = value.trim();
+  return AMOUNT_PATTERN.test(trimmed) && Number(trimmed) <= SHIPPING_AMOUNT_MAX
+    ? Number(trimmed)
+    : undefined;
+}
+
 function toChannelInput(value: ShippingChannelFormValue): ShippingChannelConfig {
-  const threshold = value.freeShippingThreshold.trim();
+  // En un canal inactivo se conservan los montos válidos para cuando se reactive; el backend exige
+  // una tarifa, así que una vacía se guarda como Q0.
   return {
     enabled: value.enabled,
-    deliveryFee: Number(value.deliveryFee.trim()),
-    freeShippingThreshold: threshold ? Number(threshold) : undefined,
+    deliveryFee: parseAmount(value.deliveryFee) ?? 0,
+    freeShippingThreshold: parseAmount(value.freeShippingThreshold),
   };
 }
 
