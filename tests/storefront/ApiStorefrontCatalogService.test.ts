@@ -38,6 +38,44 @@ describe("ApiStorefrontCatalogService", () => {
     }]);
   });
 
+  it("mapea los precios finales por cantidad del detalle y los deja vacíos si no vienen", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "product-1",
+            sku: "PR-001",
+            name: "PR",
+            salePrice: 100,
+            effectivePrice: 100,
+            categoryId: "category-1",
+            priceTiers: [
+              { minQuantity: 2, unitPrice: "80.00", effectivePrice: "72.00" },
+              { minQuantity: 10, unitPrice: 60, effectivePrice: 54 },
+            ],
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ id: "product-2", sku: "B", name: "B", salePrice: 5, categoryId: "c" }),
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new ApiStorefrontCatalogService();
+
+    const withTiers = await service.getProduct("ferreteria", "product-1");
+    const withoutTiers = await service.getProduct("ferreteria", "product-2");
+
+    expect(withTiers?.finalPriceTiers).toEqual([
+      { minQuantity: 2, unitPrice: 72, active: true },
+      { minQuantity: 10, unitPrice: 54, active: true },
+    ]);
+    expect(withTiers?.salesPriceTiers).toEqual([]);
+    expect(withoutTiers?.finalPriceTiers).toEqual([]);
+  });
+
   it("mapea el catálogo y conserva el comportamiento ante producto faltante o error", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify([{

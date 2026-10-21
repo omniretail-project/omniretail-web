@@ -30,6 +30,8 @@ interface BackendProduct {
     address?: string | null;
     available: boolean;
   }> | null;
+  /** Solo en el detalle: precio desde `minQuantity`; `effectivePrice` ya incluye la promoción. */
+  priceTiers?: Array<{ minQuantity: number; effectivePrice: number | string }> | null;
 }
 
 function toImageSource(url?: string | null) {
@@ -62,6 +64,11 @@ function toProduct(product: BackendProduct): StorefrontDiscoveryProductDto {
     discountAmount: product.discountAmount == null ? undefined : Number(product.discountAmount),
     promotionId: product.promotionId ?? undefined,
     salesPriceTiers: [],
+    finalPriceTiers: (product.priceTiers ?? []).map((tier) => ({
+      minQuantity: Number(tier.minQuantity),
+      unitPrice: Number(tier.effectivePrice),
+      active: true,
+    })),
     categoryId: product.categoryId,
     categoryName: product.categoryName ?? undefined,
     availableQuantity: toAvailableQuantity(product),

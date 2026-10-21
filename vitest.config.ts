@@ -271,6 +271,8 @@ export default defineConfig({
         "src/modules/administration/hooks/useShippingConfig.ts",
         "src/modules/administration/validation/shippingConfig.validation.ts",
         "src/modules/storefront/hooks/useStorefrontShipping.ts",
+        // Precios por cantidad en la tienda en línea.
+        "src/modules/storefront/application/storefrontFinalPricing.ts",
       ],
     },
   },

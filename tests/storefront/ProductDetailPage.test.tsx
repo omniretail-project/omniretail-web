@@ -8,6 +8,9 @@ const state = vi.hoisted(() => ({
   loading: false,
   error: null as string | null,
   reload: vi.fn(),
+  finalPricing: undefined as
+    | { basePrice: number; tiers: Array<{ minQuantity: number; unitPrice: number; active: boolean }> }
+    | undefined,
 }));
 
 vi.mock("@/modules/storefront/hooks/useStorefrontProductDetail", () => ({
@@ -34,6 +37,7 @@ vi.mock("@/modules/storefront/hooks/useStorefrontProductDetail", () => ({
         available: true,
       }],
       availableQuantity: state.availableQuantity,
+      finalPricing: state.finalPricing,
     },
   }),
 }));
@@ -74,6 +78,24 @@ describe("ProductDetailPage", () => {
 
     expect(quantityInput).toHaveValue("3");
     expect(screen.getByText("Q225.00")).toBeInTheDocument();
+  });
+
+  it("en modo api aplica el precio final por cantidad que calcula el backend", () => {
+    state.finalPricing = {
+      basePrice: 75,
+      tiers: [{ minQuantity: 2, unitPrice: 60, active: true }],
+    };
+    render(<ProductDetailPage productId="product-1" />);
+
+    expect(screen.getAllByText("Q75.00")).toHaveLength(2);
+    fireEvent.change(screen.getByRole("textbox", { name: "Cantidad a ordenar" }), {
+      target: { value: "3" },
+    });
+
+    // Desde 2 unidades: Q60 por unidad, Q180 en total (no Q75 x 3).
+    expect(screen.getByText("Q60.00")).toBeInTheDocument();
+    expect(screen.getByText("Q180.00")).toBeInTheDocument();
+    state.finalPricing = undefined;
   });
 
   it("rechaza una cantidad superior al inventario disponible", () => {

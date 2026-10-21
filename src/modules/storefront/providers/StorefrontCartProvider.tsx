@@ -20,6 +20,7 @@ import {
 } from "@/modules/storefront/application/dto/StorefrontCartDto";
 import { GetStorefrontPublishedProductService } from "@/modules/storefront/application/services/GetStorefrontPublishedProductService";
 import { ApiStorefrontCatalogService } from "@/modules/storefront/application/services/ApiStorefrontCatalogService";
+import { toFinalPricing } from "@/modules/storefront/application/storefrontFinalPricing";
 import { isApiMode } from "@/config/api-mode";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
@@ -121,10 +122,14 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
                 : item,
             );
           }
+          // Precios finales del backend: con la promoción ya aplicada, sin volver a aplicarla.
+          const finalPricing = apiProduct
+            ? toFinalPricing(apiProduct)
+            : { basePrice: product.salePrice, tiers: [] };
           return [...current, withQuantityPrice({
             ...createStorefrontCartItem(product, media),
-            basePrice: product.salePrice,
-            salesPriceTiers: [],
+            basePrice: finalPricing.basePrice,
+            salesPriceTiers: finalPricing.tiers,
           }, quantity)];
         });
         setLastAddedAt(Date.now());

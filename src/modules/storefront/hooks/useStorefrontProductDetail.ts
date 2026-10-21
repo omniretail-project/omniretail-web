@@ -5,6 +5,7 @@ import { useDataEventBus, useRepositories } from "@/infrastructure/providers/Rep
 import type { StorefrontProductDetailDto } from "@/modules/storefront/application/dto/StorefrontProductDetailDto";
 import { GetStorefrontProductDetailService } from "@/modules/storefront/application/services/GetStorefrontProductDetailService";
 import { ApiStorefrontCatalogService } from "@/modules/storefront/application/services/ApiStorefrontCatalogService";
+import { toFinalPricing } from "@/modules/storefront/application/storefrontFinalPricing";
 import { isApiMode } from "@/config/api-mode";
 import { ProductStatus, ProductType } from "@/core/enums";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
@@ -72,6 +73,7 @@ export function useStorefrontProductDetail(productId: string) {
               attributes: apiProduct.attributes ?? [],
               availability: apiProduct.availability,
               availableQuantity: apiProduct.availableQuantity,
+              finalPricing: toFinalPricing(apiProduct),
             }
           : await service.execute(tenantSlug, tenantId, productId);
         if (!active) return;

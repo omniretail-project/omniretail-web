@@ -46,7 +46,9 @@ describe("useStorefrontProductDetail", () => {
       saleUnitId: "unit-1",
       saleUnitName: "Unidad",
       availableQuantity: 4,
+      effectivePrice: 70,
       salesPriceTiers: [],
+      finalPriceTiers: [{ minQuantity: 2, unitPrice: 60, active: true }],
       attributes: [{ name: "Peso", value: "16 oz" }],
       availability: [{
         branchId: "branch-1",
@@ -61,6 +63,11 @@ describe("useStorefrontProductDetail", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(result.current.data?.attributes).toEqual([{ name: "Peso", value: "16 oz" }]);
+    // Precio final del backend (con promoción) para 1 unidad y por cantidad.
+    expect(result.current.data?.finalPricing).toEqual({
+      basePrice: 70,
+      tiers: [{ minQuantity: 2, unitPrice: 60, active: true }],
+    });
     expect(result.current.data?.availability).toEqual([{
       branchId: "branch-1",
       branchName: "Sucursal Centro",
