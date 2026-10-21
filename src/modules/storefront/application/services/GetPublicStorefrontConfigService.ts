@@ -8,7 +8,7 @@ import { SaasEntitlementError, hasTenantCapability } from "@/shared/application/
 
 type PublicConfigRepositories = Pick<
   RepositoryRegistry,
-  "tenants" | "businessConfig" | "branches" | "plans" | "tenantSubscriptions"
+  "tenants" | "businessConfig" | "branches" | "plans" | "tenantSubscriptions" | "shippingConfig"
 >;
 
 export class GetPublicStorefrontConfigService {
@@ -39,6 +39,7 @@ export class GetPublicStorefrontConfigService {
     }
 
     const heroBanner = await this.repositories.businessConfig.getHeroBanner(tenantId);
+    const shippingConfig = await this.repositories.shippingConfig.get(tenantId);
 
     return {
       storeName: ecommerceConfig.storeName,
@@ -58,6 +59,7 @@ export class GetPublicStorefrontConfigService {
             imageSource: slide.image,
           })),
       },
+      shipping: shippingConfig.ecommerce,
     };
   }
 }

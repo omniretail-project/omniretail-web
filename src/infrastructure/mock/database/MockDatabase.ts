@@ -67,6 +67,7 @@ import type {
   SaleItem,
   SerialNumber,
   Session,
+  ShippingConfig,
   StockLot,
   StorageLocation,
   StorePickupDelivery,
@@ -98,6 +99,7 @@ export interface MockDatabase {
   businessCapabilities: BusinessCapabilitiesConfig[];
   ecommerceConfigs: EcommerceConfig[];
   heroBanners: HeroBannerConfig[];
+  shippingConfigs: ShippingConfig[];
   planDefinitions: PlanDefinition[];
   tenantSubscriptions: TenantSubscription[];
   subscriptionInvoices: SubscriptionInvoice[];

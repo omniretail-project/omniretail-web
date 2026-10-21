@@ -38,6 +38,12 @@ interface CheckoutModalProps {
   subtotal: number;
   discountTotal: number;
   total: number;
+  /** Envío a domicilio cotizado; solo aplica con entrega a domicilio. */
+  shippingTotal?: number;
+  shippingLoading?: boolean;
+  shippingError?: string | null;
+  /** Lo que deben cubrir los pagos: `total` + envío. */
+  chargeTotal?: number;
   appliedAmount: number;
   differenceAmount: number;
   bankAccounts: CheckoutBankAccountDto[];
@@ -84,6 +90,10 @@ export function CheckoutModal({
   subtotal,
   discountTotal,
   total,
+  shippingTotal = 0,
+  shippingLoading = false,
+  shippingError = null,
+  chargeTotal,
   appliedAmount,
   differenceAmount,
   bankAccounts,
@@ -185,7 +195,19 @@ export function CheckoutModal({
           onValidate();
         }}
       >
-        <CheckoutSummary discountTotal={discountTotal} subtotal={subtotal} total={total} />
+        <CheckoutSummary
+          discountTotal={discountTotal}
+          shipping={
+            checkout.deliveryMethod === DeliveryMethod.home_delivery
+              ? { amount: shippingTotal, loading: shippingLoading }
+              : null
+          }
+          subtotal={subtotal}
+          total={chargeTotal ?? total}
+        />
+        {checkout.deliveryMethod === DeliveryMethod.home_delivery && shippingError ? (
+          <InlineAlert title={shippingError} tone="danger" />
+        ) : null}
 
         <CashShiftStatusPanel
           branchName={currentBranchName}
@@ -800,16 +822,37 @@ function CashShiftStatusPanel({
 function CheckoutSummary({
   subtotal,
   discountTotal,
+  shipping,
   total,
 }: {
   subtotal: number;
   discountTotal: number;
+  /** `null` cuando la venta no es a domicilio (no se muestra la línea de envío). */
+  shipping: { amount: number; loading: boolean } | null;
   total: number;
 }) {
   return (
-    <dl className="grid gap-3 rounded-lg bg-[var(--color-app-background)] p-3 sm:grid-cols-[1fr_1fr_1.25fr] sm:p-4">
+    <dl
+      className={
+        shipping
+          ? "grid gap-3 rounded-lg bg-[var(--color-app-background)] p-3 sm:grid-cols-[1fr_1fr_1fr_1.25fr] sm:p-4"
+          : "grid gap-3 rounded-lg bg-[var(--color-app-background)] p-3 sm:grid-cols-[1fr_1fr_1.25fr] sm:p-4"
+      }
+    >
       <SummaryAmount label="Subtotal" value={subtotal} />
       <SummaryAmount label="Descuentos" value={discountTotal} />
+      {shipping ? (
+        shipping.loading ? (
+          <div>
+            <dt className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">Envío</dt>
+            <dd aria-live="polite" className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Calculando...
+            </dd>
+          </div>
+        ) : (
+          <SummaryAmount label="Envío" value={shipping.amount} />
+        )
+      ) : null}
       <SummaryAmount label="Total" value={total} prominent />
     </dl>
   );

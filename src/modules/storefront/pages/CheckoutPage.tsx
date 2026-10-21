@@ -39,10 +39,7 @@ import {
   isCardNumberComplete,
 } from "@/config/card-input-policy";
 import { InlineAlert } from "@/shared/components/InlineAlert";
-import {
-  calculateStorefrontShipping,
-  STOREFRONT_FREE_SHIPPING_THRESHOLD,
-} from "@/config/storefront-shipping-policy";
+import { useStorefrontShipping } from "@/modules/storefront/hooks/useStorefrontShipping";
 
 const departments = Object.keys(municipalitiesByDepartment);
 
@@ -66,7 +63,7 @@ const initialForm: StorefrontCheckoutFormDto = {
 export function CheckoutPage() {
   const routes = useStorefrontRoutes();
   const { items, subtotal } = useStorefrontCart();
-  const shippingTotal = calculateStorefrontShipping(subtotal);
+  const { shippingTotal, hint: shippingHint } = useStorefrontShipping(subtotal);
   const orderTotal = subtotal + shippingTotal;
   const repositories = useRepositories();
   const { user } = useCurrentSession();
@@ -705,11 +702,9 @@ export function CheckoutPage() {
               <span>Envío</span>
               <span>{shippingTotal === 0 ? "Gratis" : `Q${shippingTotal.toFixed(2)}`}</span>
             </div>
-            <p className="mt-3 text-xs text-[var(--color-text-muted)]">
-              {shippingTotal === 0
-                ? "Tu compra tiene envío gratis."
-                : `Envío gratis desde Q${STOREFRONT_FREE_SHIPPING_THRESHOLD.toFixed(2)}.`}
-            </p>
+            {shippingHint ? (
+              <p className="mt-3 text-xs text-[var(--color-text-muted)]">{shippingHint}</p>
+            ) : null}
             <div className="mt-4 flex items-end justify-between border-t border-[var(--color-border)] pt-4">
               <span className="text-lg font-black text-[var(--color-text)]">Total</span>
               <span className="text-3xl font-black text-[var(--color-title)]">

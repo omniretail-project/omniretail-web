@@ -8,6 +8,7 @@ import type {
   CustomerPaymentMethodRepository,
   CustomerRepository,
   EmailSenderConfigRepository,
+  ShippingConfigRepository,
   PlanRepository,
   RoleRepository,
   SupplierRepository,
@@ -24,6 +25,7 @@ import { ApiBusinessConfigRepository } from "@/infrastructure/api/ApiBusinessCon
 import { ApiCustomerPaymentMethodRepository } from "@/infrastructure/api/ApiCustomerPaymentMethodRepository";
 import { ApiCustomerRepository } from "@/infrastructure/api/ApiCustomerRepository";
 import { ApiEmailSenderConfigRepository } from "@/infrastructure/api/ApiEmailSenderConfigRepository";
+import { ApiShippingConfigRepository } from "@/infrastructure/api/ApiShippingConfigRepository";
 import { ApiPlanRepository } from "@/infrastructure/api/ApiPlanRepository";
 import { ApiRoleRepository } from "@/infrastructure/api/ApiRoleRepository";
 import {
@@ -482,6 +484,24 @@ function apiEmailSenderForEmployees(
 }
 
 /**
+ * `/administration/shipping-config`: lectura y escritura exigen `admin.shipping_config.manage`. Sin
+ * ese permiso (o fuera de sesion de empleado) se usa el mock. El POS y el storefront en modo api no
+ * pasan por aqui: usan `/pos/sales/shipping-quote` y la config publica de la tienda.
+ */
+export function apiShippingConfigForEmployees(
+  mock: ShippingConfigRepository,
+  api: ShippingConfigRepository,
+  currentSession: CurrentSessionClient,
+): ShippingConfigRepository {
+  const manage = employeeRouter(mock, api, currentSession, ["admin.shipping_config.manage"]);
+
+  return {
+    get: async (tenantId: string) => (await manage(tenantId)).get(tenantId),
+    save: async (tenantId, input) => (await manage(tenantId)).save(tenantId, input),
+  };
+}
+
+/**
  * Modo api: reemplaza `auth` por ApiAuthRepository y enruta al backend la administracion
  * (`branches`, `roles`, `users`, `tenantSubscriptions`, `plans`, `bankAccounts`, `suppliers`,
  * `businessConfig`) para empleados con el permiso de
@@ -551,6 +571,11 @@ export function withApiSession(repositories: RepositoryRegistry, eventBus: DataE
     emailSender: apiEmailSenderForEmployees(
       repositories.emailSender,
       new ApiEmailSenderConfigRepository(eventBus),
+      currentSession,
+    ),
+    shippingConfig: apiShippingConfigForEmployees(
+      repositories.shippingConfig,
+      new ApiShippingConfigRepository(eventBus),
       currentSession,
     ),
     customers: apiCustomersForCustomers(
