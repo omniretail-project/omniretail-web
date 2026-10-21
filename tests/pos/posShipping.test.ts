@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { DeliveryMethod, TransportMode } from "@/core/enums";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import type { CheckoutDto } from "@/modules/pos/application/dto/CheckoutDto";
 import type { SaleTicketDto } from "@/modules/pos/application/dto/SaleTicketDto";
 import { ConfirmSaleService } from "@/modules/pos/application/services/ConfirmSaleService";
@@ -111,6 +112,24 @@ describe("GetPosShippingQuoteService", () => {
 
     expect(posApi.getShippingQuote).toHaveBeenCalledWith(100);
     expect(quote).toEqual({ shippingTotal: 15, freeShippingThreshold: 200 });
+  });
+
+  it("con un backend sin cotización de envío (404) cobra solo el ticket", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    posApi.getShippingQuote.mockRejectedValue(new BackendRequestError("No encontrado", 404));
+
+    await expect(new GetPosShippingQuoteService(repositories).execute(100)).resolves.toEqual({
+      shippingTotal: 0,
+    });
+  });
+
+  it("propaga otros errores de la cotización para bloquear el cobro", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    posApi.getShippingQuote.mockRejectedValue(new BackendRequestError("Falla", 500));
+
+    await expect(new GetPosShippingQuoteService(repositories).execute(100)).rejects.toThrow(
+      "Falla",
+    );
   });
 
   it("en modo mock calcula con la tarifa POS configurada del tenant", async () => {

@@ -1,4 +1,5 @@
 import { calculateShippingCost } from "@/config/shipping-policy";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import {
   POS_SALES_CREATE_PERMISSION,
@@ -22,11 +23,20 @@ export class GetPosShippingQuoteService {
 
   async execute(subtotal: number): Promise<PosShippingQuoteDto> {
     if (this.repositories.posDataSource === "api") {
-      const quote = await requirePosApi(this.repositories).getShippingQuote(subtotal);
-      return {
-        shippingTotal: quote.shippingTotal,
-        freeShippingThreshold: quote.freeShippingThreshold,
-      };
+      try {
+        const quote = await requirePosApi(this.repositories).getShippingQuote(subtotal);
+        return {
+          shippingTotal: quote.shippingTotal,
+          freeShippingThreshold: quote.freeShippingThreshold,
+        };
+      } catch (error) {
+        // Un backend anterior a la config de envíos no expone la cotización y tampoco cobra envío
+        // en el POS: sin el endpoint se cobra solo el ticket, así el orden de despliegue no importa.
+        if (error instanceof BackendRequestError && error.status === 404) {
+          return { shippingTotal: 0 };
+        }
+        throw error;
+      }
     }
 
     const context = await resolvePosSessionContext(this.repositories);
