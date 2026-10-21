@@ -488,7 +488,7 @@ function apiEmailSenderForEmployees(
  * ese permiso (o fuera de sesion de empleado) se usa el mock. El POS y el storefront en modo api no
  * pasan por aqui: usan `/pos/sales/shipping-quote` y la config publica de la tienda.
  */
-function apiShippingConfigForEmployees(
+export function apiShippingConfigForEmployees(
   mock: ShippingConfigRepository,
   api: ShippingConfigRepository,
   currentSession: CurrentSessionClient,

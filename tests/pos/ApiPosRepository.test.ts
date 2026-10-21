@@ -165,6 +165,20 @@ describe("ApiPosRepository - ventas", () => {
     ]);
   });
 
+  it("cotiza el envío a domicilio con el subtotal y normaliza el umbral nulo", async () => {
+    const calls = stubFetch(() =>
+      jsonResponse({ subtotal: "40.00", shippingTotal: "15.00", total: "55.00", freeShippingThreshold: null }),
+    );
+    const { repository, events } = recordEvents();
+
+    const quote = await repository.getShippingQuote(40);
+
+    expect(quote).toEqual({ subtotal: 40, shippingTotal: 15, total: 55, freeShippingThreshold: undefined });
+    expect(calls[0]?.url).toBe("/api/backend/pos/sales/shipping-quote?subtotal=40");
+    expect(calls[0]?.method).toBe("GET");
+    expect(events).toEqual([]);
+  });
+
   it("acepta una confirmación 201 con efectos accesorios nulos y sin caja ni pedido", async () => {
     stubFetch(() =>
       jsonResponse(

@@ -341,6 +341,43 @@ describe("usePosTerminal", () => {
       expect(mocks.shippingQuote).toHaveBeenCalledTimes(2);
     });
 
+    it("ajusta el monto de tarjeta o transferencia al total con envío", async () => {
+      mocks.shippingQuote.mockResolvedValue({ shippingTotal: 15 });
+      mocks.capabilities.mockResolvedValue({
+        allowedPosPaymentMethods: [PaymentMethod.cash, PaymentMethod.card, PaymentMethod.transfer],
+      });
+      const { result } = await renderReadyTerminal();
+      act(() => result.current.addProduct(product));
+      act(() => result.current.openCheckout());
+      act(() => result.current.setPaymentMode(PaymentMethod.card));
+      act(() => result.current.updateCheckout(homeDelivery));
+      await waitFor(() => expect(result.current.checkout.cardAmount).toBe(65));
+
+      act(() => result.current.setPaymentMode(PaymentMethod.transfer));
+      expect(result.current.checkout.transferAmount).toBe(65);
+      act(() => result.current.updateCheckout({ deliveryMethod: DeliveryMethod.store_pickup }));
+      expect(result.current.checkout.transferAmount).toBe(50);
+    });
+
+    it("al cerrar o restablecer el cobro vuelve a cotizar el envío", async () => {
+      mocks.shippingQuote.mockResolvedValue({ shippingTotal: 15 });
+      const { result } = await renderReadyTerminal();
+      act(() => result.current.addProduct(product));
+      act(() => result.current.openCheckout());
+      act(() => result.current.updateCheckout(homeDelivery));
+      await waitFor(() => expect(result.current.shippingTotal).toBe(15));
+
+      act(() => result.current.closeCheckout());
+      act(() => result.current.openCheckout());
+      act(() => result.current.updateCheckout(homeDelivery));
+      expect(result.current.shippingLoading).toBe(true);
+      await waitFor(() => expect(result.current.shippingTotal).toBe(15));
+
+      act(() => result.current.resetCheckout());
+      expect(result.current.shippingTotal).toBe(0);
+      expect(result.current.chargeTotal).toBe(50);
+    });
+
     it("bloquea el cobro si la cotización falla", async () => {
       mocks.shippingQuote.mockRejectedValue(new Error("sin conexión"));
       const { result } = await renderReadyTerminal();
