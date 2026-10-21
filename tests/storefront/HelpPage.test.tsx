@@ -34,7 +34,12 @@ describe("HelpPage", () => {
 
   it("indica lo que el negocio no ha configurado", () => {
     state.loading = false;
-    state.config = { branches: [{ id: "b1", name: "Centro" }] };
+    // Un dato vacío o con solo espacios cuenta como no configurado.
+    state.config = {
+      contactPhone: "  ",
+      contactEmail: "",
+      branches: [{ id: "b1", name: "Centro" }],
+    };
 
     render(<HelpPage />);
 

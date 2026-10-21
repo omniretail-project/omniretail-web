@@ -27,13 +27,13 @@ export function HelpPage() {
 
       <section className="mt-8 grid gap-5 md:grid-cols-3">
         <ContactCard
-          detail={config?.contactPhone ?? NOT_CONFIGURED}
+          detail={config?.contactPhone?.trim() || NOT_CONFIGURED}
           icon="☎"
           loading={loading}
           title="Línea de contacto"
         />
         <ContactCard
-          detail={config?.contactEmail ?? NOT_CONFIGURED}
+          detail={config?.contactEmail?.trim() || NOT_CONFIGURED}
           icon="✉"
           loading={loading}
           title="Correo electrónico"
