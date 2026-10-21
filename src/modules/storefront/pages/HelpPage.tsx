@@ -12,6 +12,8 @@ const NOT_CONFIGURED = "Información aún no configurada";
 export function HelpPage() {
   const { config, loading } = usePublicTenant();
   const branchCount = config?.branches.length ?? 0;
+  const branchLabel = branchCount === 1 ? "sucursal activa" : "sucursales activas";
+  const branchDetail = config ? `${branchCount} ${branchLabel}` : NOT_CONFIGURED;
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-12">
@@ -39,11 +41,7 @@ export function HelpPage() {
           title="Correo electrónico"
         />
         <ContactCard
-          detail={
-            config
-              ? `${branchCount} ${branchCount === 1 ? "sucursal activa" : "sucursales activas"}`
-              : NOT_CONFIGURED
-          }
+          detail={branchDetail}
           icon="⌂"
           loading={loading}
           title="Sucursales físicas"
