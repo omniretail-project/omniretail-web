@@ -1,4 +1,4 @@
-import type { CatalogImageSource } from "@/core/entities";
+import type { CatalogImageSource, ShippingChannelConfig } from "@/core/entities";
 
 export interface PublicStorefrontBranchDto {
   id: string;
@@ -25,4 +25,6 @@ export interface PublicStorefrontConfigDto {
   logoImageSource?: CatalogImageSource;
   branches: PublicStorefrontBranchDto[];
   heroBanner: { slides: PublicHeroBannerSlideDto[] };
+  /** Tarifa de envío a domicilio del canal ecommerce, para mostrarla en carrito y checkout. */
+  shipping: ShippingChannelConfig;
 }

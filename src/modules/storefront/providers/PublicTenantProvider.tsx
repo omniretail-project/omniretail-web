@@ -87,6 +87,11 @@ export function PublicTenantProvider({ children, tenantSlug }: { children: React
         void load();
       }
     });
+    const unsubscribeShipping = eventBus.subscribe("shipping-config.changed", (event) => {
+      if (active && shouldRefreshPublicConfig(event.tenantId, resolvedTenantIdRef.current)) {
+        void load();
+      }
+    });
     const unsubscribeBranches = eventBus.subscribe("branch.changed", (event) => {
       if (active && shouldRefreshPublicConfig(event.tenantId, resolvedTenantIdRef.current)) {
         void load();
@@ -103,6 +108,7 @@ export function PublicTenantProvider({ children, tenantSlug }: { children: React
       active = false;
       requestIdRef.current += 1;
       unsubscribeConfig();
+      unsubscribeShipping();
       unsubscribeBranches();
       unsubscribeSubscription();
     };

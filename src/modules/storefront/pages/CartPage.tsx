@@ -7,15 +7,12 @@ import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCart
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 import { StorefrontUnavailableQuantityModal } from "@/modules/storefront/components/StorefrontUnavailableQuantityModal";
 import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
-import {
-  calculateStorefrontShipping,
-  STOREFRONT_FREE_SHIPPING_THRESHOLD,
-} from "@/config/storefront-shipping-policy";
+import { useStorefrontShipping } from "@/modules/storefront/hooks/useStorefrontShipping";
 
 export function CartPage() {
   const routes = useStorefrontRoutes();
   const { items, subtotal, updateQuantity, removeProduct, clearCart } = useStorefrontCart();
-  const shippingTotal = calculateStorefrontShipping(subtotal);
+  const { shippingTotal, hint: shippingHint } = useStorefrontShipping(subtotal);
   const total = subtotal + shippingTotal;
   const { products } = useStorefrontDiscovery();
   const [unavailableQuantityModalOpen, setUnavailableQuantityModalOpen] = useState(false);
@@ -226,11 +223,9 @@ export function CartPage() {
                 {shippingTotal === 0 ? "Gratis" : `Q${shippingTotal.toFixed(2)}`}
               </span>
             </div>
-            <p className="text-sm text-[var(--color-text-muted)]">
-              {shippingTotal === 0
-                ? "Tu compra tiene envío gratis."
-                : `Envío gratis desde Q${STOREFRONT_FREE_SHIPPING_THRESHOLD.toFixed(2)}.`}
-            </p>
+            {shippingHint ? (
+              <p className="text-sm text-[var(--color-text-muted)]">{shippingHint}</p>
+            ) : null}
           </div>
           <div className="mt-4 flex items-end justify-between">
             <span className="font-black text-[var(--color-text)]">Total estimado</span>
