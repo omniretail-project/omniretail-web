@@ -25,6 +25,7 @@ export const SHIPPING_AMOUNT_MAX = 9_999_999_999.99;
 export function calculateShippingCost(config: ShippingChannelConfig, subtotal: number): number {
   if (!config.enabled) return 0;
   const threshold = config.freeShippingThreshold;
-  if (threshold !== undefined && subtotal >= threshold) return 0;
+  // `typeof` y no `!== undefined`: un `null` deserializado haría `subtotal >= null` siempre cierto.
+  if (typeof threshold === "number" && subtotal >= threshold) return 0;
   return config.deliveryFee;
 }
