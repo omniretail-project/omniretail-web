@@ -1,43 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { BranchType } from "@/core/enums";
-import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
-interface ContactData {
-  phone?: string;
-  email?: string;
-  branchCount: number;
-}
+const NOT_CONFIGURED = "Información aún no configurada";
 
+/**
+ * Contacto de la tienda: el teléfono y correo públicos de la configuración de e-commerce y las
+ * sucursales de la config pública, la misma fuente que Soporte. No consulta repositorios: para
+ * clientes e invitados esos solo llegan al backend con sesión de empleado.
+ */
 export function HelpPage() {
-  const repositories = useRepositories();
-  const { tenantId, loading: tenantLoading } = usePublicTenant();
-  const [contact, setContact] = useState<ContactData | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      if (!tenantId) {
-        if (active) setContact(null);
-        return;
-      }
-      const branches = (await repositories.branches.getActive()).filter(
-        (branch) => branch.tenantId === tenantId && branch.type === BranchType.store,
-      );
-      if (!active) return;
-      setContact({
-        phone: branches.find((branch) => branch.phone)?.phone,
-        email: branches.find((branch) => branch.email)?.email,
-        branchCount: branches.length,
-      });
-    };
-    if (!tenantLoading) void load();
-    return () => {
-      active = false;
-    };
-  }, [repositories.branches, tenantId, tenantLoading]);
+  const { config, loading } = usePublicTenant();
+  const branchCount = config?.branches.length ?? 0;
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-12">
@@ -53,25 +27,25 @@ export function HelpPage() {
 
       <section className="mt-8 grid gap-5 md:grid-cols-3">
         <ContactCard
-          detail={contact?.phone ?? "Información aún no configurada"}
+          detail={config?.contactPhone ?? NOT_CONFIGURED}
           icon="☎"
-          loading={tenantLoading || contact === null}
+          loading={loading}
           title="Línea de contacto"
         />
         <ContactCard
-          detail={contact?.email ?? "Información aún no configurada"}
+          detail={config?.contactEmail ?? NOT_CONFIGURED}
           icon="✉"
-          loading={tenantLoading || contact === null}
+          loading={loading}
           title="Correo electrónico"
         />
         <ContactCard
           detail={
-            contact
-              ? `${contact.branchCount} ${contact.branchCount === 1 ? "sucursal activa" : "sucursales activas"}`
-              : "Información aún no configurada"
+            config
+              ? `${branchCount} ${branchCount === 1 ? "sucursal activa" : "sucursales activas"}`
+              : NOT_CONFIGURED
           }
           icon="⌂"
-          loading={tenantLoading || contact === null}
+          loading={loading}
           title="Sucursales físicas"
         />
       </section>
