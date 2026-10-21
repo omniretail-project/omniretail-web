@@ -109,6 +109,10 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
             (item) => item.tenantId === tenantId && item.productId === product.id,
           )?.quantity ?? 0;
         if (exceedsStock(quantityInCart)) return false;
+        // Precios finales del backend: con la promoción ya aplicada, sin volver a aplicarla.
+        const finalPricing = apiProduct
+          ? toFinalPricing(apiProduct)
+          : { basePrice: product.salePrice, tiers: [] };
         setAllItems((current) => {
           const existing = current.find(
             (item) => item.tenantId === tenantId && item.productId === product.id,
@@ -116,16 +120,21 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
           // Invariante: el carrito nunca supera el stock, aun con agregados concurrentes.
           if (exceedsStock(existing?.quantity ?? 0)) return current;
           if (existing) {
+            // Se refrescan los precios: el producto pudo entrar al carrito con otros escalones.
             return current.map((item) =>
               item === existing
-                ? withQuantityPrice({ ...item, ...media }, item.quantity + quantity)
+                ? withQuantityPrice(
+                    {
+                      ...item,
+                      ...media,
+                      basePrice: finalPricing.basePrice,
+                      salesPriceTiers: finalPricing.tiers,
+                    },
+                    item.quantity + quantity,
+                  )
                 : item,
             );
           }
-          // Precios finales del backend: con la promoción ya aplicada, sin volver a aplicarla.
-          const finalPricing = apiProduct
-            ? toFinalPricing(apiProduct)
-            : { basePrice: product.salePrice, tiers: [] };
           return [...current, withQuantityPrice({
             ...createStorefrontCartItem(product, media),
             basePrice: finalPricing.basePrice,

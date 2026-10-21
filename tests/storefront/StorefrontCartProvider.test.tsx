@@ -91,4 +91,24 @@ describe("StorefrontCartProvider", () => {
     await waitFor(() => expect(screen.getByTestId("subtotal")).toHaveTextContent("90.00"));
     state.apiMode = false;
   });
+
+  it("al volver a agregar un producto del carrito refresca sus precios por cantidad", async () => {
+    state.apiMode = true;
+    state.getProduct.mockResolvedValueOnce({
+      id: "product-1", sku: "TAL-001", name: "Taladro", salePrice: 100, effectivePrice: 100,
+      availableQuantity: 10, finalPriceTiers: [],
+    });
+    render(<StorefrontCartProvider><CartProbe /></StorefrontCartProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Agregar" }));
+    await waitFor(() => expect(screen.getByTestId("subtotal")).toHaveTextContent("100.00"));
+
+    // El backend ahora publica un escalón desde 2 unidades: el producto existente lo toma.
+    state.getProduct.mockResolvedValueOnce({
+      id: "product-1", sku: "TAL-001", name: "Taladro", salePrice: 100, effectivePrice: 100,
+      availableQuantity: 10, finalPriceTiers: [{ minQuantity: 2, unitPrice: 80, active: true }],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Agregar" }));
+    await waitFor(() => expect(screen.getByTestId("subtotal")).toHaveTextContent("160.00"));
+    state.apiMode = false;
+  });
 });

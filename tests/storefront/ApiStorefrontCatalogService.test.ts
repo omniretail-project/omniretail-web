@@ -51,8 +51,10 @@ describe("ApiStorefrontCatalogService", () => {
             effectivePrice: 100,
             categoryId: "category-1",
             priceTiers: [
-              { minQuantity: 2, unitPrice: "80.00", effectivePrice: "72.00" },
               { minQuantity: 10, unitPrice: 60, effectivePrice: 54 },
+              { minQuantity: 2, unitPrice: "80.00", effectivePrice: "72.00" },
+              { minQuantity: 5, unitPrice: 70, effectivePrice: "no-es-dinero" },
+              { minQuantity: 0, unitPrice: 1, effectivePrice: 1 },
             ],
           }),
         ),

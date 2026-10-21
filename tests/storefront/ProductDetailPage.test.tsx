@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   addProduct: vi.fn().mockResolvedValue(true),
@@ -65,6 +65,10 @@ vi.mock("@/modules/storefront/components/StorefrontUnavailableQuantityModal", ()
 import { ProductDetailPage } from "@/modules/storefront/pages/ProductDetailPage";
 
 describe("ProductDetailPage", () => {
+  afterEach(() => {
+    state.finalPricing = undefined;
+  });
+
   it("muestra atributos y sucursales, y permite escribir una cantidad dentro del inventario", () => {
     render(<ProductDetailPage productId="product-1" />);
 
@@ -95,7 +99,6 @@ describe("ProductDetailPage", () => {
     // Desde 2 unidades: Q60 por unidad, Q180 en total (no Q75 x 3).
     expect(screen.getByText("Q60.00")).toBeInTheDocument();
     expect(screen.getByText("Q180.00")).toBeInTheDocument();
-    state.finalPricing = undefined;
   });
 
   it("rechaza una cantidad superior al inventario disponible", () => {
