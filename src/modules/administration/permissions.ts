@@ -12,6 +12,11 @@ export const BUSINESS_CONFIG_MANAGE_PERMISSION = "admin.business_config.manage";
  */
 export const EMAIL_CONFIG_READ_PERMISSION = "admin.email_config.read";
 export const EMAIL_CONFIG_MANAGE_PERMISSION = "admin.email_config.manage";
+/**
+ * Costo de envío a domicilio por canal (tienda en línea y POS). Es tenant-wide y no depende de la
+ * capability ecommerce: un negocio solo POS también cobra entregas a domicilio.
+ */
+export const SHIPPING_CONFIG_MANAGE_PERMISSION = "admin.shipping_config.manage";
 export const CASH_READ_PERMISSION = "admin.cash.read";
 export const DASHBOARD_READ_PERMISSION = "admin.dashboard.read";
 export const REPORTS_READ_PERMISSION = "admin.reports.read";
@@ -80,6 +85,13 @@ export const administrationPermissions = [
     module: "administration",
     name: "Gestionar correo remitente",
     description: "Permite configurar, probar y desconectar el correo remitente del negocio.",
+  },
+  {
+    key: SHIPPING_CONFIG_MANAGE_PERMISSION,
+    module: "administration",
+    name: "Gestionar costo de envío",
+    description:
+      "Permite configurar la tarifa de envío a domicilio de la tienda en línea y del POS.",
   },
   {
     key: "admin.suppliers.manage",

@@ -18,6 +18,7 @@ import {
   PLANS_READ_PERMISSION,
   REPORTS_EXPORT_PERMISSION,
   REPORTS_READ_PERMISSION,
+  SHIPPING_CONFIG_MANAGE_PERMISSION,
 } from "@/modules/administration/permissions";
 import { ensureTenantLimit, SaasEntitlementError } from "@/shared/application/services/entitlementGuards";
 import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
@@ -71,6 +72,12 @@ export function ensureCanManageEmailSender(permissions: readonly string[]) {
   if (permissions.includes(EMAIL_CONFIG_MANAGE_PERMISSION)) return;
 
   throw new AdministrationServiceError("No dispone de permisos para gestionar el correo remitente.");
+}
+
+export function ensureCanManageShippingConfig(permissions: readonly string[]) {
+  if (permissions.includes(SHIPPING_CONFIG_MANAGE_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No dispone de permisos para gestionar el costo de envío.");
 }
 
 export function ensureCanReadCustomers(permissions: readonly string[]) {
