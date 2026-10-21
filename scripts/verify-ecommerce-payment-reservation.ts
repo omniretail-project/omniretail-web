@@ -14,6 +14,7 @@ import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { MockBranchRepository } from "@/infrastructure/mock/repositories/MockBranchRepository";
 import { MockBusinessConfigRepository } from "@/infrastructure/mock/repositories/MockBusinessConfigRepository";
+import { MockShippingConfigRepository } from "@/infrastructure/mock/repositories/MockShippingConfigRepository";
 import { MockOrderPaymentConfirmationRepository } from "@/infrastructure/mock/repositories/MockOrderPaymentConfirmationRepository";
 import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrderRepository";
 import { MockPlanRepository } from "@/infrastructure/mock/repositories/MockPlanRepository";
@@ -146,6 +147,7 @@ function createHarness(physicalQuantity: number, reservedQuantity = 0) {
     },
     branches: new MockBranchRepository(store, eventBus),
     businessConfig: new MockBusinessConfigRepository(store, eventBus),
+    shippingConfig: new MockShippingConfigRepository(store, eventBus),
     customers: {},
     orderPaymentConfirmations: confirmations,
     orders,
