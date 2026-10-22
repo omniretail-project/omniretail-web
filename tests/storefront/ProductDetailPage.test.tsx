@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   addProduct: vi.fn().mockResolvedValue(true),
@@ -8,6 +8,9 @@ const state = vi.hoisted(() => ({
   loading: false,
   error: null as string | null,
   reload: vi.fn(),
+  finalPricing: undefined as
+    | { basePrice: number; tiers: Array<{ minQuantity: number; unitPrice: number; active: boolean }> }
+    | undefined,
 }));
 
 vi.mock("@/modules/storefront/hooks/useStorefrontProductDetail", () => ({
@@ -34,6 +37,7 @@ vi.mock("@/modules/storefront/hooks/useStorefrontProductDetail", () => ({
         available: true,
       }],
       availableQuantity: state.availableQuantity,
+      finalPricing: state.finalPricing,
     },
   }),
 }));
@@ -61,6 +65,10 @@ vi.mock("@/modules/storefront/components/StorefrontUnavailableQuantityModal", ()
 import { ProductDetailPage } from "@/modules/storefront/pages/ProductDetailPage";
 
 describe("ProductDetailPage", () => {
+  afterEach(() => {
+    state.finalPricing = undefined;
+  });
+
   it("muestra atributos y sucursales, y permite escribir una cantidad dentro del inventario", () => {
     render(<ProductDetailPage productId="product-1" />);
 
@@ -74,6 +82,23 @@ describe("ProductDetailPage", () => {
 
     expect(quantityInput).toHaveValue("3");
     expect(screen.getByText("Q225.00")).toBeInTheDocument();
+  });
+
+  it("en modo api aplica el precio final por cantidad que calcula el backend", () => {
+    state.finalPricing = {
+      basePrice: 75,
+      tiers: [{ minQuantity: 2, unitPrice: 60, active: true }],
+    };
+    render(<ProductDetailPage productId="product-1" />);
+
+    expect(screen.getAllByText("Q75.00")).toHaveLength(2);
+    fireEvent.change(screen.getByRole("textbox", { name: "Cantidad a ordenar" }), {
+      target: { value: "3" },
+    });
+
+    // Desde 2 unidades: Q60 por unidad, Q180 en total (no Q75 x 3).
+    expect(screen.getByText("Q60.00")).toBeInTheDocument();
+    expect(screen.getByText("Q180.00")).toBeInTheDocument();
   });
 
   it("rechaza una cantidad superior al inventario disponible", () => {
