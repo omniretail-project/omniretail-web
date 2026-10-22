@@ -1,6 +1,5 @@
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { LocationListItem } from "@/modules/catalog/application/dto/LocationEditorDto";
-import { isApiMode } from "@/config/api-mode";
 import {
   ensureCanReadLocations,
   resolveTenantContext,
@@ -12,68 +11,28 @@ export class GetLocationsService {
   async execute(branchId?: string): Promise<LocationListItem[]> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanReadLocations(permissions);
-    const [locations, products] = await Promise.all([
-      this.repositories.inventory.getLocations(branchId),
-      isApiMode() ? Promise.resolve([]) : this.repositories.products.getByTenant(tenantId),
-    ]);
-    const productCounts = isApiMode()
-      ? null
-      : branchId
-        ? await countProductsByDefaultLocation(
-            this.repositories,
-            products.map((product) => product.id),
-            branchId,
-          )
-        : new Map<string, number>();
+    // Una sola lectura (paginada en el backend) con el conteo de productos asignados por ubicacion:
+    // nunca una consulta por producto.
+    const entries = await this.repositories.inventory.getLocationsWithCounts(branchId);
+    const scoped = entries.filter(({ location }) => location.tenantId === tenantId);
 
-    const locationNames = new Map(locations.map((location) => [location.id, location.name]));
-    const items = locations
-      .filter((location) => location.tenantId === tenantId)
-      .map((location) => ({
-        id: location.id,
-        tenantId: location.tenantId,
-        branchId: location.branchId,
-        parentId: location.parentId,
-        parentName: location.parentId ? locationNames.get(location.parentId) : undefined,
-        code: location.code,
-        name: location.name,
-        type: location.type,
-        depth: 0,
-        description: location.description,
-        status: location.status,
-        productCount: productCounts ? (productCounts.get(location.id) ?? 0) : null,
-      }));
+    const locationNames = new Map(scoped.map(({ location }) => [location.id, location.name]));
+    const items = scoped.map(({ location, assignedProductCount }) => ({
+      id: location.id,
+      tenantId: location.tenantId,
+      branchId: location.branchId,
+      parentId: location.parentId,
+      parentName: location.parentId ? locationNames.get(location.parentId) : undefined,
+      code: location.code,
+      name: location.name,
+      type: location.type,
+      depth: 0,
+      description: location.description,
+      status: location.status,
+      productCount: assignedProductCount,
+    }));
     return flattenLocationHierarchy(items);
   }
-}
-
-async function countProductsByDefaultLocation(
-  repositories: RepositoryRegistry,
-  productIds: string[],
-  branchId: string,
-) {
-  const productIdsByLocation = new Map<string, Set<string>>();
-
-  const settings = await Promise.all(
-    productIds.map((productId) =>
-      repositories.inventory.getProductInventorySettings(productId, branchId),
-    ),
-  );
-
-  settings.forEach((setting) => {
-    if (!setting?.defaultLocationId) return;
-    const locationProductIds =
-      productIdsByLocation.get(setting.defaultLocationId) ?? new Set<string>();
-    locationProductIds.add(setting.productId);
-    productIdsByLocation.set(setting.defaultLocationId, locationProductIds);
-  });
-
-  return new Map(
-    [...productIdsByLocation.entries()].map(([locationId, locationProductIds]) => [
-      locationId,
-      locationProductIds.size,
-    ]),
-  );
 }
 
 function flattenLocationHierarchy(locations: LocationListItem[]) {

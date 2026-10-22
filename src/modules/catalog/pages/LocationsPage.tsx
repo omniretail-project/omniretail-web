@@ -20,6 +20,8 @@ import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Select } from "@/shared/components/Select";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { useToast } from "@/shared/components/Toast";
+import { CatalogCount } from "@/modules/catalog/components/CatalogCount";
+import { CatalogLoadError } from "@/modules/catalog/components/CatalogLoadError";
 import { cn } from "@/shared/utils/cn";
 import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import type {
@@ -54,6 +56,8 @@ export function LocationsPage() {
     error,
     canRead,
     canManage,
+    loadError,
+    reload,
     currentBranchId,
     locations,
     filteredLocations,
@@ -123,14 +127,16 @@ export function LocationsPage() {
   }
 
   function requestArchive(location: LocationListItem) {
-    if (location.productCount != null && location.productCount > 0) {
+    if (location.productCount !== null && location.productCount > 0) {
       showToast({
-        title: "Ubicacion asignada",
-        description: "Desasigna los productos antes de archivar la ubicacion.",
+        title: "Ubicación con productos asignados",
+        description: `${location.productCount} producto${location.productCount === 1 ? " tiene" : "s tienen"} asignada esta ubicación como ubicación operativa, aunque no tengan existencias. Reasígnalos a otra ubicación activa antes de archivarla.`,
         tone: "danger",
+        duration: 8000,
       });
       return;
     }
+    // Con conteo desconocido no se asume que este vacia: el backend sigue siendo la autoridad.
     setArchiveTarget(location);
   }
 
@@ -200,6 +206,12 @@ export function LocationsPage() {
             <p className="border-t border-[var(--color-border)] p-5 text-sm text-[var(--color-text-muted)]">
               Cargando ubicaciones...
             </p>
+          ) : loadError ? (
+            <CatalogLoadError
+              message={loadError}
+              onRetry={() => void reload()}
+              title="No se pudieron cargar las ubicaciones."
+            />
           ) : (
             <LocationTable
               canManage={canManage}
@@ -252,7 +264,11 @@ export function LocationsPage() {
       <ConfirmDialog
         open={Boolean(archiveTarget)}
         title="Archivar ubicacion"
-        message="La ubicacion dejara de estar disponible. Esta accion no mueve stock ni elimina historial."
+        message={
+          archiveTarget?.productCount === null
+            ? "La ubicacion dejara de estar disponible. Esta accion no mueve stock ni elimina historial. No pudimos verificar cuantos productos la tienen asignada; si alguno la tiene, el sistema rechazara el archivado."
+            : "La ubicacion dejara de estar disponible. Esta accion no mueve stock ni elimina historial."
+        }
         confirmLabel="Archivar"
         onCancel={() => setArchiveTarget(null)}
         onConfirm={handleArchive}
@@ -395,7 +411,7 @@ function LocationTable({
                   {location.code}
                 </td>
                 <td className="px-4 py-3 text-right font-bold text-[var(--color-title)]">
-                  {location.productCount ?? "-"}
+                  <CatalogCount value={location.productCount} />
                 </td>
                 <td className="px-4 py-3">
                   {canManage ? (
@@ -726,7 +742,7 @@ function LocationDetail({
         ) : null}
         <DetailItem
           label="Productos asociados"
-          value={location.productCount == null ? "-" : String(location.productCount)}
+          value={<CatalogCount value={location.productCount} />}
         />
         <DetailItem label="Estado" value={<StatusBadge status={location.status} />} />
         <DetailItem label="Descripcion" value={location.description ?? "Sin descripcion"} />

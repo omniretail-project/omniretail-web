@@ -7,7 +7,32 @@ import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 export type ProductLocationLock =
   | { status: "unlocked" }
   | { status: "loading" }
-  | { status: "locked"; reason: "stock" | "traceability" | "unverified" };
+  | { status: "locked"; reason: "stock" | "traceability" | "unverified" | "permission" };
+
+/**
+ * Ubicacion operativa del producto EN LA SUCURSAL ACTIVA, tal como la devolvio la lectura de su
+ * configuracion de inventario. `locationId: null` significa que esa sucursal aun no tiene una
+ * (asignacion inicial); un valor distinto de null es un cambio de una ubicacion existente.
+ */
+export type ProductLocationAssignment =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "ready"; locationId: string | null };
+
+/**
+ * Deriva la asignacion de la sucursal activa a partir de la configuracion de inventario ya cargada
+ * (`baseline`, con "" = sin ubicacion) y del estado de su lectura. Sin configuracion cargada no se
+ * adivina: mientras carga espera y, si la lectura fallo, queda en error (el selector se bloquea).
+ */
+export function resolveLocationAssignment(
+  baseline: { defaultLocationId?: string } | undefined,
+  loadStatus: "notLoaded" | "loading" | "loaded" | "error",
+): ProductLocationAssignment {
+  if (baseline !== undefined) {
+    return { status: "ready", locationId: baseline.defaultLocationId || null };
+  }
+  return loadStatus === "error" ? { status: "error" } : { status: "loading" };
+}
 
 interface UseProductLocationLockInput {
   /** Solo un producto fisico existente que controla stock puede quedar bloqueado. */
@@ -18,14 +43,22 @@ interface UseProductLocationLockInput {
   /** Trazabilidad PERSISTIDA del producto. */
   tracking?: ProductTrackingConfig;
   canReadStock: boolean;
+  /** Estado de la configuracion de inventario de ESTA sucursal (ver ProductLocationAssignment). */
+  assignment: ProductLocationAssignment;
 }
 
 /**
- * Decide si la ubicacion operativa de un producto existente puede cambiarse en la sucursal activa.
- * Lee los balances fisicos de ESA sucursal una sola vez (al abrir el editor); el stock de otras
- * sucursales no cuenta. Es conservador: bloquea mientras carga, si la consulta falla, si no hay
- * permiso para verificar y para productos con lote, serie o vencimiento (el contrato disponible no
- * expone lotes, series ni movimientos pendientes). El backend sigue siendo la autoridad (HTTP 409).
+ * Decide si la ubicacion operativa de un producto existente puede elegirse o cambiarse en la
+ * sucursal activa. Distingue dos operaciones:
+ *  - ASIGNACION INICIAL (la sucursal no tiene ubicacion): se habilita si los balances fisicos de ESA
+ *    sucursal, leidos en fresco, no muestran existencias ni reservas. Tener lote, serie o
+ *    vencimiento activados a nivel de catalogo NO la bloquea: el stock de otras sucursales no
+ *    cuenta.
+ *  - CAMBIO de una ubicacion existente: conservador. Un producto con lote, serie o vencimiento
+ *    queda bloqueado (el contrato disponible no expone lotes, series ni movimientos pendientes) y
+ *    los demas se bloquean si hay existencias o reservas en la sucursal.
+ * Bloquea tambien mientras carga, si la lectura falla o no hay permiso para verificar. Habilitar el
+ * selector NO autoriza nada: el backend sigue siendo la autoridad al guardar (HTTP 409).
  */
 export function useProductLocationLock({
   enabled,
@@ -34,12 +67,16 @@ export function useProductLocationLock({
   branchId,
   tracking,
   canReadStock,
+  assignment,
 }: UseProductLocationLockInput): ProductLocationLock {
   const repositories = useRepositories();
   const key = `${tenantId}|${productId}|${branchId}`;
   const traceable = Boolean(tracking && (tracking.lot || tracking.serial || tracking.expiration));
+  const contextReady = Boolean(tenantId && productId && branchId);
+  const initialAssignment = assignment.status === "ready" && assignment.locationId === null;
+  const traceabilityBlocks = traceable && !initialAssignment;
   const readsBalances =
-    enabled && Boolean(tenantId && productId && branchId) && canReadStock && !traceable;
+    enabled && contextReady && canReadStock && assignment.status === "ready" && !traceabilityBlocks;
   const [result, setResult] = useState<{ key: string; lock: ProductLocationLock } | null>(null);
 
   useEffect(() => {
@@ -67,9 +104,10 @@ export function useProductLocationLock({
   }, [branchId, key, productId, readsBalances, repositories, tenantId]);
 
   if (!enabled) return { status: "unlocked" };
-  if (!tenantId || !productId || !branchId || !canReadStock) {
-    return { status: "locked", reason: "unverified" };
-  }
-  if (traceable) return { status: "locked", reason: "traceability" };
+  if (!contextReady) return { status: "locked", reason: "unverified" };
+  if (!canReadStock) return { status: "locked", reason: "permission" };
+  if (assignment.status === "error") return { status: "locked", reason: "unverified" };
+  if (assignment.status === "loading") return { status: "loading" };
+  if (traceabilityBlocks) return { status: "locked", reason: "traceability" };
   return result?.key === key ? result.lock : { status: "loading" };
 }

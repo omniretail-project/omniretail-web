@@ -14,6 +14,9 @@ export interface ApiCategory {
   status: Category["status"];
   createdAt: string;
   updatedAt: string;
+  /** Solo con includeCounts=true; ausente o null en respuestas anteriores al contrato. */
+  productCount?: number | null;
+  archivedProductCount?: number | null;
 }
 
 export interface ApiLocation {
@@ -27,6 +30,8 @@ export interface ApiLocation {
   status: StorageLocation["status"];
   createdAt: string;
   updatedAt: string;
+  /** Productos unicos asignados (incluye los de cero existencias). Ausente en backends anteriores. */
+  assignedProductCount?: number | null;
 }
 
 export interface ApiUnit {

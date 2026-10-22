@@ -29,6 +29,8 @@ import type {
   CategoryEditorDto,
   CategoryListItem,
 } from "@/modules/catalog/application/dto/CategoryEditorDto";
+import { CatalogCount } from "@/modules/catalog/components/CatalogCount";
+import { CatalogLoadError } from "@/modules/catalog/components/CatalogLoadError";
 import {
   ArchiveIcon,
   CheckIcon,
@@ -62,6 +64,8 @@ export function CategoriesPage() {
     loading,
     busy,
     error,
+    loadError,
+    reload,
     canRead,
     canManage,
     categories,
@@ -128,15 +132,26 @@ export function CategoriesPage() {
 
   async function handleArchive() {
     if (!archiveTarget) return;
-    await archive(archiveTarget.id);
-    showToast({ title: "Categoría archivada", tone: "success" });
-    if (panelCategory?.id === archiveTarget.id) {
-      setPanel({
-        mode: "detail",
-        category: { ...archiveTarget, status: CategoryStatus.archived },
+    try {
+      await archive(archiveTarget.id);
+      showToast({ title: "Categoría archivada", tone: "success" });
+      if (panelCategory?.id === archiveTarget.id) {
+        setPanel({
+          mode: "detail",
+          category: { ...archiveTarget, status: CategoryStatus.archived },
+        });
+      }
+    } catch (caughtError) {
+      // CATEGORY_HAS_PRODUCTS / CATEGORY_HAS_ACTIVE_CHILDREN: la categoria conserva su estado.
+      showToast({
+        title: "No se pudo archivar la categoría",
+        description: caughtError instanceof Error ? caughtError.message : undefined,
+        tone: "danger",
+        duration: 8000,
       });
+    } finally {
+      setArchiveTarget(null);
     }
-    setArchiveTarget(null);
   }
 
   async function handleRestore(category: CategoryListItem) {
@@ -204,6 +219,12 @@ export function CategoriesPage() {
             <p className="border-t border-[var(--color-border)] p-5 text-sm text-[var(--color-text-muted)]">
               Cargando categorías...
             </p>
+          ) : loadError ? (
+            <CatalogLoadError
+              message={loadError}
+              onRetry={() => void reload()}
+              title="No se pudieron cargar las categorías."
+            />
           ) : (
             <CategoryTable
               canManage={canManage}
@@ -258,13 +279,27 @@ export function CategoriesPage() {
       <ConfirmDialog
         open={Boolean(archiveTarget)}
         title="Archivar categoría"
-        message="La categoría dejará de estar disponible para organizar nuevos productos, pero se conservará su historial."
+        message={buildCategoryArchiveMessage(archiveTarget)}
         confirmLabel="Archivar"
         onCancel={() => setArchiveTarget(null)}
         onConfirm={handleArchive}
       />
     </div>
   );
+}
+
+/** Advierte (sin sustituir la validacion del backend) cuando los conteos anticipan un rechazo. */
+function buildCategoryArchiveMessage(category: CategoryListItem | null) {
+  const base =
+    "La categoría dejará de estar disponible para organizar nuevos productos, pero se conservará su historial.";
+  if (!category) return base;
+  if (category.productCount === null) {
+    return `${base} No pudimos verificar cuántos productos tiene asociados; el sistema rechazará el archivado si aún tiene productos no archivados o subcategorías activas.`;
+  }
+  if (category.productCount > 0) {
+    return `${base} Tiene ${category.productCount} producto${category.productCount === 1 ? "" : "s"} asociado${category.productCount === 1 ? "" : "s"} directamente: el sistema no permitirá archivarla hasta reasignarlos o archivarlos.`;
+  }
+  return base;
 }
 
 function CategoryFilters({
@@ -395,7 +430,13 @@ function CategoryTable({
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right font-bold text-[var(--color-title)]">
-                  {category.productCount}
+                  <CatalogCount value={category.productCount} />
+                  {category.archivedProductCount ? (
+                    <span className="block text-xs font-medium text-[var(--color-text-muted)]">
+                      {category.archivedProductCount} archivado
+                      {category.archivedProductCount === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
                 </td>
                 <td className="px-4 py-3">
                   {canManage ? (
@@ -722,7 +763,14 @@ function CategoryDetail({
         <DetailItem label="Nombre" value={category.name} />
         <DetailItem label="Código" value={category.code} />
         <DetailItem label="Estado" value={<StatusBadge status={category.status} />} />
-        <DetailItem label="Cantidad de productos" value={String(category.productCount)} />
+        <DetailItem
+          label="Cantidad de productos"
+          value={<CatalogCount value={category.productCount} />}
+        />
+        <DetailItem
+          label="Productos archivados"
+          value={<CatalogCount value={category.archivedProductCount} />}
+        />
         <DetailItem label="Descripción" value={category.description ?? "Sin descripción"} />
         {category.parentName ? (
           <DetailItem label="Categoría padre" value={category.parentName} />

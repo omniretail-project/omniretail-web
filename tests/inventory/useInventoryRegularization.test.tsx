@@ -514,6 +514,27 @@ describe("useInventoryRegularization initial assignment", () => {
     expect(mocks.service.regularize).not.toHaveBeenCalled();
   });
 
+  it("exposes the header's active branch separately from the branch chosen for the regularization", async () => {
+    const hook = await assignHook();
+    expect(hook.result.current.branchId).toBe("branch-1");
+    expect(hook.result.current.activeBranchId).toBe("branch-1");
+
+    act(() => hook.result.current.selectBranch("branch-2"));
+
+    expect(hook.result.current.branchId).toBe("branch-2");
+    expect(hook.result.current.activeBranchId).toBe("branch-1");
+  });
+
+  it("offers the product editor only to users who can update products", async () => {
+    const hook = await assignHook();
+    expect(hook.result.current.canEditProduct).toBe(true);
+
+    mocks.permissions.delete("catalog.products.update");
+    hook.rerender();
+
+    expect(hook.result.current.canEditProduct).toBe(false);
+  });
+
   it("blocks the assignment when the backend does not allow it", async () => {
     mocks.permissions.add("catalog.products.update");
     mocks.service.resolveDestination.mockResolvedValue(unassigned);

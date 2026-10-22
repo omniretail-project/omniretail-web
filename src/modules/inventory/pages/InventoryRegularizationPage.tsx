@@ -2,12 +2,16 @@
 
 import { useState, type FormEvent, type ReactNode } from "react";
 import type { RegularizationErrorInfo } from "@/modules/inventory/application/dto/InventoryRegularizationDto";
-import { describeRegularizationFailure } from "@/modules/inventory/application/services/inventoryRegularizationMessages";
+import {
+  describeRegularizationFailure,
+  REGULARIZATION_NOT_REQUIRED_CODE,
+} from "@/modules/inventory/application/services/inventoryRegularizationMessages";
 import {
   DiagnosticDetail,
   InventoryRegularizationPreview,
   InventoryRegularizationResult,
 } from "@/modules/inventory/components/InventoryRegularizationPreview";
+import { NoLegacyBalanceNotice } from "@/modules/inventory/components/NoLegacyBalanceNotice";
 import { useInventoryRegularization } from "@/modules/inventory/hooks/useInventoryRegularization";
 import { REGULARIZATION_REASON_MAX } from "@/modules/inventory/validation/inventoryRegularization.validation";
 import { Button } from "@/shared/components/Button";
@@ -101,6 +105,8 @@ export function InventoryRegularizationPage() {
     canPreview,
     canExecute,
     canAssign,
+    canEditProduct,
+    activeBranchId,
     branches,
     branchId,
     locked,
@@ -125,6 +131,10 @@ export function InventoryRegularizationPage() {
   }
 
   const previewData = preview?.data ?? null;
+  // El backend informa que no hay saldo heredado: no hay nada que mover ni que confirmar.
+  const noLegacyBalance =
+    previewData?.blockers.some((blocker) => blocker.code === REGULARIZATION_NOT_REQUIRED_CODE) ??
+    false;
   const assignedDestination = destination?.data?.kind === "assigned" ? destination.data : null;
   const locationLabel = assignedDestination
     ? `${assignedDestination.locationCode} · ${assignedDestination.locationName}`
@@ -346,7 +356,7 @@ export function InventoryRegularizationPage() {
                   ) : (
                     <>
                       <InlineAlert
-                        description="Elige una ubicación: al confirmar se asignará al producto y se consolidará su inventario existente en una sola operación."
+                        description="Elige una ubicación para ver la vista previa. Si el producto tiene saldo heredado, al confirmar se asignará y se consolidará su inventario en una sola operación; si no lo tiene, la ubicación se asigna desde su ficha."
                         title="Este producto todavía no tiene una ubicación de inventario asignada."
                         tone="info"
                       />
@@ -402,7 +412,17 @@ export function InventoryRegularizationPage() {
                   tone="info"
                 />
               ) : null}
-              {previewData && assignMode ? (
+              {previewData && noLegacyBalance ? (
+                <NoLegacyBalanceNotice
+                  assignedLocationLabel={assignedDestination ? locationLabel : undefined}
+                  branchName={branches.find((branch) => branch.id === branchId)?.name}
+                  canEditProduct={canEditProduct}
+                  editorMatchesBranch={activeBranchId === branchId}
+                  productId={previewData.productId}
+                  productName={previewData.productName}
+                />
+              ) : null}
+              {previewData && assignMode && !noLegacyBalance ? (
                 previewData.assignmentRequired && !previewData.assignmentAllowed ? (
                   <InlineAlert
                     description="Revisa tus permisos o las condiciones del inventario indicadas abajo."
@@ -417,7 +437,7 @@ export function InventoryRegularizationPage() {
                   />
                 )
               ) : null}
-              {previewData ? (
+              {previewData && !noLegacyBalance ? (
                 <InventoryRegularizationPreview
                   locationLabel={assignMode ? chosenLabel : locationLabel}
                   preview={previewData}
@@ -433,7 +453,7 @@ export function InventoryRegularizationPage() {
             </Panel>
           ) : null}
 
-          {product && previewData ? (
+          {product && previewData && !noLegacyBalance ? (
             <Panel
               description="Indica por qué se regulariza y confirma."
               step={3}

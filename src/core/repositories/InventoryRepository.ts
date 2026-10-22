@@ -446,6 +446,16 @@ export type UpsertProductInventorySettingsInput = Omit<
   reorderPoint?: number | null;
 };
 
+/**
+ * Ubicacion con el numero de productos UNICOS que la tienen como ubicacion operativa por defecto
+ * (incluye los de cero existencias; no son unidades fisicas). `null` = dato no disponible, nunca
+ * cero.
+ */
+export interface StorageLocationWithCount {
+  location: StorageLocation;
+  assignedProductCount: number | null;
+}
+
 export interface GetProductBalancesOptions {
   /** Omite cache/deduplicacion: requerido antes de una mutacion que depende del saldo observado. */
   fresh?: boolean;
@@ -492,6 +502,8 @@ export interface InventoryRepository {
   getLots(productId?: string): Promise<StockLot[]>;
   getSerialNumbers(productId?: string): Promise<SerialNumber[]>;
   getLocations(branchId?: string): Promise<StorageLocation[]>;
+  /** Ubicaciones con su conteo de productos asignados, en una sola lectura (sin N+1). */
+  getLocationsWithCounts(branchId?: string): Promise<StorageLocationWithCount[]>;
   createLocation(
     input: Omit<StorageLocation, "id" | "createdAt" | "updatedAt">,
   ): Promise<StorageLocation>;

@@ -13,7 +13,10 @@ export interface CategoryListItem {
   description?: string;
   image?: Category["image"];
   status: Category["status"];
-  productCount: number;
+  /** Productos publicados asociados directamente. `null` = no disponible (nunca cero). */
+  productCount: number | null;
+  /** Productos archivados asociados directamente. `null` = no disponible (nunca cero). */
+  archivedProductCount: number | null;
 }
 
 export interface CategoryEditorDto {
