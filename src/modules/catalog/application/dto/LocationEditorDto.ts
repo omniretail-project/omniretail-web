@@ -12,6 +12,7 @@ export interface LocationListItem {
   depth: number;
   description?: string;
   status: StorageLocation["status"];
+  /** Productos unicos asignados a la ubicacion (incluye cero existencias). `null` = no disponible. */
   productCount: number | null;
 }
 

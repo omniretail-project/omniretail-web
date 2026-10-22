@@ -26,3 +26,6 @@ export function formatTracking(tracking: ProductTrackingConfig) {
   ].filter(Boolean);
   return enabled.length ? enabled.join(" + ") : "Sin trazabilidad";
 }
+
+export const PRODUCT_ARCHIVE_CONFIRM_MESSAGE =
+  "Archivar es una acción global: el producto dejará de estar disponible para nuevas operaciones en todas las sucursales del negocio, pero se conservará su historial. No se puede archivar si alguna sucursal tiene existencias o reservas, si hay órdenes de compra abiertas o traslados despachados pendientes de recibir, ni si es componente de un kit publicado.";

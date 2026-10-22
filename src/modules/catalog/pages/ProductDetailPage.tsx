@@ -9,6 +9,7 @@ import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
 import { ProductDetailCard } from "@/modules/catalog/components/ProductDetailCard";
 import { useProductDetail } from "@/modules/catalog/hooks/useProductDetail";
+import { PRODUCT_ARCHIVE_CONFIRM_MESSAGE } from "@/modules/catalog/components/productLabels";
 import { useProductMutations } from "@/modules/catalog/hooks/useProductMutations";
 import { useProductPermissions } from "@/modules/catalog/hooks/useProductPermissions";
 
@@ -97,7 +98,7 @@ export function ProductDetailPage() {
       <ConfirmDialog
         open={confirmArchive}
         title="Archivar producto"
-        message="El producto dejara de estar disponible para nuevas operaciones, pero se conservara su historial."
+        message={PRODUCT_ARCHIVE_CONFIRM_MESSAGE}
         confirmLabel="Archivar"
         onCancel={() => setConfirmArchive(false)}
         onConfirm={archiveProduct}

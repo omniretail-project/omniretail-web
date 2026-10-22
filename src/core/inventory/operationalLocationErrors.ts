@@ -10,6 +10,14 @@ export const OPERATIONAL_LOCATION_ERROR_MESSAGES = {
     "La operación no corresponde a la ubicación operativa asignada del producto.",
   INVENTORY_ASSIGNED_LOCATION_INACTIVE:
     "La ubicación operativa asignada está inactiva o no existe. Asigna una ubicación activa.",
+  INVENTORY_SETTINGS_LOCATION_NOT_FOUND:
+    "La ubicación seleccionada ya no existe. Actualiza la lista de ubicaciones y elige otra.",
+  INVENTORY_SETTINGS_PRODUCT_NOT_ELIGIBLE:
+    "Este producto no admite ubicación operativa: solo la tienen los productos físicos que controlan stock.",
+  INVENTORY_SETTINGS_LOCATION_BRANCH_MISMATCH:
+    "La ubicación seleccionada pertenece a otra sucursal. Elige una ubicación de la sucursal actual.",
+  INVENTORY_SETTINGS_LOCATION_NOT_ACTIVE:
+    "La ubicación seleccionada no está activa. Elige una ubicación activa de la sucursal actual.",
 } as const;
 
 export type OperationalLocationErrorCode = keyof typeof OPERATIONAL_LOCATION_ERROR_MESSAGES;

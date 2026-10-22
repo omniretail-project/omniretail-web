@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CategoryStatus } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
@@ -31,17 +31,28 @@ export function useCategories() {
   const [pageSize, setPageSizeState] = useState(DEFAULT_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // Errores de MUTACION (crear, editar, archivar). Los de carga van aparte en `loadError`: un fallo
+  // al listar nunca debe leerse como «no hay categorías».
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Solo la ultima consulta puede escribir estado: evita que una respuesta lenta pise a otra.
+  const requestRef = useRef(0);
 
   const reload = useCallback(async () => {
+    const requestId = ++requestRef.current;
     setLoading(true);
     setError(null);
+    setLoadError(null);
     try {
-      setCategories(await getService.execute());
-    } catch {
-      setError("No se pudieron cargar las categorías.");
+      const nextCategories = await getService.execute();
+      if (requestId !== requestRef.current) return;
+      setCategories(nextCategories);
+    } catch (caughtError) {
+      if (requestId !== requestRef.current) return;
+      setCategories([]);
+      setLoadError(cleanError(caughtError));
     } finally {
-      setLoading(false);
+      if (requestId === requestRef.current) setLoading(false);
     }
   }, [getService]);
 
@@ -50,24 +61,14 @@ export function useCategories() {
 
   useEffect(() => {
     let active = true;
-    getService
-      .execute()
-      .then((nextCategories) => {
-        if (!active) return;
-        setCategories(nextCategories);
-        setError(null);
-      })
-      .catch(() => {
-        if (active) setError("No se pudieron cargar las categorías.");
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
+    window.queueMicrotask(() => {
+      if (active) void reload();
+    });
     return () => {
       active = false;
+      requestRef.current += 1;
     };
-  }, [getService]);
+  }, [reload]);
 
   const filteredCategories = useMemo(
     () => filterCategories(categories, search, status),
@@ -117,6 +118,7 @@ export function useCategories() {
     loading,
     busy,
     error,
+    loadError,
     canRead,
     canManage,
     categories,

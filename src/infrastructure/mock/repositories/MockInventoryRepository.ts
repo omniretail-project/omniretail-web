@@ -557,6 +557,26 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       db.storageLocations.filter((item) => !branchId || item.branchId === branchId),
     );
   }
+  async getLocationsWithCounts(branchId?: string) {
+    return this.read((db) => {
+      const productsByLocation = new Map<string, Set<string>>();
+      for (const settings of db.productInventorySettings) {
+        if (!settings.defaultLocationId) continue;
+        const key = `${settings.tenantId}|${settings.branchId}|${settings.defaultLocationId}`;
+        const products = productsByLocation.get(key) ?? new Set<string>();
+        products.add(settings.productId);
+        productsByLocation.set(key, products);
+      }
+      return db.storageLocations
+        .filter((item) => !branchId || item.branchId === branchId)
+        .map((location) => ({
+          location,
+          assignedProductCount:
+            productsByLocation.get(`${location.tenantId}|${location.branchId}|${location.id}`)
+              ?.size ?? 0,
+        }));
+    });
+  }
   async createLocation(input: Omit<StorageLocation, "id" | "createdAt" | "updatedAt">) {
     const location = this.store.mutate((db) => {
       const now = this.now();

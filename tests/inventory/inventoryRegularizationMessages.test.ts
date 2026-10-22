@@ -24,7 +24,7 @@ describe("describeRegularizationBlocker", () => {
       `${P}DESTINATION_NOT_ASSIGNED`,
       "Este producto todavía no tiene una ubicación de inventario asignada.",
     ],
-    [`${P}NOT_REQUIRED`, "Este producto no tiene existencias pendientes de regularizar."],
+    [`${P}NOT_REQUIRED`, "Este producto no tiene saldo heredado sin ubicación que regularizar."],
   ])("translates %s and keeps the code only as a diagnostic", (code, title) => {
     const message = describeRegularizationBlocker({ code });
 

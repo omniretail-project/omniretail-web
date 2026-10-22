@@ -196,3 +196,89 @@ describe("OperationalLocationField when editing", () => {
     expect(screen.getByRole("option", { name: "Estante old (inactiva)" })).toBeDisabled();
   });
 });
+
+describe("OperationalLocationField initial assignment and permission states", () => {
+  it("offers the first assignment of a branch without location, even for a traceable product", () => {
+    const { onChange, select } = renderField({
+      isEdit: true,
+      baselineLocationId: null,
+      value: "",
+      lock: { status: "unlocked" },
+    });
+
+    expect(select).not.toBeDisabled();
+    expect(screen.getByText(/Asignación inicial/)).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "b" } });
+    expect(onChange).toHaveBeenCalledWith("b");
+  });
+
+  it("does not announce an initial assignment when the product already has a location", () => {
+    renderField({ isEdit: true, baselineLocationId: "a", value: "a", lock: { status: "unlocked" } });
+
+    expect(screen.queryByText(/Asignación inicial/)).toBeNull();
+  });
+
+  it("does not announce an initial assignment while the verification is still locked", () => {
+    renderField({
+      isEdit: true,
+      baselineLocationId: null,
+      value: "",
+      lock: { status: "loading" },
+    });
+
+    expect(screen.queryByText(/Asignación inicial/)).toBeNull();
+  });
+
+  it("explains the missing permission instead of a generic verification failure", () => {
+    const { select } = renderField({
+      isEdit: true,
+      baselineLocationId: "a",
+      value: "a",
+      lock: { status: "locked", reason: "permission" },
+    });
+
+    expect(select).toBeDisabled();
+    expect(screen.getByRole("note")).toHaveTextContent("No tienes permiso para consultar las existencias");
+    expect(screen.getByRole("note")).not.toHaveTextContent("No se pudo verificar");
+  });
+
+  it("says that only an ALREADY assigned traceable product is conservatively locked", () => {
+    renderField({
+      isEdit: true,
+      baselineLocationId: "a",
+      value: "a",
+      lock: { status: "locked", reason: "traceability" },
+    });
+
+    expect(screen.getByRole("note")).toHaveTextContent("ya tienen una ubicación asignada");
+  });
+
+  it("links to the regularization when the branch has legacy stock and no location", () => {
+    renderField({
+      isEdit: true,
+      baselineLocationId: null,
+      value: "",
+      lock: { status: "locked", reason: "stock" },
+    });
+
+    expect(screen.getByRole("link", { name: /regularización/ })).toHaveAttribute(
+      "href",
+      "/inventario/regularizacion",
+    );
+  });
+});
+
+describe("OperationalLocationField initial assignment note and disabled field", () => {
+  it("does not announce an initial assignment when the field is disabled (for example, no permission)", () => {
+    const { select } = renderField({
+      isEdit: true,
+      baselineLocationId: null,
+      value: "",
+      disabled: true,
+      lock: { status: "unlocked" },
+    });
+
+    expect(select).toBeDisabled();
+    expect(screen.queryByText(/Asignación inicial/)).toBeNull();
+  });
+});

@@ -12,6 +12,7 @@ import {
   resolveTenantContext,
 } from "@/modules/catalog/application/services/serviceHelpers";
 import { normalizeCategoryCode } from "@/modules/catalog/validation/category.validation";
+import { translateArchiveError } from "@/modules/catalog/application/services/archiveErrors";
 import { removeAssetIfOrphaned } from "@/modules/catalog/application/services/productEditorHelpers";
 import { CategoryImagePartialSaveError } from "@/modules/catalog/application/services/CategoryImagePartialSaveError";
 
@@ -177,7 +178,12 @@ export class SaveCategoryService {
   async archive(categoryId: string): Promise<Category> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanManageCategories(permissions);
-    return this.repositories.categories.archiveScoped(tenantId, categoryId);
+    try {
+      return await this.repositories.categories.archiveScoped(tenantId, categoryId);
+    } catch (error) {
+      // CATEGORY_HAS_PRODUCTS / CATEGORY_HAS_ACTIVE_CHILDREN: la categoria conserva su estado.
+      throw translateArchiveError(error);
+    }
   }
 
   private async assertParentOwnership(tenantId: string, parentId?: string, categoryId?: string) {

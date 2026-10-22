@@ -12,7 +12,7 @@ import { getReferenceDataCache, referenceDataPrefixes } from "@/shared/utils/req
 import { normalizeLocationCode } from "@/modules/catalog/validation/location.validation";
 
 export const ASSIGNED_LOCATION_STATUS_CONFLICT_MESSAGE =
-  "No se puede archivar ni inactivar una ubicacion asignada a productos. Desasigna los productos e intenta nuevamente.";
+  "No se puede archivar ni inactivar una ubicación asignada a productos, aunque estos no tengan existencias. Reasigna esos productos a otra ubicación activa antes de intentarlo de nuevo.";
 
 export class SaveLocationService {
   private readonly referenceCache;

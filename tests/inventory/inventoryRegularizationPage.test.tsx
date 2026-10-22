@@ -105,8 +105,13 @@ function baseState(overrides: Record<string, unknown> = {}) {
     canAssign: true,
     assignMode: false,
     selectedLocationId: null,
-    branches: [{ id: "10000000-0000-4000-8000-000000000001", name: "Centro" }],
+    branches: [
+      { id: "10000000-0000-4000-8000-000000000001", name: "Centro" },
+      { id: "10000000-0000-4000-8000-000000000002", name: "Norte" },
+    ],
     branchId: "10000000-0000-4000-8000-000000000001",
+    // Sucursal activa del encabezado (la que usa el editor de producto).
+    activeBranchId: "10000000-0000-4000-8000-000000000001",
     locked: false,
     search: null,
     product: { id: "20000000-0000-4000-8000-000000000001", name: "Pintura bronce", sku: "PIN-BRO-001" },
@@ -556,5 +561,164 @@ describe("InventoryRegularizationPage states", () => {
     render(<InventoryRegularizationPage />);
 
     expect(screen.queryByText("Esta función no está disponible en modo local")).toBeNull();
+  });
+});
+
+describe("InventoryRegularizationPage without legacy balance (NOT_REQUIRED)", () => {
+  const PRODUCT_ID = "20000000-0000-4000-8000-000000000001";
+  const unassignedDestination = (
+    assignableLocations: Array<{ id: string; code: string; name: string }>,
+  ) => ({
+    key: "k",
+    status: "ready",
+    data: { kind: "unassigned", assignableLocations },
+    error: null,
+  });
+  const twoLocations = [
+    { id: "30000000-0000-4000-8000-000000000001", code: "ES-01", name: "Estante 1" },
+    { id: "30000000-0000-4000-8000-000000000002", code: "ES-02", name: "Estante 2" },
+  ];
+  const notRequired = {
+    code: `${P}NOT_REQUIRED`,
+    message: "Este producto no tiene saldo heredado.",
+  };
+
+  function noBalanceState(overrides: Record<string, unknown> = {}) {
+    return baseState({
+      destination: unassignedDestination(twoLocations),
+      assignMode: true,
+      selectedLocationId: "30000000-0000-4000-8000-000000000001",
+      preview: {
+        key: "k",
+        status: "ready",
+        data: previewData({
+          eligible: false,
+          blockers: [notRequired],
+          sourceQuantity: 0,
+          sourceReservedQuantity: 0,
+          assignedLocationId: undefined,
+          assignmentRequired: true,
+          assignmentAllowed: true,
+        }),
+        error: null,
+        stale: false,
+      },
+      gate: { allowed: false, blockedBy: "No hay nada que regularizar." },
+      canSubmit: false,
+      canEditProduct: true,
+      ...overrides,
+    });
+  }
+
+  it("explains there is nothing to regularize and links to the product editor to assign the location", () => {
+    mocks.state = noBalanceState();
+    render(<InventoryRegularizationPage />);
+
+    expect(screen.getByText(/no tiene saldo heredado que regularizar ni ubicación operativa/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Asignar ubicación en la ficha del producto" })).toHaveAttribute(
+      "href",
+      `/catalogo/productos/${PRODUCT_ID}/editar`,
+    );
+  });
+
+  it("offers no regularization, no confirmation panel and no misleading assignment promise", () => {
+    mocks.state = noBalanceState();
+    render(<InventoryRegularizationPage />);
+
+    expect(screen.queryByRole("button", { name: "Regularizar ubicación" })).toBeNull();
+    expect(screen.queryByText("Motivo y confirmación")).toBeNull();
+    expect(screen.queryByLabelText("Motivo")).toBeNull();
+    expect(screen.queryByText(/Se asignará/)).toBeNull();
+    expect(screen.queryByText(/Hay una condición que impide regularizar/)).toBeNull();
+  });
+
+  it("does not send the user to the editor of ANOTHER branch: the link needs the chosen branch to be the active one", () => {
+    mocks.state = noBalanceState({
+      branchId: "10000000-0000-4000-8000-000000000002",
+      activeBranchId: "10000000-0000-4000-8000-000000000001",
+    });
+    render(<InventoryRegularizationPage />);
+
+    expect(screen.queryByRole("link", { name: /Asignar ubicación/ })).toBeNull();
+    expect(screen.getByText(/sucursal activa del encabezado, que no es «Norte»/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Regularizar ubicación" })).toBeNull();
+  });
+
+  it("keeps the link when the chosen branch is the active one", () => {
+    mocks.state = noBalanceState({
+      branchId: "10000000-0000-4000-8000-000000000002",
+      activeBranchId: "10000000-0000-4000-8000-000000000002",
+    });
+    render(<InventoryRegularizationPage />);
+
+    expect(screen.getByRole("link", { name: "Asignar ubicación en la ficha del producto" })).toHaveAttribute(
+      "href",
+      `/catalogo/productos/${PRODUCT_ID}/editar`,
+    );
+  });
+
+  it("without an active branch it does not guess: no link", () => {
+    mocks.state = noBalanceState({ activeBranchId: null });
+    render(<InventoryRegularizationPage />);
+
+    expect(screen.queryByRole("link", { name: /Asignar ubicación/ })).toBeNull();
+  });
+
+  it("does not offer a link the user cannot use: it asks an administrator instead", () => {
+    mocks.state = noBalanceState({ canEditProduct: false });
+    render(<InventoryRegularizationPage />);
+
+    expect(screen.queryByRole("link", { name: /Asignar ubicación/ })).toBeNull();
+    expect(screen.getByText(/Solicita a un administrador con permiso para actualizar productos/)).toBeInTheDocument();
+  });
+
+  it("for a product that already has a location it says so and does not send the user to the editor", () => {
+    mocks.state = baseState({
+      preview: {
+        key: "k",
+        status: "ready",
+        data: previewData({ eligible: false, blockers: [notRequired] }),
+        error: null,
+        stale: false,
+      },
+      gate: { allowed: false, blockedBy: "No hay nada que regularizar." },
+      canSubmit: false,
+      canEditProduct: true,
+    });
+    render(<InventoryRegularizationPage />);
+
+    expect(screen.getByText(/ya tiene la ubicación ES-01 · Estante 1 y no tiene saldos sin ubicación pendientes/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Asignar ubicación/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Regularizar ubicación" })).toBeNull();
+  });
+
+  it("keeps the real blocker and the regular flow for any other condition", () => {
+    mocks.state = noBalanceState({
+      preview: {
+        key: "k",
+        status: "ready",
+        data: previewData({
+          eligible: false,
+          blockers: [{ code: `${P}PICKING_CONFLICT`, message: "Hay pedidos en preparación." }],
+          assignedLocationId: undefined,
+          assignmentRequired: true,
+          assignmentAllowed: false,
+        }),
+        error: null,
+        stale: false,
+      },
+    });
+    render(<InventoryRegularizationPage />);
+
+    expect(screen.getByText(/pedidos en preparación que impiden realizar la regularización/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Asignar ubicación/ })).toBeNull();
+  });
+
+  it("keeps the usual flow with its confirmation when there IS legacy balance to move", () => {
+    mocks.state = baseState();
+    render(<InventoryRegularizationPage />);
+
+    expect(screen.getByRole("button", { name: "Regularizar ubicación" })).toBeEnabled();
+    expect(screen.queryByRole("link", { name: /Asignar ubicación/ })).toBeNull();
   });
 });

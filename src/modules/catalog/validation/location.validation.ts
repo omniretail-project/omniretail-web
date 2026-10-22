@@ -99,7 +99,7 @@ export function validateLocationDto(
     dto.status !== current.status &&
     dto.status !== LocationStatus.active
   ) {
-    errors.status = "Desasigna los productos antes de inactivar o archivar la ubicacion.";
+    errors.status = "Reasigna los productos a otra ubicación activa antes de inactivar o archivar la ubicación.";
   }
 
   return errors;

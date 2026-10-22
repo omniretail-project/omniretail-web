@@ -28,7 +28,7 @@ describe("location status validation", () => {
         assignedLocation.id,
       );
 
-      expect(errors.status).toContain("Desasigna los productos");
+      expect(errors.status).toContain("Reasigna los productos");
     },
   );
 
