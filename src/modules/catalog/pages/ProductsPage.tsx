@@ -21,6 +21,7 @@ import {
   ChevronRightIcon,
   PlusIcon,
 } from "@/modules/catalog/components/CatalogIcons";
+import { PRODUCT_ARCHIVE_CONFIRM_MESSAGE } from "@/modules/catalog/components/productLabels";
 import { useProductMutations } from "@/modules/catalog/hooks/useProductMutations";
 import { useProductPermissions } from "@/modules/catalog/hooks/useProductPermissions";
 import { useProducts } from "@/modules/catalog/hooks/useProducts";
@@ -240,7 +241,7 @@ export function ProductsPage() {
       <ConfirmDialog
         open={Boolean(archiveTarget)}
         title="Archivar producto"
-        message="El producto dejara de estar disponible para nuevas operaciones, pero se conservara su historial."
+        message={PRODUCT_ARCHIVE_CONFIRM_MESSAGE}
         confirmLabel={archiveTarget?.status === ProductStatus.published ? "Archivar" : "Confirmar"}
         onCancel={() => setArchiveTarget(null)}
         onConfirm={archiveProduct}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LocationStatus } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
@@ -34,54 +34,61 @@ export function useLocations() {
   const [status, setStatusState] = useState<LocationStatusFilter>(LocationStatus.active);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSizeState] = useState(DEFAULT_PAGE_SIZE);
-  const [loading, setLoading] = useState(false);
+  // Empieza cargando: antes de la primera respuesta la lista NO esta vacia, esta pendiente.
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // Errores de MUTACION. Los de carga van aparte en `loadError`: un fallo al listar nunca debe
+  // leerse como «no hay ubicaciones».
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const apiMode = isApiMode();
   const scopedBranchId = currentBranch?.id;
+  const canLoad = apiMode || Boolean(currentBranch);
+  // Solo la ultima consulta puede escribir estado: evita que la respuesta lenta de una sucursal
+  // anterior pise a la de la sucursal actual.
+  const requestRef = useRef(0);
+  // Sucursal a la que corresponde la ultima respuesta (o error). Mientras no coincida con la
+  // sucursal actual, la lista se considera «cargando» y no «vacia», sin parpadeo al cambiar.
+  const scopeKey = scopedBranchId ?? "all";
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    if (!apiMode && !currentBranch) {
+    if (!canLoad) {
       return;
     }
+    const requestId = ++requestRef.current;
     setLoading(true);
     setError(null);
+    setLoadError(null);
     try {
-      setLocations(await getService.execute(scopedBranchId));
+      const nextLocations = await getService.execute(scopedBranchId);
+      if (requestId !== requestRef.current) return;
+      setLocations(nextLocations);
+      setLoadedScope(scopeKey);
     } catch (caughtError) {
-      setError(cleanError(caughtError));
+      if (requestId !== requestRef.current) return;
+      setLocations([]);
+      setLoadError(cleanError(caughtError));
+      setLoadedScope(scopeKey);
     } finally {
-      setLoading(false);
+      if (requestId === requestRef.current) setLoading(false);
     }
-  }, [apiMode, currentBranch, getService, scopedBranchId]);
+  }, [canLoad, getService, scopeKey, scopedBranchId]);
 
   useDataEvent("inventory.changed", reload);
   useDataEvent("stock.changed", reload);
   useDataEvent("branch.changed", reload);
 
   useEffect(() => {
-    if (!apiMode && !currentBranch) {
-      return;
-    }
     let active = true;
-    getService
-      .execute(scopedBranchId)
-      .then((nextLocations) => {
-        if (!active) return;
-        setLocations(nextLocations);
-        setError(null);
-      })
-      .catch((caughtError) => {
-        if (active) setError(cleanError(caughtError));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
+    window.queueMicrotask(() => {
+      if (active) void reload();
+    });
     return () => {
       active = false;
+      requestRef.current += 1;
     };
-  }, [apiMode, currentBranch, getService, scopedBranchId]);
+  }, [reload]);
 
   const branchLocations = useMemo(
     () =>
@@ -133,9 +140,10 @@ export function useLocations() {
   }
 
   return {
-    loading: (!apiMode && branchLoading) || loading,
+    loading: (!apiMode && branchLoading) || (canLoad && (loading || loadedScope !== scopeKey)),
     busy,
     error,
+    loadError,
     canRead,
     canManage,
     locations: branchLocations,

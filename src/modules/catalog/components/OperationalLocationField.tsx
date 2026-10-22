@@ -67,6 +67,11 @@ export function OperationalLocationField({
   onChange,
 }: OperationalLocationFieldProps) {
   const locked = isEdit && lock.status !== "unlocked";
+  // Sin ubicacion en esta sucursal y verificado sin existencias ni reservas: el producto puede tener
+  // lote, serie o vencimiento en el catalogo y aun asi recibir su primera ubicacion aqui.
+  // Si el campo esta deshabilitado (sin permiso, ubicaciones sin cargar), no se anuncia como disponible.
+  const initialAssignment =
+    isEdit && !baselineLocationId && lock.status === "unlocked" && !disabled;
   const unavailableAssigned =
     currentLocation !== null &&
     currentLocation.id === value &&
@@ -122,8 +127,11 @@ export function OperationalLocationField({
               {lock.status === "locked" && lock.reason === "unverified"
                 ? " No se pudo verificar el inventario, por seguridad se mantiene bloqueada."
                 : null}
+              {lock.status === "locked" && lock.reason === "permission"
+                ? " No tienes permiso para consultar las existencias de este producto, así que no se puede verificar si la ubicación puede cambiar. Solicita el permiso de lectura de inventario."
+                : null}
               {lock.status === "locked" && lock.reason === "traceability"
-                ? " Los productos con lote, serie o vencimiento no pueden verificarse desde aquí."
+                ? " Los productos con lote, serie o vencimiento que ya tienen una ubicación asignada no pueden verificarse desde aquí."
                 : null}
               {lock.status === "locked" && lock.reason === "stock" && !baselineLocationId ? (
                 <>
@@ -138,6 +146,12 @@ export function OperationalLocationField({
               ) : null}
             </>
           )}
+        </p>
+      ) : null}
+      {initialAssignment ? (
+        <p className="mt-2 text-xs font-semibold text-[var(--color-text)]" role="note">
+          Asignación inicial: este producto aún no tiene ubicación operativa en esta sucursal y no
+          registra existencias aquí. El sistema volverá a validarla al guardar.
         </p>
       ) : null}
       {locationsLoaded && locations.length === 0 ? (

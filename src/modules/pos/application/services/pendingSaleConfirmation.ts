@@ -21,6 +21,8 @@ export interface PendingSaleConfirmation {
     cashShiftId: string;
     ticket: SaleTicketDto;
     checkout: CheckoutDto;
+    /** Envío cotizado al cobrar; ausente en registros anteriores a la config de envíos. */
+    shippingTotal?: number;
   };
   createdAt: string;
   /**

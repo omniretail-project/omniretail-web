@@ -154,6 +154,8 @@ export function useInventoryRegularization() {
   const canExecute = hasPermission(INVENTORY_ADJUSTMENT_CREATE_PERMISSION);
   // La asignacion inicial exige ajustar inventario Y actualizar productos.
   const canAssign = canExecute && hasPermission(REGULARIZATION_ASSIGN_PERMISSION);
+  // Asignar la ubicacion inicial desde la ficha del producto solo exige actualizar productos.
+  const canEditProduct = hasPermission(REGULARIZATION_ASSIGN_PERMISSION);
 
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [productState, setProductState] = useState<{
@@ -585,6 +587,9 @@ export function useInventoryRegularization() {
     canPreview,
     canExecute,
     canAssign,
+    canEditProduct,
+    // Sucursal activa del encabezado: el editor de producto solo trabaja con ESA sucursal.
+    activeBranchId: currentBranch?.id ?? null,
     branches,
     branchId,
     locked,

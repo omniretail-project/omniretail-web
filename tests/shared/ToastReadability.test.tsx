@@ -85,6 +85,29 @@ describe("describeLocationSaveFailure", () => {
     );
   });
 
+  it.each([
+    ["INVENTORY_SETTINGS_LOCATION_NOT_FOUND", "La ubicación ya no existe", 404],
+    ["INVENTORY_SETTINGS_PRODUCT_NOT_ELIGIBLE", "El producto no admite ubicación operativa", 409],
+    ["INVENTORY_SETTINGS_LOCATION_BRANCH_MISMATCH", "La ubicación es de otra sucursal", 409],
+    ["INVENTORY_SETTINGS_LOCATION_NOT_ACTIVE", "La ubicación no está activa", 409],
+  ] as const)("explains the settings rejection %s and never says it was saved", (code, title, status) => {
+    const error = new BackendRequestError(OPERATIONAL_LOCATION_ERROR_MESSAGES[code], status, code);
+
+    const failure = describeLocationSaveFailure(error);
+
+    expect(failure?.title).toBe(title);
+    expect(failure?.description).toBe(OPERATIONAL_LOCATION_ERROR_MESSAGES[code]);
+    expect(failure?.title).not.toMatch(/guardad/i);
+  });
+
+  it("recognizes a settings rejection inside a partial save", () => {
+    const partial = new ProductEditorPartialSaveError("product-1", true, ["inventorySettings"], [
+      OPERATIONAL_LOCATION_ERROR_MESSAGES.INVENTORY_SETTINGS_LOCATION_NOT_ACTIVE,
+    ]);
+
+    expect(describeLocationSaveFailure(partial)?.title).toBe("La ubicación no está activa");
+  });
+
   it("leaves authorization and unrelated errors untouched", () => {
     expect(describeLocationSaveFailure(new BackendRequestError("Sin acceso", 403, "ACCESS_DENIED"))).toBeNull();
     expect(describeLocationSaveFailure(new BackendRequestError("Sesión vencida", 401))).toBeNull();

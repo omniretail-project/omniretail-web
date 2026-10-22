@@ -1,4 +1,4 @@
-import { CategoryStatus } from "@/core/enums";
+import { CategoryStatus, ProductStatus } from "@/core/enums";
 import type { Category } from "@/core/entities";
 import type { CategoryRepository } from "@/core/repositories";
 import { normalizeCatalogImageSource } from "@/core/media/catalogImage";
@@ -10,6 +10,26 @@ export class MockCategoryRepository extends BaseMockRepository implements Catego
   }
   async getByTenant(tenantId: string) {
     return this.read((db) => db.categories.filter((item) => item.tenantId === tenantId));
+  }
+  async getByTenantWithCounts(tenantId: string) {
+    return this.read((db) => {
+      const published = new Map<string, number>();
+      const archived = new Map<string, number>();
+      for (const product of db.products) {
+        if (product.tenantId !== tenantId) continue;
+        const target = product.status === ProductStatus.archived ? archived : published;
+        target.set(product.categoryId, (target.get(product.categoryId) ?? 0) + 1);
+      }
+      return db.categories
+        .filter((item) => item.tenantId === tenantId)
+        .map((category) => ({
+          category,
+          counts: {
+            productCount: published.get(category.id) ?? 0,
+            archivedProductCount: archived.get(category.id) ?? 0,
+          },
+        }));
+    });
   }
   async getById(id: string) {
     return this.read((db) => db.categories.find((item) => item.id === id) ?? null);

@@ -13,7 +13,7 @@ import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
 import { toBaseQuantity } from "@/core/units";
 import { validatePhoneNumber } from "@/config/contact-policy";
 import { normalizeEmail, validateEmail } from "@/config/email-policy";
-import { calculateStorefrontShipping } from "@/config/storefront-shipping-policy";
+import { calculateShippingCost } from "@/config/shipping-policy";
 import {
   DELIVERY_ADDRESS_LIMITS,
   isValidDeliveryAddress,
@@ -151,7 +151,8 @@ export class CreateStorefrontCheckoutService {
       0,
     );
     const netSubtotal = subtotal - discountTotal;
-    const shippingTotal = calculateStorefrontShipping(netSubtotal);
+    const shippingConfig = await this.repositories.shippingConfig.get(tenantId);
+    const shippingTotal = calculateShippingCost(shippingConfig.ecommerce, netSubtotal);
     const orderTotal = netSubtotal + shippingTotal;
     const orderNumber = `WEB-${checkoutToken.slice(0, 10).toUpperCase()}`;
     const trackingToken = checkoutToken;

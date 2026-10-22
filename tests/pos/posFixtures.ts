@@ -589,6 +589,12 @@ export function createPosApiMock(): PosApiMock {
     getCashShiftMovements: vi.fn().mockResolvedValue([apiCashMovement]),
     registerCashMovement: vi.fn().mockResolvedValue(apiCashMovement),
     confirmSale: vi.fn().mockResolvedValue(apiSaleConfirmation),
+    // Por defecto el canal POS no cobra envío (configuración sin guardar).
+    getShippingQuote: vi.fn().mockImplementation(async (subtotal: number) => ({
+      subtotal,
+      shippingTotal: 0,
+      total: subtotal,
+    })),
     getSalesHistory: vi.fn().mockResolvedValue(apiHistoryPage()),
     getSaleDetail: vi.fn().mockResolvedValue(apiSaleDetail),
     getReturnEligibility: vi.fn().mockResolvedValue(apiReturnEligibility),

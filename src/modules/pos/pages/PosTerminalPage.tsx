@@ -133,6 +133,10 @@ export function PosTerminalPage() {
         paymentMethodsError={terminal.paymentMethodsError}
         paymentMethodsLoading={terminal.paymentMethodsLoading}
         readyToConfirm={terminal.checkoutReadyToConfirm}
+        chargeTotal={terminal.chargeTotal}
+        shippingError={terminal.shippingError}
+        shippingLoading={terminal.shippingLoading}
+        shippingTotal={terminal.shippingTotal}
         subtotal={terminal.subtotal}
         ticketItems={terminal.ticketItems}
         total={terminal.total}

@@ -63,14 +63,23 @@ export function ProductDetailPage({ productId }: { productId: string }) {
       ? data.availableQuantity
       : discoveryProduct?.availableQuantity;
   const promotion = offers.find((item) => item.productId === product.id)?.promotion;
-  const price = calculateEffectivePrice(
-    resolveQuantityPrice({
-      basePrice: product.salePrice,
-      quantity,
-      tiers: discoveryProduct?.salesPriceTiers,
-    }),
-    promotion,
-  );
+  // Modo api: el backend ya resolvió precio por cantidad y promoción; modo mock: se calcula aquí.
+  const price = data.finalPricing
+    ? calculateEffectivePrice(
+        resolveQuantityPrice({
+          basePrice: data.finalPricing.basePrice,
+          quantity,
+          tiers: data.finalPricing.tiers,
+        }),
+      )
+    : calculateEffectivePrice(
+        resolveQuantityPrice({
+          basePrice: product.salePrice,
+          quantity,
+          tiers: discoveryProduct?.salesPriceTiers,
+        }),
+        promotion,
+      );
   const quantityAlreadyInCart = items.find((item) => item.productId === product.id)?.quantity ?? 0;
   const isOutOfStock =
     availableQuantity === 0 ||

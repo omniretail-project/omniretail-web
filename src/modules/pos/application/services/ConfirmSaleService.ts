@@ -14,6 +14,7 @@ import {
   planInventoryAllocation,
 } from "@/core/inventory/stockAvailability";
 import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
+import { calculateShippingCost } from "@/config/shipping-policy";
 import { toBaseQuantity } from "@/core/units";
 import type {
   ConfirmSaleResult,
@@ -55,6 +56,11 @@ export interface ConfirmPosSaleInput {
   customerId?: string;
   sourceOrderId?: string;
   orderIdempotencyKey?: string;
+  /**
+   * Envío a domicilio cotizado al cobrar (`GetPosShippingQuoteService`). Los pagos deben cubrir
+   * `ticket.total + shippingTotal`; el backend (o el mock) lo recalcula y rechaza otro monto.
+   */
+  shippingTotal?: number;
   /**
    * Se invoca justo antes del POST (modo API), cuando ya no queda ninguna validacion local. Si
    * lanza, la venta no se envia: sirve para persistir la solicitud antes de que pueda perderse.
@@ -126,10 +132,10 @@ export class ConfirmSaleService {
       throw new Error("No existe configuración de métodos de pago para POS.");
     }
 
-    const checkoutValidation = validateCheckout(
-      authorizedInput.checkout,
-      authorizedInput.ticket.total,
+    const chargeTotal = fromCents(
+      toCents(authorizedInput.ticket.total) + toCents(authorizedInput.shippingTotal ?? 0),
     );
+    const checkoutValidation = validateCheckout(authorizedInput.checkout, chargeTotal);
     if (!checkoutValidation.isValid) {
       throw new Error("El documento o los datos de pago deben revisarse antes de confirmar.");
     }
@@ -146,9 +152,10 @@ export class ConfirmSaleService {
     const totals = calculateValidatedTotals(items);
     assertTicketTotals(authorizedInput.ticket, totals);
 
+    const shippingCents = await this.resolveMockShippingCents(authorizedInput, totals.totalCents);
     const payments = await this.validateAndBuildPayments(authorizedInput);
     assertAllowedPaymentMethods(payments, capabilities.allowedPosPaymentMethods);
-    assertPaymentsMatchTotal(payments, totals.totalCents);
+    assertPaymentsMatchTotal(payments, totals.totalCents + shippingCents);
 
     const document = createDocumentSnapshot(authorizedInput.checkout);
     const currentShift = await this.requireCurrentCashShift(authorizedInput);
@@ -180,10 +187,35 @@ export class ConfirmSaleService {
         subtotal: fromCents(totals.subtotalCents),
         discountTotal: fromCents(totals.discountTotalCents),
         taxTotal: 0,
-        total: fromCents(totals.totalCents),
+        shippingTotal: fromCents(shippingCents),
+        total: fromCents(totals.totalCents + shippingCents),
         payments,
       }),
     );
+  }
+
+  /**
+   * Modo mock: el envío se recalcula con la config del tenant (como hace el backend) y debe coincidir
+   * con el que se mostró al cobrar; si cambió, el cajero vuelve a validar el cobro.
+   */
+  private async resolveMockShippingCents(
+    input: AuthorizedConfirmPosSaleInput,
+    ticketTotalCents: number,
+  ): Promise<number> {
+    const isHomeDelivery =
+      !input.sourceOrderId && input.checkout.deliveryMethod === DeliveryMethod.home_delivery;
+    const shippingCents = isHomeDelivery
+      ? toCents(
+          calculateShippingCost(
+            (await this.repositories.shippingConfig.get(input.currentBranch.tenantId)).pos,
+            fromCents(ticketTotalCents),
+          ),
+        )
+      : 0;
+    if (shippingCents !== toCents(input.shippingTotal ?? 0)) {
+      throw new Error("El costo de envío cambió; vuelve a validar el cobro antes de confirmar.");
+    }
+    return shippingCents;
   }
 
   private async confirmWithApi(
@@ -210,7 +242,11 @@ export class ConfirmSaleService {
     }
     const payments = await this.validateAndBuildPayments(input);
     assertAllowedPaymentMethods(payments, allowedMethods);
-    assertPaymentsMatchTotal(payments, toCents(input.ticket.total));
+    // El backend recalcula el envío y rechaza la venta si los pagos no cubren el nuevo total.
+    assertPaymentsMatchTotal(
+      payments,
+      toCents(input.ticket.total) + toCents(input.shippingTotal ?? 0),
+    );
     const currentShift = await this.requireCurrentCashShift(input);
     const deferredOrder = this.createDeferredOrderInput(input);
     const command = parseConfirmSaleCommand({

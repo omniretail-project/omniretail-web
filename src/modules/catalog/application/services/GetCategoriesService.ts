@@ -1,7 +1,7 @@
 import type { Category } from "@/core/entities";
+import type { CategoryProductCounts } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { CategoryListItem } from "@/modules/catalog/application/dto/CategoryEditorDto";
-import { isApiMode } from "@/config/api-mode";
 import {
   ensureCanReadCategories,
   resolveTenantContext,
@@ -13,18 +13,12 @@ export class GetCategoriesService {
   async execute(): Promise<CategoryListItem[]> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanReadCategories(permissions);
-    const [categories, products] = await Promise.all([
-      this.repositories.categories.getByTenant(tenantId),
-      isApiMode() ? Promise.resolve([]) : this.repositories.products.getByTenant(tenantId),
-    ]);
-    const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
-    const productCounts = products.reduce((counts, product) => {
-      counts.set(product.categoryId, (counts.get(product.categoryId) ?? 0) + 1);
-      return counts;
-    }, new Map<string, number>());
+    // Una sola lectura con los conteos reales (sin cargar el catalogo ni consultar por categoria).
+    const entries = await this.repositories.categories.getByTenantWithCounts(tenantId);
+    const categoryNames = new Map(entries.map(({ category }) => [category.id, category.name]));
 
     return flattenCategoryHierarchy(
-      categories.map((category) => toListItem(category, categoryNames, productCounts)),
+      entries.map(({ category, counts }) => toListItem(category, categoryNames, counts)),
     );
   }
 }
@@ -32,7 +26,7 @@ export class GetCategoriesService {
 function toListItem(
   category: Category,
   categoryNames: Map<string, string>,
-  productCounts: Map<string, number>,
+  counts: CategoryProductCounts,
 ): CategoryListItem {
   return {
     id: category.id,
@@ -46,7 +40,8 @@ function toListItem(
     description: category.description,
     image: category.image,
     status: category.status,
-    productCount: productCounts.get(category.id) ?? 0,
+    productCount: counts.productCount,
+    archivedProductCount: counts.archivedProductCount,
   };
 }
 

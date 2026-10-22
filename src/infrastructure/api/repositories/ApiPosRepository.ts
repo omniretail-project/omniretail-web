@@ -15,6 +15,7 @@ import {
   parsePosSaleConfirmation,
   parsePosSaleDetail,
   parsePosSalesHistoryPage,
+  parsePosShippingQuote,
   parsePosVoidOperation,
   parseReturnCommand,
   parseVoidCommand,
@@ -116,6 +117,12 @@ export class ApiPosRepository implements PosApiRepository {
       });
     }
     return sale;
+  }
+
+  async getShippingQuote(subtotal: number) {
+    return parsePosShippingQuote(
+      await backendFetch<unknown>("/pos/sales/shipping-quote", { query: { subtotal } }),
+    );
   }
 
   async getSalesHistory(input: Parameters<PosApiRepository["getSalesHistory"]>[0]) {

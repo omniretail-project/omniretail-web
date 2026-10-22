@@ -12,7 +12,7 @@ import {
   MockNotificationRepository, MockOrderRepository, MockPaymentRepository,
   MockPackingRepository, MockPickingRepository, MockPlanRepository, MockProductRepository,
   MockRoleRepository, MockTenantRepository, MockTenantSubscriptionRepository,
-  MockUserRepository,
+  MockShippingConfigRepository, MockUserRepository,
 } from "@/infrastructure/mock/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
@@ -70,6 +70,7 @@ async function main() {
     auditLogs: new MockAuditLogRepository(store, events),
     branches: new MockBranchRepository(store, events),
     businessConfig: new MockBusinessConfigRepository(store, events),
+    shippingConfig: new MockShippingConfigRepository(store, events),
     customers: new MockCustomerRepository(store, events),
     dispatches: new MockDispatchRepository(store, events),
     inventory: new MockInventoryRepository(store, events),

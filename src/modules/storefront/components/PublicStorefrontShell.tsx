@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { StorefrontFloatingCart } from "@/modules/storefront/components/StorefrontFloatingCart";
 import { StorefrontFooter } from "@/modules/storefront/components/StorefrontFooter";
 import { StorefrontHeader } from "@/modules/storefront/components/StorefrontHeader";
 
@@ -32,6 +33,9 @@ export function PublicStorefrontShell({ children }: { children: ReactNode }) {
         <StorefrontHeader />
       </div>
       <div className="flex-1">{children}</div>
+      <div className="print:hidden">
+        <StorefrontFloatingCart />
+      </div>
       <div className="print:hidden">
         <StorefrontFooter />
       </div>

@@ -1,6 +1,7 @@
 import type { Product } from "@/core/entities";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { translateArchiveError } from "@/modules/catalog/application/services/archiveErrors";
 import {
   CatalogServiceError,
   ensureCanUpdateProducts,
@@ -21,7 +22,8 @@ export class ArchiveProductService {
       if (isProductNotFound(error, productId)) {
         throw new CatalogServiceError("El producto solicitado no existe.");
       }
-      throw error;
+      // PRODUCT_ARCHIVE_* / KIT_COMPONENT_IN_USE: mensaje claro; el estado local no se toca.
+      throw translateArchiveError(error);
     }
   }
 }

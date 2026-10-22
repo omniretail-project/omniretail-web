@@ -24,6 +24,7 @@ export class ApiLocationRepository {
 
   withInventoryDelegate(delegate: InventoryRepository): InventoryRepository {
     const getLocations = this.getLocations.bind(this);
+    const getLocationsWithCounts = this.getLocationsWithCounts.bind(this);
     const createLocation = this.createLocation.bind(this);
     const updateLocation = this.updateLocation.bind(this);
     const getProductInventorySettings = this.getProductInventorySettings.bind(this);
@@ -31,6 +32,7 @@ export class ApiLocationRepository {
     return new Proxy(delegate, {
       get: (target, property) => {
         if (property === "getLocations") return getLocations;
+        if (property === "getLocationsWithCounts") return getLocationsWithCounts;
         if (property === "createLocation") return createLocation;
         if (property === "updateLocation") return updateLocation;
         if (this.products && property === "getProductInventorySettings") {
@@ -46,9 +48,20 @@ export class ApiLocationRepository {
   }
 
   async getLocations(branchId?: string) {
+    return (await this.fetchLocations(branchId)).map(toLocation);
+  }
+
+  /** Mismo listado paginado: el backend agrega el conteo por pagina, sin consultas por producto. */
+  async getLocationsWithCounts(branchId?: string) {
+    return (await this.fetchLocations(branchId)).map((location) => ({
+      location: toLocation(location),
+      assignedProductCount: toCount(location.assignedProductCount),
+    }));
+  }
+
+  private fetchLocations(branchId?: string) {
     assertOptionalApiUuid(branchId, "branchId");
-    const locations = await fetchAllApiPages<ApiLocation>("/catalog/locations", { branchId });
-    return locations.map(toLocation);
+    return fetchAllApiPages<ApiLocation>("/catalog/locations", { branchId });
   }
 
   async createLocation(input: LocationCreate) {
@@ -194,9 +207,17 @@ export class ApiLocationRepository {
   }
 }
 
+/** Solo un entero no negativo es un conteo; cualquier otra cosa es "no disponible", nunca cero. */
+function toCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
 function toLocation(location: ApiLocation): StorageLocation {
+  // El conteo viaja aparte (getLocationsWithCounts); no forma parte de la entidad StorageLocation.
+  const { assignedProductCount: _assignedProductCount, ...rest } = location;
+  void _assignedProductCount;
   return {
-    ...location,
+    ...rest,
     parentId: location.parentId ?? undefined,
   };
 }

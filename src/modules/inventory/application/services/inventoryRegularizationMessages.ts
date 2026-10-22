@@ -21,6 +21,9 @@ interface KnownMessage {
 
 const PREFIX = "INVENTORY_REGULARIZATION_";
 
+/** Bloqueo de la vista previa cuando el producto no tiene saldo heredado sin ubicacion. */
+export const REGULARIZATION_NOT_REQUIRED_CODE = `${PREFIX}NOT_REQUIRED`;
+
 const KNOWN_MESSAGES: Record<string, KnownMessage> = {
   [`${PREFIX}STALE_SNAPSHOT`]: {
     title: "El inventario cambió desde la última consulta. Actualiza la información antes de continuar.",
@@ -37,10 +40,11 @@ const KNOWN_MESSAGES: Record<string, KnownMessage> = {
   },
   [`${PREFIX}DESTINATION_NOT_ASSIGNED`]: {
     title: "Este producto todavía no tiene una ubicación de inventario asignada.",
-    hint: "Asígnala primero desde Catálogo y precios.",
+    hint: "Asígnala desde la ficha del producto, en Inventario y trazabilidad.",
   },
   [`${PREFIX}NOT_REQUIRED`]: {
-    title: "Este producto no tiene existencias pendientes de regularizar.",
+    title: "Este producto no tiene saldo heredado sin ubicación que regularizar.",
+    hint: "Si aún no tiene ubicación operativa, asígnala desde la ficha del producto.",
   },
   [`${PREFIX}LOCATIONS_DISABLED`]: {
     title: "El control de ubicaciones está desactivado en este negocio, así que no hay nada que regularizar.",

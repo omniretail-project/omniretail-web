@@ -11,6 +11,7 @@ import {
   type BusinessTrackingKey,
 } from "@/modules/administration/components/BusinessConfigForm";
 import { EmailSenderSection } from "@/modules/administration/components/EmailSenderSection";
+import { ShippingConfigSection } from "@/modules/administration/components/ShippingConfigSection";
 import { useBusinessConfig } from "@/modules/administration/hooks/useBusinessConfig";
 import { enforceBusinessConfigCoherence } from "@/modules/administration/validation/businessConfig.validation";
 import { Button } from "@/shared/components/Button";
@@ -205,6 +206,8 @@ export function BusinessConfigPage() {
       ) : (
         <EmailSenderSection />
       )}
+
+      <ShippingConfigSection />
     </div>
   );
 }

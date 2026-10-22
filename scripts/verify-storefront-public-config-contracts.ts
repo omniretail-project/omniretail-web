@@ -16,6 +16,7 @@ import { MockAuditLogRepository } from "@/infrastructure/mock/repositories/MockA
 import { MockAuthRepository } from "@/infrastructure/mock/repositories/MockAuthRepository";
 import { MockBranchRepository } from "@/infrastructure/mock/repositories/MockBranchRepository";
 import { MockBusinessConfigRepository } from "@/infrastructure/mock/repositories/MockBusinessConfigRepository";
+import { MockShippingConfigRepository } from "@/infrastructure/mock/repositories/MockShippingConfigRepository";
 import { MockCustomerRepository } from "@/infrastructure/mock/repositories/MockCustomerRepository";
 import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrderRepository";
 import { MockPlanRepository } from "@/infrastructure/mock/repositories/MockPlanRepository";
@@ -87,6 +88,7 @@ async function main() {
   const eventBus = new DataEventBus();
   const branches = new MockBranchRepository(store, eventBus);
   const businessConfig = new MockBusinessConfigRepository(store, eventBus);
+  const shippingConfig = new MockShippingConfigRepository(store, eventBus);
   const tenants = new MockTenantRepository(store, eventBus);
   const users = new MockUserRepository(store, eventBus);
   const roles = new MockRoleRepository(store, eventBus);
@@ -117,6 +119,7 @@ async function main() {
     orders,
     plans,
     roles,
+    shippingConfig,
     tenants,
     tenantSubscriptions,
     users,
@@ -190,6 +193,7 @@ async function main() {
       "guestTrackingEnabled",
       "heroBanner",
       "logoImageSource",
+      "shipping",
       "storeEnabled",
       "storeName",
     ].sort(),

@@ -10,6 +10,7 @@ import type {
   BranchRepository,
   BusinessConfigRepository,
   EmailSenderConfigRepository,
+  ShippingConfigRepository,
   CashShiftRepository,
   CashMovementRepository,
   CatalogImageAssetRepository,
@@ -98,6 +99,7 @@ import {
   MockCustomerRepository,
   MockDispatchRepository,
   MockEmailSenderConfigRepository,
+  MockShippingConfigRepository,
   MockInventoryAdjustmentRepository,
   MockInventoryRepository,
   MockIncidentTypeRepository,
@@ -154,6 +156,7 @@ export interface RepositoryRegistry {
   tenantOnboarding: TenantOnboardingRepository;
   businessConfig: BusinessConfigRepository;
   emailSender: EmailSenderConfigRepository;
+  shippingConfig: ShippingConfigRepository;
   plans: PlanRepository;
   tenantSubscriptions: TenantSubscriptionRepository;
   auth: AuthRepository;
@@ -241,6 +244,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       tenantOnboarding: new MockTenantOnboardingRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
       emailSender: new MockEmailSenderConfigRepository(store, eventBus),
+      shippingConfig: new MockShippingConfigRepository(store, eventBus),
       plans: new MockPlanRepository(store, eventBus),
       tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
       auth: new MockAuthRepository(store, eventBus, storage),

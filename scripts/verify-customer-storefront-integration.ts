@@ -5,6 +5,7 @@ import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { MockBranchRepository } from "@/infrastructure/mock/repositories/MockBranchRepository";
 import { MockBusinessConfigRepository } from "@/infrastructure/mock/repositories/MockBusinessConfigRepository";
+import { MockShippingConfigRepository } from "@/infrastructure/mock/repositories/MockShippingConfigRepository";
 import { MockCustomerRepository } from "@/infrastructure/mock/repositories/MockCustomerRepository";
 import { MockAuthRepository } from "@/infrastructure/mock/repositories/MockAuthRepository";
 import { MockOrderPaymentConfirmationRepository } from "@/infrastructure/mock/repositories/MockOrderPaymentConfirmationRepository";
@@ -168,6 +169,7 @@ function createHarness() {
     auth,
     branches: new MockBranchRepository(store, eventBus),
     businessConfig: new MockBusinessConfigRepository(store, eventBus),
+    shippingConfig: new MockShippingConfigRepository(store, eventBus),
     customers: new MockCustomerRepository(store, eventBus),
     orderPaymentConfirmations: new MockOrderPaymentConfirmationRepository(store, eventBus),
     orders: new MockOrderRepository(store, eventBus),

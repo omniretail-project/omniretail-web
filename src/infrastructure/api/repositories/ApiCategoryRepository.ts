@@ -25,6 +25,18 @@ export class ApiCategoryRepository implements CategoryRepository {
     return this.list();
   }
 
+  async getByTenantWithCounts(_tenantId: string) {
+    void _tenantId;
+    const categories = await this.fetchList(undefined, true);
+    return categories.map((category) => ({
+      category: toCategory(category),
+      counts: {
+        productCount: toCount(category.productCount),
+        archivedProductCount: toCount(category.archivedProductCount),
+      },
+    }));
+  }
+
   async getById(id: string) {
     assertApiUuid(id, "categoryId");
     try {
@@ -125,10 +137,13 @@ export class ApiCategoryRepository implements CategoryRepository {
   }
 
   private async list(status?: CategoryStatus) {
-    const categories = await backendFetch<ApiCategory[]>("/catalog/categories", {
-      query: { status },
+    return (await this.fetchList(status, false)).map(toCategory);
+  }
+
+  private fetchList(status: CategoryStatus | undefined, includeCounts: boolean) {
+    return backendFetch<ApiCategory[]>("/catalog/categories", {
+      query: { status, includeCounts: includeCounts ? true : undefined },
     });
-    return categories.map(toCategory);
   }
 
   private emit(category: Category, action: "created" | "updated" | "archived") {
@@ -140,8 +155,23 @@ export class ApiCategoryRepository implements CategoryRepository {
   }
 }
 
+/** Solo un entero no negativo es un conteo; cualquier otra cosa es "no disponible", nunca cero. */
+function toCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
 function toCategory(category: ApiCategory): Category {
-  const { imageUrl, parentId, description, ...rest } = category;
+  // Los conteos viajan aparte (getByTenantWithCounts); no forman parte de la entidad Category.
+  const {
+    imageUrl,
+    parentId,
+    description,
+    productCount: _productCount,
+    archivedProductCount: _archivedProductCount,
+    ...rest
+  } = category;
+  void _productCount;
+  void _archivedProductCount;
   const safeImageUrl =
     imageUrl && (isBackendManagedMediaUrl(imageUrl) || /^https?:\/\//i.test(imageUrl))
       ? toSameOriginMediaUrl(imageUrl)

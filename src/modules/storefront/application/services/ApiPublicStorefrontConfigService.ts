@@ -1,3 +1,8 @@
+import { DEFAULT_ECOMMERCE_SHIPPING } from "@/config/shipping-policy";
+import {
+  type ApiShippingChannelConfig,
+  toShippingChannelConfig,
+} from "@/infrastructure/api/apiShippingConfigMapper";
 import { toSameOriginMediaUrl } from "@/infrastructure/api/mediaUrl";
 import type { PublicStorefrontConfigDto } from "@/modules/storefront/application/dto/PublicStorefrontConfigDto";
 
@@ -27,6 +32,7 @@ interface BackendPublicStorefrontConfig {
   guestTrackingEnabled: boolean;
   slides?: BackendBannerSlide[];
   branches?: BackendPublicStorefrontBranch[];
+  shipping?: ApiShippingChannelConfig | null;
 }
 
 export class ApiPublicStorefrontConfigService {
@@ -65,6 +71,8 @@ export class ApiPublicStorefrontConfigService {
               : undefined,
           })),
         },
+        // Un backend anterior a la config de envíos no envía `shipping`: se asume su tarifa fija.
+        shipping: toShippingChannelConfig(data.shipping, DEFAULT_ECOMMERCE_SHIPPING),
       },
     };
   }

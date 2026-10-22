@@ -24,6 +24,7 @@ import {
   validateOperationalLocation,
 } from "@/modules/catalog/components/OperationalLocationField";
 import {
+  resolveLocationAssignment,
   useProductLocationLock,
   type ProductLocationLock,
 } from "@/modules/catalog/hooks/useProductLocationLock";
@@ -201,17 +202,6 @@ export function ProductForm({
   // enviar un PUT de settings cuando el usuario no cambio nada.
   const [baselineSettings, setBaselineSettings] =
     useState<ProductEditorDto["inventorySettings"]>(undefined);
-  const locationLock = useProductLocationLock({
-    enabled:
-      isEdit &&
-      detail?.product.productType === ProductType.physical &&
-      Boolean(detail.product.tracking.stock),
-    tenantId: editorTenantId,
-    productId: editorProductId,
-    branchId,
-    tracking: detail?.product.tracking,
-    canReadStock: editorData.access.canReadInventorySettings,
-  });
   const deferredEditorData = useMemo<ProductEditorData>(
     () => ({
       ...editorData,
@@ -235,6 +225,24 @@ export function ProductForm({
     editorProductId,
     branchId,
   );
+  // Ubicacion operativa de ESTA sucursal (el formulario se remonta al cambiar de sucursal): decide si
+  // el selector es una asignacion inicial o el cambio de una ubicacion existente.
+  const locationAssignment = resolveLocationAssignment(
+    baselineSettings,
+    inventorySettingsLoadState.status,
+  );
+  const locationLock = useProductLocationLock({
+    enabled:
+      isEdit &&
+      detail?.product.productType === ProductType.physical &&
+      Boolean(detail.product.tracking.stock),
+    tenantId: editorTenantId,
+    productId: editorProductId,
+    branchId,
+    tracking: detail?.product.tracking,
+    canReadStock: editorData.access.canReadInventorySettings,
+    assignment: locationAssignment,
+  });
   const promotionState = useProductPromotions(editorProductId ?? null, {
     enabled: activeTab === "promotion" && editorData.access.canReadPromotions,
     tenantId: editorTenantId,

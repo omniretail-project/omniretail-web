@@ -3,6 +3,7 @@ export type * from "./Branch";
 export type * from "./BusinessCapabilitiesConfig";
 export type * from "./EcommerceConfig";
 export type * from "./EmailSenderConfig";
+export type * from "./ShippingConfig";
 export type * from "./HeroBannerConfig";
 export type * from "./PlanDefinition";
 export type * from "./TenantSubscription";

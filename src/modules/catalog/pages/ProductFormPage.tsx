@@ -27,6 +27,10 @@ interface ProductFormPageProps {
 const LOCATION_FAILURE_TITLES = {
   INVENTORY_LOCATION_REQUIRED: "Falta la ubicación operativa",
   INVENTORY_LOCATION_CHANGE_BLOCKED: "No se puede cambiar la ubicación operativa",
+  INVENTORY_SETTINGS_LOCATION_NOT_FOUND: "La ubicación ya no existe",
+  INVENTORY_SETTINGS_PRODUCT_NOT_ELIGIBLE: "El producto no admite ubicación operativa",
+  INVENTORY_SETTINGS_LOCATION_BRANCH_MISMATCH: "La ubicación es de otra sucursal",
+  INVENTORY_SETTINGS_LOCATION_NOT_ACTIVE: "La ubicación no está activa",
 } as const;
 
 /**

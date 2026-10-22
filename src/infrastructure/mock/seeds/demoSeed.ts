@@ -145,6 +145,8 @@ const legacyDemoSeedDatabase: MockDatabase = {
       updatedAt: now,
     },
   ],
+  // Sin filas: cada canal usa los valores por defecto del backend (config/shipping-policy.ts).
+  shippingConfigs: [],
   heroBanners: [
     {
       tenantId: "tenant-demo",
