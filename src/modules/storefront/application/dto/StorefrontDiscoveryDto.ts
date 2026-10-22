@@ -20,6 +20,11 @@ export interface StorefrontDiscoveryProductDto {
   discountAmount?: number;
   promotionId?: string;
   salesPriceTiers: Array<Pick<ProductSalesPriceTier, "minQuantity" | "unitPrice" | "active">>;
+  /**
+   * Modo api, solo en el detalle: precio final por cantidad que calcula el backend (con la
+   * promoción aplicada). `unitPrice` es el precio unitario que se cobra desde `minQuantity`.
+   */
+  finalPriceTiers?: Array<Pick<ProductSalesPriceTier, "minQuantity" | "unitPrice" | "active">>;
   categoryId: string;
   categoryName?: string;
   imageSource?: CatalogImageSource;

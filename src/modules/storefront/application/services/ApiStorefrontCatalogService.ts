@@ -30,6 +30,8 @@ interface BackendProduct {
     address?: string | null;
     available: boolean;
   }> | null;
+  /** Solo en el detalle: precio desde `minQuantity`; `effectivePrice` ya incluye la promoción. */
+  priceTiers?: Array<{ minQuantity: number; effectivePrice: number | string }> | null;
 }
 
 function toImageSource(url?: string | null) {
@@ -47,6 +49,24 @@ function toAvailableQuantity(product: BackendProduct): number | null {
     : null;
 }
 
+/** Descarta escalones con montos inválidos: un `NaN` contaminaría los totales del carrito. */
+function toFinalPriceTiers(tiers: BackendProduct["priceTiers"]) {
+  return (tiers ?? [])
+    .map((tier) => ({
+      minQuantity: Number(tier.minQuantity),
+      unitPrice: Number(tier.effectivePrice),
+      active: true,
+    }))
+    .filter(
+      (tier) =>
+        Number.isInteger(tier.minQuantity) &&
+        tier.minQuantity > 0 &&
+        Number.isFinite(tier.unitPrice) &&
+        tier.unitPrice >= 0,
+    )
+    .sort((a, b) => a.minQuantity - b.minQuantity);
+}
+
 function toProduct(product: BackendProduct): StorefrontDiscoveryProductDto {
   return {
     id: product.id,
@@ -62,6 +82,7 @@ function toProduct(product: BackendProduct): StorefrontDiscoveryProductDto {
     discountAmount: product.discountAmount == null ? undefined : Number(product.discountAmount),
     promotionId: product.promotionId ?? undefined,
     salesPriceTiers: [],
+    finalPriceTiers: toFinalPriceTiers(product.priceTiers),
     categoryId: product.categoryId,
     categoryName: product.categoryName ?? undefined,
     availableQuantity: toAvailableQuantity(product),

@@ -1,4 +1,5 @@
 import type { CatalogImageSource, Product } from "@/core/entities";
+import type { StorefrontFinalPricing } from "@/modules/storefront/application/storefrontFinalPricing";
 
 export interface StorefrontBranchAvailabilityDto {
   branchId: string;
@@ -18,4 +19,6 @@ export interface StorefrontProductDetailDto {
    * cuando la fuente no lo informa (modo mock), y la pagina usa el catalogo/`availability`.
    */
   availableQuantity?: number | null;
+  /** Modo api: precios finales del backend por cantidad (ver `StorefrontFinalPricing`). */
+  finalPricing?: StorefrontFinalPricing;
 }
