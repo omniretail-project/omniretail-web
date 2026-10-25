@@ -14,7 +14,11 @@ export default function LandingFaq() {
     },
     {
       question: "¿Puedo controlar productos por lotes, vencimientos o números de serie?",
-      answer: "Sí. La trazabilidad completa por lotes, fechas de vencimiento y números de serie está incluida dentro de MARJYM Base, sin costo adicional."
+      answer: "Sí. La trazabilidad completa por lotes, fechas de vencimiento y números de serie forma parte de las funciones de MARJYM Base. Los alcances y condiciones se detallan en la propuesta personalizada."
+    },
+    {
+      question: "¿Cuánto cuesta implementar MARJYM?",
+      answer: "El costo depende de las necesidades de tu negocio, los módulos requeridos y el alcance de la implementación. Solicita información y prepararemos una propuesta personalizada."
     },
     {
       question: "¿Puedo trabajar con varias sucursales?",

@@ -14,14 +14,15 @@ export default function LandingHero() {
         <div>
           <span className="inline-flex rounded-full border border-[var(--mkt-border-light)] bg-[var(--mkt-accent-light)] px-3 py-1 text-xs font-bold uppercase tracking-[.05em] text-[var(--mkt-accent)]">Gestión comercial conectada</span>
           <h1 className="mt-5 text-[2.8rem] font-extrabold leading-[1.08] tracking-[-.03em] text-[var(--mkt-primary)] sm:text-[3.4rem] lg:text-[3.8rem]">Todo tu negocio <span className="text-[var(--mkt-accent)]">conectado</span> en un solo lugar.</h1>
-          <p className="mt-6 max-w-[520px] text-lg leading-[1.6] text-[var(--mkt-muted)] sm:text-xl">Inventario, compras, recepciones y punto de venta trabajando juntos para que operes con claridad y hagas crecer tu negocio.</p>
+          <p className="mt-6 max-w-[520px] text-lg leading-[1.6] text-[var(--mkt-muted)] sm:text-xl">MARJYM es un software en la nube que conecta inventario, compras, recepciones y punto de venta para que operes con claridad y hagas crecer tu negocio.</p>
           <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <Link className="inline-flex min-h-12 items-center justify-center whitespace-nowrap rounded-md bg-[var(--mkt-accent)] px-5 font-semibold text-white shadow-[0_4px_6px_rgba(47,103,231,.25)] transition hover:-translate-y-px hover:bg-[var(--mkt-accent-hover)]" href="/solicitar-informacion">Solicitar información</Link>
             <Link className="inline-flex min-h-12 items-center justify-center whitespace-nowrap rounded-md border border-[var(--mkt-border)] bg-white px-5 font-semibold text-[var(--mkt-primary)] shadow-sm hover:bg-[var(--mkt-bg-alt)]" href="/iniciar-sesion">Iniciar sesión</Link>
             {demoUrl ? <a className="inline-flex min-h-12 items-center justify-center whitespace-nowrap rounded-md border border-[var(--mkt-border)] bg-white px-5 font-semibold text-[var(--mkt-primary)] shadow-sm hover:bg-[var(--mkt-bg-alt)]" href={`${demoUrl}/iniciar-sesion`} rel="noopener noreferrer" target="_blank">Probar demo</a> : null}
           </div>
         </div>
-        <div className="relative mx-auto h-[360px] w-full max-w-[560px] [perspective:1200px] sm:h-[415px]">
+        {/* Ilustracion decorativa con datos de ejemplo: se oculta a la tecnologia de asistencia. */}
+        <div aria-hidden="true" className="relative mx-auto h-[360px] w-full max-w-[560px] [perspective:1200px] sm:h-[415px]">
           <div className="absolute inset-y-3 left-0 flex w-full origin-center overflow-hidden rounded-xl border border-[var(--mkt-border-light)] bg-[var(--mkt-bg)] shadow-[0_20px_25px_-5px_rgba(47,103,231,.1),0_8px_10px_-6px_rgba(47,103,231,.05)] transition-transform duration-500 motion-reduce:transition-none lg:right-0 lg:left-auto lg:w-[600px] lg:[transform:rotateY(-10deg)_rotateX(3deg)] lg:hover:[transform:rotateY(-3deg)_rotateX(1deg)]">
             <aside className="flex w-14 shrink-0 flex-col items-center gap-4 bg-[var(--mkt-sidebar)] pt-4 sm:w-16 sm:gap-5 sm:pt-5">
               <span className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-white font-extrabold text-[var(--mkt-accent)] shadow">M</span>

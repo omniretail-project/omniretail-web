@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "MARJYM",
-  description: "Proyecto base del frontend web de MARJYM.",
+  description: "MARJYM: plataforma de gestión comercial, inventario y ventas.",
   // La demo publica no debe indexarse: la que se posiciona es la landing real.
   ...(isPublicDemo() ? { robots: { index: false, follow: false } } : {}),
 };

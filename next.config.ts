@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
 
+// Importe relativo: next.config.ts no resuelve el alias `@/`. La logica del noindex vive en un modulo propio.
+import { buildNoIndexHeaders } from "./src/config/seoHeaders";
+
 const nextConfig: NextConfig = {
   // Genera .next/standalone con un server.js minimo: la imagen Docker de produccion no necesita node_modules completo.
   output: "standalone",
@@ -14,6 +17,14 @@ const nextConfig: NextConfig = {
   productionBrowserSourceMaps: false,
   // Sin la cabecera `X-Powered-By: Next.js`: no se anuncia el framework a quien escanea el sitio.
   poweredByHeader: false,
+  // `noindex` por cabecera, solo en el build del sitio comercial oficial (ver arriba).
+  async headers() {
+    return buildNoIndexHeaders({
+      siteUrl: process.env.NEXT_PUBLIC_SITE_URL,
+      publicDemo: process.env.NEXT_PUBLIC_PUBLIC_DEMO,
+      apiMode: process.env.NEXT_PUBLIC_API_MODE,
+    });
+  },
 };
 
 export default nextConfig;

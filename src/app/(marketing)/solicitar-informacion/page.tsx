@@ -2,13 +2,20 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getDemoInformationRequestUrl, isPublicDemo } from "@/config/demo-mode";
 import { InformationRequestPage } from "@/modules/information-request/pages/InformationRequestPage";
+import {
+  INFORMATION_REQUEST_DESCRIPTION,
+  INFORMATION_REQUEST_TITLE,
+  buildMarketingMetadata,
+} from "@/modules/marketing/seo/marketingMetadata";
 import { DemoUnavailableNotice } from "@/shared/components/DemoUnavailableNotice";
 
-export const metadata: Metadata = {
-  title: "Solicitar información | MARJYM",
-  description:
-    "Cuéntanos sobre tu negocio y nuestro equipo te contactará con una propuesta personalizada de MARJYM.",
-};
+// La plantilla del layout de marketing agrega " | MARJYM": el titulo no repite la marca.
+export const metadata: Metadata = buildMarketingMetadata({
+  title: INFORMATION_REQUEST_TITLE,
+  socialTitle: `${INFORMATION_REQUEST_TITLE} | MARJYM`,
+  description: INFORMATION_REQUEST_DESCRIPTION,
+  path: "/solicitar-informacion",
+});
 
 export default function InformationRequestRoute() {
   if (isPublicDemo()) {
