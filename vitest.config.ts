@@ -305,6 +305,7 @@ export default defineConfig({
         "src/app/robots.ts",
         "src/app/sitemap.ts",
         "src/app/layout.tsx",
+        "src/app/icon.tsx",
         "src/app/(marketing)/layout.tsx",
         "src/app/(marketing)/page.tsx",
         "src/app/(marketing)/og/route.ts",
