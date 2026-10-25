@@ -135,6 +135,7 @@ jobs:
             NEXT_PUBLIC_API_MODE=${{ vars.NEXT_PUBLIC_API_MODE || 'api' }}
             NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
             NEXT_PUBLIC_STOREFRONT_SLUG=${{ vars.NEXT_PUBLIC_STOREFRONT_SLUG }}
+            NEXT_PUBLIC_SITE_URL=${{ vars.NEXT_PUBLIC_SITE_URL }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

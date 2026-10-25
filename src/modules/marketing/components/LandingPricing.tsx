@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BASE_MONTHLY_QUETZALES, SUBSCRIPTION_ADDONS } from "@/core/subscription/catalog";
+import { SUBSCRIPTION_ADDONS } from "@/core/subscription/catalog";
 
 export default function LandingPricing() {
   const baseFeatures = [
@@ -17,10 +17,11 @@ export default function LandingPricing() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="text-center max-w-3xl mx-auto mb-16">
           <h2 className="mb-4 text-3xl font-bold text-[var(--mkt-primary)] md:text-4xl">
-            Precios simples y transparentes
+            Planes y soluciones para tu negocio
           </h2>
           <p className="text-lg text-[var(--mkt-muted)]">
-            Comienza con la base sólida que tu negocio necesita y agrega funciones según tu crecimiento.
+            Comienza con la base que tu negocio necesita y agrega funciones según tu crecimiento. El alcance y la
+            inversión se determinan mediante una propuesta personalizada.
           </p>
         </div>
 
@@ -31,8 +32,7 @@ export default function LandingPricing() {
               <h3 className="mb-2 text-2xl font-semibold text-[var(--mkt-primary)]">MARJYM Base</h3>
               <p className="text-[var(--color-title)]/70 text-sm mb-6">La solución integral para la gestión comercial y operativa diaria.</p>
               <div className="flex items-baseline gap-2">
-                <span className="text-5xl font-black tracking-tight text-[var(--mkt-primary)]">Q{BASE_MONTHLY_QUETZALES}</span>
-                <span className="font-medium text-[var(--mkt-muted)]">/ mes</span>
+                <span className="text-3xl font-black tracking-tight text-[var(--mkt-primary)]">Cotización personalizada</span>
               </div>
             </div>
             <ul className="flex-1 space-y-4 mb-8">
@@ -67,8 +67,7 @@ export default function LandingPricing() {
                 <div className="flex justify-between items-start mb-3">
                   <h4 className="font-semibold text-[var(--color-title)]">{addon.name}</h4>
                   <div className="text-right">
-                    <span className="font-bold text-[var(--color-title)]">Q{addon.monthlyQuetzales}</span>
-                    <span className="text-[var(--color-title)]/60 text-sm"> / mes</span>
+                    <span className="font-bold text-[var(--color-title)]">Precio bajo cotización</span>
                   </div>
                 </div>
                 <p className="mt-3 text-xs font-bold uppercase tracking-wide text-[var(--mkt-accent)]">Disponible para activar después</p>

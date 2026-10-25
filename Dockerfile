@@ -15,6 +15,9 @@ WORKDIR /app
 ARG NEXT_PUBLIC_API_MODE=api
 ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID=
 ARG NEXT_PUBLIC_STOREFRONT_SLUG=
+# SEO del sitio comercial: solo el build de marjym.com la fija a "https://marjym.com". Vacia (clientes, demo)
+# no se emite canonical, Open Graph, datos estructurados, sitemap ni cabeceras noindex de MARJYM.
+ARG NEXT_PUBLIC_SITE_URL=
 # Demo publica (solo con NEXT_PUBLIC_API_MODE=mock): PUBLIC_DEMO=true activa banner, accesos rapidos y oculta funciones no demostrables.
 # MARKETING_URL/DEMO_URL/SALES_CONTACT_URL son URLs absolutas (landing real, instancia demo, contacto comercial).
 ARG NEXT_PUBLIC_PUBLIC_DEMO=

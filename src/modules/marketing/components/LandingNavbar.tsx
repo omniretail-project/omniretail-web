@@ -6,7 +6,7 @@ const links = [
   ["Funcionalidades", "/#funcionalidades"],
   ["Módulos", "/#modulos"],
   ["Cómo funciona", "/#como-funciona"],
-  ["Precios", "/#precios"],
+  ["Planes", "/#precios"],
   ["FAQ", "/#faq"],
 ] as const;
 
