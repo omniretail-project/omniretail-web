@@ -20,6 +20,8 @@ import {
 } from "@/modules/logistics/application/services/PickingApplicationService";
 import type { PickingIncidentFormValues } from "@/modules/logistics/validation/picking.validation";
 import { validatePickingIncident } from "@/modules/logistics/validation/picking.validation";
+import { announceLogisticsChange } from "@/modules/logistics/hooks/logisticsChangeEvents";
+import { useBranchQueue } from "@/modules/logistics/hooks/useBranchQueue";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import {
@@ -42,16 +44,12 @@ export function useLogisticsPicking() {
     error: sessionError,
   } = useCurrentSession();
   const service = useMemo(() => new PickingApplicationService(repositories), [repositories]);
-  const [queue, setQueue] = useState<PickingQueueItemDto[]>([]);
   const [detail, setDetail] = useState<PickingDetailDto | null>(null);
   const [selectedPickingOrderId, setSelectedPickingOrderId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [queueError, setQueueError] = useState<string | null>(null);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
-  const loadSequenceRef = useRef(0);
   const detailSequenceRef = useRef(0);
   const mutationSequenceRef = useRef(0);
   const mutationLockRef = useRef(false);
@@ -59,8 +57,6 @@ export function useLogisticsPicking() {
   const selectedPickingOrderIdRef = useRef<string | null>(null);
   const activeBranchIdRef = useRef<string | null>(currentBranch?.id ?? null);
   const pendingOperationIdsRef = useRef(new Map<string, string>());
-  // Sucursal cuya cola ya se mostro: las lecturas siguientes son en segundo plano (no ocultan la mesa).
-  const queueBranchIdRef = useRef<string | null>(null);
 
   const hasBranchAccess = Boolean(
     user &&
@@ -74,42 +70,18 @@ export function useLogisticsPicking() {
   const canStart = !commandsReadOnly && hasPermission("logistics.picking.start");
   const canComplete = !commandsReadOnly && hasPermission("logistics.picking.complete");
 
-  const reload = useCallback(async () => {
-    const sequence = ++loadSequenceRef.current;
-    if (branchLoading || sessionLoading) return;
-    const background = Boolean(
-      currentBranch && hasBranchAccess && canRead && queueBranchIdRef.current === currentBranch.id,
-    );
-    if (!background) {
-      setLoading(true);
-      setQueueError(null);
-    }
-    if (!currentBranch || !hasBranchAccess || !canRead) {
-      queueBranchIdRef.current = null;
-      setQueue([]);
-      setLoading(false);
-      return;
-    }
-    try {
-      const items = await service.getQueue(currentBranch.id);
-      if (isCurrentPickingRequest({
-        sequence,
-        currentSequence: loadSequenceRef.current,
-        requestedBranchId: currentBranch.id,
-        activeBranchId: activeBranchIdRef.current,
-      })) {
-        queueBranchIdRef.current = currentBranch.id;
-        setQueue(items);
-        setQueueError(null);
-      }
-    } catch (cause) {
-      if (sequence === loadSequenceRef.current) {
-        setQueueError(toMessage(cause, sessionError ?? "No se pudo cargar la cola de picking."));
-      }
-    } finally {
-      if (sequence === loadSequenceRef.current) setLoading(false);
-    }
-  }, [branchLoading, canRead, currentBranch, hasBranchAccess, service, sessionError, sessionLoading]);
+  const fetchQueue = useCallback((branchId: string) => service.getQueue(branchId), [service]);
+  const { queue, loading, queueError, reload } = useBranchQueue<PickingQueueItemDto>({
+    activeBranchIdRef,
+    branchLoading,
+    canRead,
+    currentBranch,
+    fallbackError: "No se pudo cargar la cola de picking.",
+    fetchQueue,
+    hasBranchAccess,
+    sessionError,
+    sessionLoading,
+  });
 
   /**
    * `quiet` (refresco por evento): no muestra indicador ni toca el error visible, y un fallo conserva el
@@ -227,40 +199,16 @@ export function useLogisticsPicking() {
     selectedPickingOrderIdRef.current === pickingOrderId,
   []);
 
-  /**
-   * Los repositorios API no publican eventos de Logistica: tras una operacion confirmada por el backend
-   * se avisa a las demas pantallas (Packing, Despacho, Historial) por el bus interno. `origin` evita que
-   * este mismo hook reaccione a su propio aviso.
-   */
+  // Avisa a Packing, Despacho e Historial; `origin` evita que este mismo hook reaccione a su aviso.
   const announceChange = useCallback((
     branchId: string,
     pickingOrderId: string,
     options?: { orderId?: string; orderChanged?: boolean },
   ) => {
-    const tenantId = user?.tenantId;
-    if (!tenantId) return;
-    const metadata = { origin: instanceId };
-    try {
-      eventBus.emit("picking.changed", {
-        tenantId,
-        branchId,
-        pickingOrderId,
-        ...(options?.orderId ? { orderId: options.orderId } : {}),
-        action: "updated",
-        metadata,
-      });
-      if (options?.orderChanged) {
-        eventBus.emit("order.changed", {
-          tenantId,
-          branchId,
-          ...(options.orderId ? { orderId: options.orderId } : {}),
-          action: "status_changed",
-          metadata,
-        });
-      }
-    } catch {
-      // La operacion ya quedo confirmada por el backend: un oyente ajeno que falle no la invalida.
-    }
+    announceLogisticsChange(
+      { eventBus, tenantId: user?.tenantId, branchId, origin: instanceId, ...options },
+      { event: "picking.changed", pickingOrderId },
+    );
   }, [eventBus, instanceId, user?.tenantId]);
 
   const assign = useCallback(async () => {

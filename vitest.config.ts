@@ -124,6 +124,8 @@ export default defineConfig({
         "src/modules/logistics/components/PackingWorkspace.tsx",
         "src/modules/logistics/hooks/useLogisticsPicking.ts",
         "src/modules/logistics/hooks/useLogisticsPacking.ts",
+        "src/modules/logistics/hooks/useBranchQueue.ts",
+        "src/modules/logistics/hooks/logisticsChangeEvents.ts",
         "src/modules/logistics/pages/LogisticsPickingPage.tsx",
         "src/shared/hooks/useVisiblePolling.ts",
         "src/modules/logistics/hooks/usePickingFefoPreview.ts",

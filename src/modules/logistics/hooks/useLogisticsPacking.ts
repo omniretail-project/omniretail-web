@@ -13,6 +13,8 @@ import type {
 } from "@/modules/logistics/application/dto/PackingReadModelDto";
 import { PackingApplicationService } from "@/modules/logistics/application/services/PackingApplicationService";
 import type { PackingPreparationValidationResult } from "@/modules/logistics/validation/packing.validation";
+import { announceLogisticsChange } from "@/modules/logistics/hooks/logisticsChangeEvents";
+import { useBranchQueue } from "@/modules/logistics/hooks/useBranchQueue";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import {
@@ -32,14 +34,11 @@ export function useLogisticsPacking() {
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const { user, canAccessBranch, hasPermission, loading: sessionLoading, error: sessionError } = useCurrentSession();
   const service = useMemo(() => new PackingApplicationService(repositories), [repositories]);
-  const [queue, setQueue] = useState<PackingQueueItemDto[]>([]);
   const [detail, setDetail] = useState<PackingDetailDto | null>(null);
   const [selectedPackingId, setSelectedPackingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [queueError, setQueueError] = useState<string | null>(null);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [completion, setCompletion] = useState<{
     orderReference: string; orderStatus: OrderStatus | null; sourceType?: "transfer";
@@ -47,12 +46,9 @@ export function useLogisticsPacking() {
   const activeBranchIdRef = useRef<string | null>(currentBranch?.id ?? null);
   const selectedPackingIdRef = useRef<string | null>(null);
   const workspaceBranchIdRef = useRef<string | null>(null);
-  const loadSequenceRef = useRef(0);
   const detailSequenceRef = useRef(0);
   const mutationSequenceRef = useRef(0);
   const detailRef = useRef<PackingDetailDto | null>(null);
-  // Sucursal cuya cola ya se mostro: las lecturas siguientes son en segundo plano (no ocultan la mesa).
-  const queueBranchIdRef = useRef<string | null>(null);
   const apiPacking = repositories.packingDataSource === "api";
 
   const hasBranchAccess = Boolean(
@@ -62,42 +58,18 @@ export function useLogisticsPacking() {
   const canPrepare = hasPermission("logistics.packing.prepare");
   const canFinalize = hasPermission("logistics.packing.finalize");
 
-  const reload = useCallback(async () => {
-    const sequence = ++loadSequenceRef.current;
-    if (branchLoading || sessionLoading) return;
-    const background = Boolean(
-      currentBranch && hasBranchAccess && canRead && queueBranchIdRef.current === currentBranch.id,
-    );
-    if (!background) {
-      setLoading(true);
-      setQueueError(null);
-    }
-    if (!currentBranch || !hasBranchAccess || !canRead) {
-      queueBranchIdRef.current = null;
-      setQueue([]);
-      setLoading(false);
-      return;
-    }
-    try {
-      const items = await service.getQueue(currentBranch.id);
-      if (isCurrentPackingRequest({
-        sequence,
-        currentSequence: loadSequenceRef.current,
-        requestedBranchId: currentBranch.id,
-        activeBranchId: activeBranchIdRef.current,
-      })) {
-        queueBranchIdRef.current = currentBranch.id;
-        setQueue(items);
-        setQueueError(null);
-      }
-    } catch (cause) {
-      if (sequence === loadSequenceRef.current) {
-        setQueueError(toMessage(cause, sessionError ?? "No se pudo cargar la cola de Packing."));
-      }
-    } finally {
-      if (sequence === loadSequenceRef.current) setLoading(false);
-    }
-  }, [branchLoading, canRead, currentBranch, hasBranchAccess, service, sessionError, sessionLoading]);
+  const fetchQueue = useCallback((branchId: string) => service.getQueue(branchId), [service]);
+  const { queue, loading, queueError, reload } = useBranchQueue<PackingQueueItemDto>({
+    activeBranchIdRef,
+    branchLoading,
+    canRead,
+    currentBranch,
+    fallbackError: "No se pudo cargar la cola de Packing.",
+    fetchQueue,
+    hasBranchAccess,
+    sessionError,
+    sessionLoading,
+  });
 
   /**
    * `quiet` (refresco por evento): sin indicador ni cambios en el error visible; un fallo conserva el
@@ -199,40 +171,16 @@ export function useLogisticsPacking() {
     setDetailLoading(false);
   }, []);
 
-  /**
-   * Los repositorios API no publican eventos de Logistica: tras una operacion confirmada por el backend
-   * se avisa a Despacho y al Historial por el bus interno. `origin` evita que este hook reaccione a su
-   * propio aviso. Un oyente ajeno que falle no invalida una operacion ya confirmada.
-   */
+  // Avisa a Despacho e Historial; `origin` evita que este mismo hook reaccione a su aviso.
   const announceChange = useCallback((
     branchId: string,
     packingId: string,
     options?: { orderId?: string; orderChanged?: boolean },
   ) => {
-    const tenantId = user?.tenantId;
-    if (!tenantId) return;
-    const metadata = { origin: instanceId };
-    try {
-      eventBus.emit("packing.changed", {
-        tenantId,
-        branchId,
-        packingId,
-        ...(options?.orderId ? { orderId: options.orderId } : {}),
-        action: "updated",
-        metadata,
-      });
-      if (options?.orderChanged) {
-        eventBus.emit("order.changed", {
-          tenantId,
-          branchId,
-          ...(options.orderId ? { orderId: options.orderId } : {}),
-          action: "status_changed",
-          metadata,
-        });
-      }
-    } catch {
-      // Operacion ya confirmada: ver arriba.
-    }
+    announceLogisticsChange(
+      { eventBus, tenantId: user?.tenantId, branchId, origin: instanceId, ...options },
+      { event: "packing.changed", packingId },
+    );
   }, [eventBus, instanceId, user?.tenantId]);
 
   const executeMutation = useCallback(async <Result extends PackingActionResultDto>(

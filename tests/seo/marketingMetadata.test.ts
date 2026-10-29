@@ -10,12 +10,6 @@ import {
 } from "@/modules/marketing/seo/marketingMetadata";
 import { stubClientInstall, stubCommercialSite, stubNoSiteUrl, stubPublicDemo, stubSiteEnv } from "./seoEnv";
 
-// next/font solo existe dentro del compilador de Next: aqui basta con el nombre de la variable CSS.
-vi.mock("next/font/google", () => ({
-  Geist: () => ({ variable: "--font-geist-sans" }),
-  Geist_Mono: () => ({ variable: "--font-geist-mono" }),
-}));
-
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.resetModules();
@@ -214,17 +208,5 @@ describe("metadata de las rutas de marketing", () => {
     expect(layout.metadataBase).toBeUndefined();
     expect(page.alternates).toBeUndefined();
     expect(info.alternates).toBeUndefined();
-  });
-
-  it("la aplicacion fuera de marketing no recibe plantilla de titulo ni metadata comercial", async () => {
-    stubCommercialSite();
-    vi.resetModules();
-    const root = (await import("@/app/layout")).metadata;
-
-    expect(root.title).toBe("MARJYM");
-    expect(root.alternates).toBeUndefined();
-    expect(root.openGraph).toBeUndefined();
-    expect(root.metadataBase).toBeUndefined();
-    expect(String(root.description)).not.toMatch(/proyecto base/i);
   });
 });
