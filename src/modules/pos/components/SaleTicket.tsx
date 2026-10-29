@@ -31,8 +31,15 @@ export function SaleTicket({
   onCheckout,
 }: SaleTicketProps) {
   return (
-    <aside className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-sm xl:sticky xl:top-4">
-      <div className="border-b border-[var(--color-border)] bg-white px-4 py-3 sm:px-5">
+    // Escritorio (xl): la columna ocupa el alto de la zona de trabajo; el encabezado y el pie (totales +
+    // Cobrar) no se desplazan y solo la lista de articulos hace scroll. Movil y tablet: flujo normal de la
+    // pagina (sin scroll anidado) y el pie queda adherido al borde inferior mientras el ticket esta a la
+    // vista, dentro de la propia tarjeta (no es `fixed`, asi no cubre modales ni contenido).
+    <aside
+      className="scroll-mt-4 flex min-h-0 flex-col rounded-xl border border-[var(--color-border)] bg-white shadow-sm xl:h-full xl:overflow-hidden"
+      id="pos-ticket"
+    >
+      <div className="shrink-0 rounded-t-xl border-b border-[var(--color-border)] bg-white px-4 py-3 sm:px-5">
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-lg font-bold text-[var(--color-title)]">Ticket de venta</h2>
           <p className="shrink-0 text-sm font-medium text-[var(--color-text-muted)]">
@@ -41,13 +48,18 @@ export function SaleTicket({
         </div>
       </div>
 
-      <div className="p-4 sm:p-5">
-        {error ? (
-          <p className="mb-4 rounded-md border border-[var(--color-danger)] px-3 py-2 text-sm font-medium text-[var(--color-danger)]">
+      {error ? (
+        <div className="shrink-0 px-4 pt-4 sm:px-5">
+          <p className="rounded-md border border-[var(--color-danger)] px-3 py-2 text-sm font-medium text-[var(--color-danger)]">
             {error}
           </p>
-        ) : null}
+        </div>
+      ) : null}
 
+      <div
+        className="min-h-0 flex-1 p-4 sm:p-5 xl:overflow-y-auto xl:overscroll-contain"
+        data-testid="ticket-items"
+      >
         {items.length === 0 ? (
           <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-slate-50 px-5 py-8 text-center">
             <p className="font-semibold text-[var(--color-title)]">Tu ticket está vacío</p>
@@ -123,26 +135,31 @@ export function SaleTicket({
         )}
       </div>
 
-      <dl className="space-y-2 border-t border-[var(--color-border)] bg-slate-50 px-4 py-3 text-sm sm:px-5">
-        <div className="flex items-center justify-between gap-4">
-          <dt className="text-[var(--color-text-muted)]">Subtotal</dt>
-          <dd className="font-semibold text-[var(--color-text)]">{formatCurrency(subtotal)}</dd>
+      <div
+        className="sticky bottom-0 z-10 shrink-0 rounded-b-xl bg-white xl:static"
+        data-testid="ticket-summary"
+      >
+        <dl className="space-y-2 border-t border-[var(--color-border)] bg-slate-50 px-4 py-3 text-sm sm:px-5">
+          <div className="flex items-center justify-between gap-4">
+            <dt className="text-[var(--color-text-muted)]">Subtotal</dt>
+            <dd className="font-semibold text-[var(--color-text)]">{formatCurrency(subtotal)}</dd>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <dt className="text-[var(--color-text-muted)]">Descuentos</dt>
+            <dd className="font-semibold text-[var(--color-text)]">
+              − {formatCurrency(discountTotal)}
+            </dd>
+          </div>
+          <div className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-2">
+            <dt className="text-base font-bold text-[var(--color-title)]">Total</dt>
+            <dd className="text-2xl font-bold text-[var(--color-title)]">{formatCurrency(total)}</dd>
+          </div>
+        </dl>
+        <div className="border-t border-[var(--color-border)] px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5">
+          <Button className="w-full" disabled={!canCheckout} onClick={onCheckout} type="button">
+            Cobrar
+          </Button>
         </div>
-        <div className="flex items-center justify-between gap-4">
-          <dt className="text-[var(--color-text-muted)]">Descuentos</dt>
-          <dd className="font-semibold text-[var(--color-text)]">
-            − {formatCurrency(discountTotal)}
-          </dd>
-        </div>
-        <div className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-2">
-          <dt className="text-base font-bold text-[var(--color-title)]">Total</dt>
-          <dd className="text-2xl font-bold text-[var(--color-title)]">{formatCurrency(total)}</dd>
-        </div>
-      </dl>
-      <div className="border-t border-[var(--color-border)] p-4 sm:px-5">
-        <Button className="w-full" disabled={!canCheckout} onClick={onCheckout} type="button">
-          Cobrar
-        </Button>
       </div>
     </aside>
   );

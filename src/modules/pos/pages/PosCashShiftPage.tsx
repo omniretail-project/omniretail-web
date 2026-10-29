@@ -85,6 +85,7 @@ export function PosCashShiftPage() {
                   disabled={!cash.canRegisterMovement || cash.mutationLoading}
                   onClick={() => {
                     cash.clearFeedback();
+                    cash.resetMovementCheck();
                     setMovementModalOpen(true);
                   }}
                   type="button"
@@ -118,11 +119,14 @@ export function PosCashShiftPage() {
       ) : null}
 
       <CashMovementModal
-        error={cash.error}
+        error={cash.movementError}
         loading={cash.mutationLoading}
         open={movementModalOpen}
+        verification={cash.movementCheck}
+        verifying={cash.verifyingMovement}
         onClose={() => setMovementModalOpen(false)}
         onSubmit={cash.registerMovement}
+        onVerify={cash.verifyMovement}
       />
       <CashShiftClosingModal
         error={cash.error}

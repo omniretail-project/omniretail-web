@@ -40,14 +40,49 @@ const checklistLabels = {
 export function PackingWorkspace(props: PackingWorkspaceProps) {
   if (props.completion) return <PackingCompletion completion={props.completion} />;
   if (!props.selected) return <PackingEmptyState />;
-  if (props.loading) {
+  // El spinner solo reemplaza al workspace mientras NO hay detalle (seleccion inicial); un refresco con
+  // detalle visible se indica discretamente dentro de la hoja y no la desmonta.
+  if (props.loading && !props.detail) {
     return <section className="flex min-h-[30rem] items-center justify-center rounded-xl border border-[var(--color-border)] bg-white p-6 text-sm text-[var(--color-text-muted)] shadow-sm">Cargando preparación...</section>;
   }
   if (!props.detail) {
     return <section className="rounded-xl border border-[var(--color-border)] bg-white p-5 shadow-sm">{props.error ? <InlineAlert description={props.error} title="No se pudo cargar la preparación" /> : null}</section>;
   }
 
-  return <PackingPreparation key={`${props.detail.packingId}:${props.detail.version}`} {...props} detail={props.detail} />;
+  // Clave estable por preparacion (no por version): guardar, generar etiqueta o imprimir sube la version
+  // y antes remontaba el formulario, perdiendo campos no enviados, foco y desplazamiento. Los valores
+  // que llegan del servidor se sincronizan dentro de PackingPreparation.
+  return <PackingPreparation key={props.detail.packingId} {...props} detail={props.detail} />;
+}
+
+type PackingServerValues = PackingPreparationFormValues;
+
+function toServerValues(detail: PackingDetailDto): PackingServerValues {
+  return {
+    checklist: { ...detail.checklist },
+    totalWeight: detail.totalWeight === null ? "" : String(detail.totalWeight),
+    packageCount: detail.packageCount === null ? "" : String(detail.packageCount),
+  };
+}
+
+/**
+ * Nueva version del servidor sobre lo que el usuario tiene en pantalla: cada campo que el usuario NO
+ * modifico respecto de la version anterior adopta el valor nuevo; el que esta editando se conserva.
+ */
+export function mergePackingFormValues(
+  current: PackingServerValues,
+  previousServer: PackingServerValues,
+  nextServer: PackingServerValues,
+): PackingServerValues {
+  const checklist = { ...current.checklist };
+  for (const key of Object.keys(nextServer.checklist) as Array<keyof PackingServerValues["checklist"]>) {
+    if (current.checklist[key] === previousServer.checklist[key]) checklist[key] = nextServer.checklist[key];
+  }
+  return {
+    checklist,
+    totalWeight: current.totalWeight === previousServer.totalWeight ? nextServer.totalWeight : current.totalWeight,
+    packageCount: current.packageCount === previousServer.packageCount ? nextServer.packageCount : current.packageCount,
+  };
 }
 
 function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDetailDto }) {
@@ -67,11 +102,16 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
       ? checklistLabels.recipientVerifiedChecked
       : "Datos del pedido/cliente verificados.",
   };
-  const [values, setValues] = useState<PackingPreparationFormValues>({
-    checklist: { ...detail.checklist },
-    totalWeight: detail.totalWeight === null ? "" : String(detail.totalWeight),
-    packageCount: detail.packageCount === null ? "" : String(detail.packageCount),
-  });
+  const [values, setValues] = useState<PackingPreparationFormValues>(() => toServerValues(detail));
+  const [syncedServer, setSyncedServer] = useState<{ version: number; values: PackingServerValues }>(() => ({
+    version: detail.version,
+    values: toServerValues(detail),
+  }));
+  if (syncedServer.version !== detail.version) {
+    const nextServer = toServerValues(detail);
+    setValues((current) => mergePackingFormValues(current, syncedServer.values, nextServer));
+    setSyncedServer({ version: detail.version, values: nextServer });
+  }
   const [errors, setErrors] = useState<Partial<Record<"totalWeight" | "packageCount", string>>>({});
   const currentValidation = validatePackingPreparation(detail.deliveryMethod, values, {
     requireShipmentData: shipmentWorkflow,
@@ -132,6 +172,10 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
               <StatusBadge status={detail.status === PackingStatus.in_progress ? "En preparación" : "Finalizado"} tone={detail.status === PackingStatus.in_progress ? "info" : "success"} />
             </div>
           </div>
+          {/* Altura reservada: la indicacion aparece y desaparece sin desplazar el contenido. */}
+          <p aria-live="polite" className="mt-1 h-4 text-xs font-medium text-[var(--color-primary)]" role="status">
+            {props.submitting ? "Guardando cambios..." : props.loading ? "Actualizando..." : ""}
+          </p>
         </header>
 
         <div className="space-y-4 p-3.5 sm:p-4">

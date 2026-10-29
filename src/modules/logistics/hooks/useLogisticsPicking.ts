@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { DataEventPayload } from "@/core/types/events.types";
-import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type {
   PickingDetailDto,
@@ -31,6 +31,8 @@ import {
 
 export function useLogisticsPicking() {
   const repositories = useRepositories();
+  const eventBus = useDataEventBus();
+  const instanceId = useId();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const {
     user,
@@ -57,6 +59,8 @@ export function useLogisticsPicking() {
   const selectedPickingOrderIdRef = useRef<string | null>(null);
   const activeBranchIdRef = useRef<string | null>(currentBranch?.id ?? null);
   const pendingOperationIdsRef = useRef(new Map<string, string>());
+  // Sucursal cuya cola ya se mostro: las lecturas siguientes son en segundo plano (no ocultan la mesa).
+  const queueBranchIdRef = useRef<string | null>(null);
 
   const hasBranchAccess = Boolean(
     user &&
@@ -73,9 +77,15 @@ export function useLogisticsPicking() {
   const reload = useCallback(async () => {
     const sequence = ++loadSequenceRef.current;
     if (branchLoading || sessionLoading) return;
-    setLoading(true);
-    setQueueError(null);
+    const background = Boolean(
+      currentBranch && hasBranchAccess && canRead && queueBranchIdRef.current === currentBranch.id,
+    );
+    if (!background) {
+      setLoading(true);
+      setQueueError(null);
+    }
     if (!currentBranch || !hasBranchAccess || !canRead) {
+      queueBranchIdRef.current = null;
       setQueue([]);
       setLoading(false);
       return;
@@ -88,7 +98,9 @@ export function useLogisticsPicking() {
         requestedBranchId: currentBranch.id,
         activeBranchId: activeBranchIdRef.current,
       })) {
+        queueBranchIdRef.current = currentBranch.id;
         setQueue(items);
+        setQueueError(null);
       }
     } catch (cause) {
       if (sequence === loadSequenceRef.current) {
@@ -99,10 +111,21 @@ export function useLogisticsPicking() {
     }
   }, [branchLoading, canRead, currentBranch, hasBranchAccess, service, sessionError, sessionLoading]);
 
-  const loadDetail = useCallback(async (branchId: string, pickingOrderId: string) => {
+  /**
+   * `quiet` (refresco por evento): no muestra indicador ni toca el error visible, y un fallo conserva el
+   * detalle anterior. Una lectura obsoleta nunca pisa a una mas nueva (secuencia + pedido + sucursal).
+   */
+  const loadDetail = useCallback(async (
+    branchId: string,
+    pickingOrderId: string,
+    options?: { quiet?: boolean },
+  ) => {
+    const quiet = options?.quiet === true;
     const sequence = ++detailSequenceRef.current;
-    setDetailLoading(true);
-    setWorkspaceError(null);
+    if (!quiet) {
+      setDetailLoading(true);
+      setWorkspaceError(null);
+    }
     try {
       const nextDetail = await service.getDetail(branchId, pickingOrderId);
       if (isCurrentPickingRequest({
@@ -117,7 +140,7 @@ export function useLogisticsPicking() {
       }
       return nextDetail;
     } catch (cause) {
-      if (sequence === detailSequenceRef.current && activeBranchIdRef.current === branchId) {
+      if (!quiet && sequence === detailSequenceRef.current && activeBranchIdRef.current === branchId) {
         setWorkspaceError(toMessage(cause, "No se pudo cargar el detalle de picking."));
       }
       return null;
@@ -184,6 +207,10 @@ export function useLogisticsPicking() {
     if (mutationLockRef.current) return null;
     mutationLockRef.current = true;
     const sequence = ++mutationSequenceRef.current;
+    // Una lectura de detalle iniciada antes de la mutacion quedaria obsoleta: se invalida para que
+    // jamas sobrescriba el detalle autoritativo que devuelve el backend.
+    detailSequenceRef.current += 1;
+    setDetailLoading(false);
     setSubmitting(true);
     setWorkspaceError(null);
     return sequence;
@@ -200,6 +227,42 @@ export function useLogisticsPicking() {
     selectedPickingOrderIdRef.current === pickingOrderId,
   []);
 
+  /**
+   * Los repositorios API no publican eventos de Logistica: tras una operacion confirmada por el backend
+   * se avisa a las demas pantallas (Packing, Despacho, Historial) por el bus interno. `origin` evita que
+   * este mismo hook reaccione a su propio aviso.
+   */
+  const announceChange = useCallback((
+    branchId: string,
+    pickingOrderId: string,
+    options?: { orderId?: string; orderChanged?: boolean },
+  ) => {
+    const tenantId = user?.tenantId;
+    if (!tenantId) return;
+    const metadata = { origin: instanceId };
+    try {
+      eventBus.emit("picking.changed", {
+        tenantId,
+        branchId,
+        pickingOrderId,
+        ...(options?.orderId ? { orderId: options.orderId } : {}),
+        action: "updated",
+        metadata,
+      });
+      if (options?.orderChanged) {
+        eventBus.emit("order.changed", {
+          tenantId,
+          branchId,
+          ...(options.orderId ? { orderId: options.orderId } : {}),
+          action: "status_changed",
+          metadata,
+        });
+      }
+    } catch {
+      // La operacion ya quedo confirmada por el backend: un oyente ajeno que falle no la invalida.
+    }
+  }, [eventBus, instanceId, user?.tenantId]);
+
   const assign = useCallback(async () => {
     if (!currentBranch || !selectedPickingOrderId || !canStart) return false;
     const sequence = beginMutation();
@@ -208,6 +271,7 @@ export function useLogisticsPicking() {
     const pickingOrderId = selectedPickingOrderId;
     try {
       await service.assign(branchId, pickingOrderId);
+      announceChange(branchId, pickingOrderId);
       if (!canApplyMutationResult(branchId, pickingOrderId)) return false;
       await Promise.all([loadDetail(branchId, pickingOrderId), reload()]);
       return true;
@@ -219,7 +283,7 @@ export function useLogisticsPicking() {
     } finally {
       finishMutation(sequence);
     }
-  }, [beginMutation, canApplyMutationResult, canStart, currentBranch, finishMutation, loadDetail, reload, selectedPickingOrderId, service]);
+  }, [announceChange, beginMutation, canApplyMutationResult, canStart, currentBranch, finishMutation, loadDetail, reload, selectedPickingOrderId, service]);
 
   const updateLine = useCallback(async (
     line: PickingDetailLineDto,
@@ -274,9 +338,12 @@ export function useLogisticsPicking() {
         trackingSelections: normalizedSelections,
       });
       pendingOperationIdsRef.current.delete(fingerprint);
+      announceChange(branchId, pickingOrderId, { orderId: updatedDetail.orderId });
       if (!canApplyMutationResult(branchId, pickingOrderId)) return false;
+      // El detalle autoritativo ya llego en la respuesta: se aplica al instante. La cola (lista lateral)
+      // se refresca en segundo plano sin retener el bloqueo ni ocultar la mesa.
       setDetail(updatedDetail);
-      await reload();
+      void reload();
       return true;
     } catch (cause) {
       if (canApplyMutationResult(branchId, pickingOrderId)) {
@@ -286,7 +353,7 @@ export function useLogisticsPicking() {
     } finally {
       finishMutation(sequence);
     }
-  }, [autoFefoEnabled, beginMutation, canApplyMutationResult, canStart, currentBranch, detail, finishMutation, reload, service]);
+  }, [announceChange, autoFefoEnabled, beginMutation, canApplyMutationResult, canStart, currentBranch, detail, finishMutation, reload, service]);
 
   const registerIncident = useCallback(async (values: PickingIncidentFormValues) => {
     if (!currentBranch || !detail || !canStart) return false;
@@ -299,6 +366,7 @@ export function useLogisticsPicking() {
     try {
       const command: RegisterPickingIncidentCommand = { pickingOrderId, ...validation.command };
       await service.registerIncident(branchId, command);
+      announceChange(branchId, pickingOrderId);
       if (!canApplyMutationResult(branchId, pickingOrderId)) return false;
       await Promise.all([loadDetail(branchId, pickingOrderId), reload()]);
       return true;
@@ -310,7 +378,7 @@ export function useLogisticsPicking() {
     } finally {
       finishMutation(sequence);
     }
-  }, [beginMutation, canApplyMutationResult, canStart, currentBranch, detail, finishMutation, loadDetail, reload, service]);
+  }, [announceChange, beginMutation, canApplyMutationResult, canStart, currentBranch, detail, finishMutation, loadDetail, reload, service]);
 
   const resolveIncident = useCallback(async (incidentId: string) => {
     if (!currentBranch || !detail || !canStart) return false;
@@ -320,6 +388,7 @@ export function useLogisticsPicking() {
     const pickingOrderId = detail.pickingOrderId;
     try {
       await service.resolveIncident(branchId, pickingOrderId, incidentId);
+      announceChange(branchId, pickingOrderId);
       if (!canApplyMutationResult(branchId, pickingOrderId)) return false;
       await Promise.all([loadDetail(branchId, pickingOrderId), reload()]);
       return true;
@@ -331,7 +400,7 @@ export function useLogisticsPicking() {
     } finally {
       finishMutation(sequence);
     }
-  }, [beginMutation, canApplyMutationResult, canStart, currentBranch, detail, finishMutation, loadDetail, reload, service]);
+  }, [announceChange, beginMutation, canApplyMutationResult, canStart, currentBranch, detail, finishMutation, loadDetail, reload, service]);
 
   const release = useCallback(async (reason: string) => {
     if (!currentBranch || !detail || !canStart) return false;
@@ -341,6 +410,7 @@ export function useLogisticsPicking() {
     const pickingOrderId = detail.pickingOrderId;
     try {
       await service.release(branchId, pickingOrderId, reason);
+      announceChange(branchId, pickingOrderId);
       if (!canApplyMutationResult(branchId, pickingOrderId)) return false;
       await Promise.all([loadDetail(branchId, pickingOrderId), reload()]);
       return true;
@@ -352,7 +422,7 @@ export function useLogisticsPicking() {
     } finally {
       finishMutation(sequence);
     }
-  }, [beginMutation, canApplyMutationResult, canStart, currentBranch, detail, finishMutation, loadDetail, reload, service]);
+  }, [announceChange, beginMutation, canApplyMutationResult, canStart, currentBranch, detail, finishMutation, loadDetail, reload, service]);
 
   const complete = useCallback(async () => {
     if (!currentBranch || !detail || !canComplete) return false;
@@ -362,6 +432,7 @@ export function useLogisticsPicking() {
     const pickingOrderId = detail.pickingOrderId;
     try {
       await service.complete(branchId, pickingOrderId);
+      announceChange(branchId, pickingOrderId, { orderId: detail.orderId, orderChanged: true });
       if (!canApplyMutationResult(branchId, pickingOrderId)) return false;
       detailSequenceRef.current += 1;
       workspaceBranchIdRef.current = null;
@@ -380,14 +451,18 @@ export function useLogisticsPicking() {
     } finally {
       finishMutation(sequence);
     }
-  }, [beginMutation, canApplyMutationResult, canComplete, currentBranch, detail, finishMutation, reload, service]);
+  }, [announceChange, beginMutation, canApplyMutationResult, canComplete, currentBranch, detail, finishMutation, reload, service]);
 
   const handleEvent = useCallback((payload: DataEventPayload) => {
     if (!currentBranch || payload.tenantId !== currentBranch.tenantId || payload.branchId !== currentBranch.id) return;
+    // Aviso publicado por este mismo hook: ya aplico el detalle autoritativo de su respuesta.
+    if (payload.metadata?.origin === instanceId) return;
     void reload();
     const pickingOrderId = selectedPickingOrderIdRef.current;
-    if (pickingOrderId && !mutationLockRef.current) void loadDetail(currentBranch.id, pickingOrderId);
-  }, [currentBranch, loadDetail, reload]);
+    if (pickingOrderId && !mutationLockRef.current) {
+      void loadDetail(currentBranch.id, pickingOrderId, { quiet: true });
+    }
+  }, [currentBranch, instanceId, loadDetail, reload]);
   useDataEvent("picking.changed", handleEvent);
   useDataEvent("order.changed", handleEvent);
 

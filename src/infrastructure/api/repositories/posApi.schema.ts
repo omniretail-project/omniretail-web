@@ -65,6 +65,25 @@ const cashMovementSchema = z.object({
   saleNumber: optionalTextSchema,
 });
 
+// Respuesta INMEDIATA del POST de un movimiento manual de caja. Confirma que el movimiento existe: id,
+// turno, tipo y monto son obligatorios y estrictos. Los datos accesorios (fecha de creacion, usuario,
+// referencias, motivo normalizado) pueden no venir todavia en esa respuesta: la lista autoritativa los
+// trae completos y se sigue validando con `cashMovementSchema`. Una respuesta 2xx que se rechazara por un
+// campo accesorio presentaria como fallida una operacion que ya se registro (y el usuario la repetiria).
+const createdCashMovementAmountSchema = z.union([z.number(), z.string().trim().min(1)]).pipe(z.coerce.number());
+const createdCashMovementSchema = z.object({
+  id: uuidSchema,
+  cashShiftId: uuidSchema,
+  type: z.enum(CashMovementType),
+  amount: createdCashMovementAmountSchema,
+  reason: z.string().nullish(),
+  referenceType: z.string().nullish(),
+  referenceId: z.string().nullish(),
+  createdByUserId: z.string().nullish(),
+  createdAt: z.string().nullish(),
+  saleNumber: z.string().nullish(),
+});
+
 const shippingQuoteSchema = z.object({
   subtotal: moneySchema,
   shippingTotal: moneySchema,
@@ -514,6 +533,34 @@ export const parsePosCashMovements = (value: unknown): PosApiCashMovement[] =>
   parse(z.array(cashMovementSchema), value, "El backend devolvio movimientos de caja invalidos.");
 export const parsePosCashMovement = (value: unknown): PosApiCashMovement =>
   parse(cashMovementSchema, value, "El backend devolvio un movimiento de caja invalido.");
+
+/**
+ * Confirmacion inmediata de un movimiento manual recien registrado (ver `createdCashMovementSchema`).
+ * Los campos que la respuesta no trae se completan con la solicitud (motivo) o con valores neutros que
+ * nadie muestra: la fecha y el usuario reales llegan con la lista autoritativa del turno.
+ */
+export function parsePosCreatedCashMovement(
+  value: unknown,
+  requested: { reason: string },
+): PosApiCashMovement {
+  const parsed = parse(
+    createdCashMovementSchema,
+    value,
+    "El backend devolvio un movimiento de caja invalido.",
+  );
+  return {
+    id: parsed.id,
+    cashShiftId: parsed.cashShiftId,
+    type: parsed.type,
+    amount: parsed.amount,
+    reason: parsed.reason ?? requested.reason,
+    ...(parsed.referenceType ? { referenceType: parsed.referenceType } : {}),
+    ...(parsed.referenceId ? { referenceId: parsed.referenceId } : {}),
+    createdByUserId: parsed.createdByUserId ?? "",
+    createdAt: parsed.createdAt ?? new Date().toISOString(),
+    ...(parsed.saleNumber ? { saleNumber: parsed.saleNumber } : {}),
+  };
+}
 
 export function parsePosSaleConfirmation(value: unknown): PosApiSaleConfirmation {
   const parsed = parse(

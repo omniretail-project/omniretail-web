@@ -108,7 +108,7 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
           </div>
         ) : null}
 
-        {props.selected && props.loading ? (
+        {props.selected && props.loading && !detail ? (
           <div className="flex min-h-[30rem] items-center justify-center p-6 text-sm text-[var(--color-text-muted)]">
             Cargando workspace de picking...
           </div>
@@ -139,6 +139,10 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
                   </div>
                   <p className="mt-1 text-right text-xs text-[var(--color-text-muted)]">
                     {detail.progress.pickedQuantity} de {detail.progress.requiredQuantity} unidades recolectadas
+                  </p>
+                  {/* Altura reservada: la indicacion aparece y desaparece sin desplazar el contenido. */}
+                  <p aria-live="polite" className="mt-0.5 h-4 text-right text-xs font-medium text-[var(--color-primary)]" role="status">
+                    {props.submitting ? "Guardando cambios..." : props.loading ? "Actualizando..." : ""}
                   </p>
                 </div>
               </div>
