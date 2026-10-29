@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DeliveryMethod, OrderStatus } from "@/core/enums";
 import type { DataEventPayload } from "@/core/types/events.types";
-import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import type {
@@ -13,6 +13,8 @@ import type {
 } from "@/modules/logistics/application/dto/PackingReadModelDto";
 import { PackingApplicationService } from "@/modules/logistics/application/services/PackingApplicationService";
 import type { PackingPreparationValidationResult } from "@/modules/logistics/validation/packing.validation";
+import { announceLogisticsChange } from "@/modules/logistics/hooks/logisticsChangeEvents";
+import { useBranchQueue } from "@/modules/logistics/hooks/useBranchQueue";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import {
@@ -26,18 +28,17 @@ import { usePackingMutationCoordinator } from "@/modules/logistics/providers/Pac
 
 export function useLogisticsPacking() {
   const repositories = useRepositories();
+  const eventBus = useDataEventBus();
+  const instanceId = useId();
   const mutationCoordinator = usePackingMutationCoordinator();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const { user, canAccessBranch, hasPermission, loading: sessionLoading, error: sessionError } = useCurrentSession();
   const service = useMemo(() => new PackingApplicationService(repositories), [repositories]);
-  const [queue, setQueue] = useState<PackingQueueItemDto[]>([]);
   const [detail, setDetail] = useState<PackingDetailDto | null>(null);
   const [selectedPackingId, setSelectedPackingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [queueError, setQueueError] = useState<string | null>(null);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [completion, setCompletion] = useState<{
     orderReference: string; orderStatus: OrderStatus | null; sourceType?: "transfer";
@@ -45,7 +46,6 @@ export function useLogisticsPacking() {
   const activeBranchIdRef = useRef<string | null>(currentBranch?.id ?? null);
   const selectedPackingIdRef = useRef<string | null>(null);
   const workspaceBranchIdRef = useRef<string | null>(null);
-  const loadSequenceRef = useRef(0);
   const detailSequenceRef = useRef(0);
   const mutationSequenceRef = useRef(0);
   const detailRef = useRef<PackingDetailDto | null>(null);
@@ -58,39 +58,34 @@ export function useLogisticsPacking() {
   const canPrepare = hasPermission("logistics.packing.prepare");
   const canFinalize = hasPermission("logistics.packing.finalize");
 
-  const reload = useCallback(async () => {
-    const sequence = ++loadSequenceRef.current;
-    if (branchLoading || sessionLoading) return;
-    setLoading(true);
-    setQueueError(null);
-    if (!currentBranch || !hasBranchAccess || !canRead) {
-      setQueue([]);
-      setLoading(false);
-      return;
-    }
-    try {
-      const items = await service.getQueue(currentBranch.id);
-      if (isCurrentPackingRequest({
-        sequence,
-        currentSequence: loadSequenceRef.current,
-        requestedBranchId: currentBranch.id,
-        activeBranchId: activeBranchIdRef.current,
-      })) {
-        setQueue(items);
-      }
-    } catch (cause) {
-      if (sequence === loadSequenceRef.current) {
-        setQueueError(toMessage(cause, sessionError ?? "No se pudo cargar la cola de Packing."));
-      }
-    } finally {
-      if (sequence === loadSequenceRef.current) setLoading(false);
-    }
-  }, [branchLoading, canRead, currentBranch, hasBranchAccess, service, sessionError, sessionLoading]);
+  const fetchQueue = useCallback((branchId: string) => service.getQueue(branchId), [service]);
+  const { queue, loading, queueError, reload } = useBranchQueue<PackingQueueItemDto>({
+    activeBranchIdRef,
+    branchLoading,
+    canRead,
+    currentBranch,
+    fallbackError: "No se pudo cargar la cola de Packing.",
+    fetchQueue,
+    hasBranchAccess,
+    sessionError,
+    sessionLoading,
+  });
 
-  const loadDetail = useCallback(async (branchId: string, packingId: string) => {
+  /**
+   * `quiet` (refresco por evento): sin indicador ni cambios en el error visible; un fallo conserva el
+   * detalle anterior. Una lectura con version anterior a la mostrada nunca la reemplaza.
+   */
+  const loadDetail = useCallback(async (
+    branchId: string,
+    packingId: string,
+    options?: { quiet?: boolean },
+  ) => {
+    const quiet = options?.quiet === true;
     const sequence = ++detailSequenceRef.current;
-    setDetailLoading(true);
-    setWorkspaceError(null);
+    if (!quiet) {
+      setDetailLoading(true);
+      setWorkspaceError(null);
+    }
     try {
       const result = await service.getDetail(branchId, packingId);
       if (isCurrentPackingRequest({
@@ -100,13 +95,13 @@ export function useLogisticsPacking() {
         activeBranchId: activeBranchIdRef.current,
         requestedPackingId: packingId,
         selectedPackingId: selectedPackingIdRef.current,
-      })) {
+      }) && isPackingVersionCurrentOrNewer(detailRef.current?.version, result.version)) {
         detailRef.current = result;
         setDetail(result);
       }
       return result;
     } catch (cause) {
-      if (sequence === detailSequenceRef.current && activeBranchIdRef.current === branchId) {
+      if (!quiet && sequence === detailSequenceRef.current && activeBranchIdRef.current === branchId) {
         setWorkspaceError(toMessage(cause, "No se pudo cargar la preparación."));
       }
       return null;
@@ -176,6 +171,18 @@ export function useLogisticsPacking() {
     setDetailLoading(false);
   }, []);
 
+  // Avisa a Despacho e Historial; `origin` evita que este mismo hook reaccione a su aviso.
+  const announceChange = useCallback((
+    branchId: string,
+    packingId: string,
+    options?: { orderId?: string; orderChanged?: boolean },
+  ) => {
+    announceLogisticsChange(
+      { eventBus, tenantId: user?.tenantId, branchId, origin: instanceId, ...options },
+      { event: "packing.changed", packingId },
+    );
+  }, [eventBus, instanceId, user?.tenantId]);
+
   const executeMutation = useCallback(async <Result extends PackingActionResultDto>(
     allowed: boolean,
     actionKey: string,
@@ -191,6 +198,9 @@ export function useLogisticsPacking() {
     const mutationToken = mutationCoordinator.beginRequest();
     if (mutationToken === null) return null;
     const sequence = ++mutationSequenceRef.current;
+    // Una lectura de detalle anterior a la mutacion quedaria obsoleta: no debe pisar el resultado.
+    detailSequenceRef.current += 1;
+    setDetailLoading(false);
     const branchId = currentBranch.id;
     const packingId = detail.packingId;
     const operationKey = createPackingOperationFingerprint({
@@ -210,6 +220,10 @@ export function useLogisticsPacking() {
         operationId,
       });
       mutationCoordinator.markOperationDefinitive(operationKey);
+      announceChange(branchId, packingId, {
+        orderId: detail.orderId,
+        orderChanged: actionKey === "finalize",
+      });
       if (!isCurrentPackingRequest({
         sequence,
         currentSequence: mutationSequenceRef.current,
@@ -278,7 +292,7 @@ export function useLogisticsPacking() {
     } finally {
       if (mutationCoordinator.finishRequest(mutationToken)) setSubmitting(false);
     }
-  }, [currentBranch, detail, mutationCoordinator, reload, service]);
+  }, [announceChange, currentBranch, detail, mutationCoordinator, reload, service]);
 
   const savePreparation = useCallback(async (
     validation: PackingPreparationValidationResult,
@@ -287,6 +301,8 @@ export function useLogisticsPacking() {
     const mutationToken = mutationCoordinator.beginRequest();
     if (mutationToken === null) return false;
     const sequence = ++mutationSequenceRef.current;
+    detailSequenceRef.current += 1;
+    setDetailLoading(false);
     const branchId = currentBranch.id;
     const packingId = detail.packingId;
     const fingerprint = createPackingOperationFingerprint({
@@ -307,6 +323,7 @@ export function useLogisticsPacking() {
         ...validation.values,
       });
       mutationCoordinator.markOperationDefinitive(fingerprint);
+      announceChange(branchId, packingId, { orderId: detail.orderId });
       if (!isCurrentPackingRequest({
         sequence,
         currentSequence: mutationSequenceRef.current,
@@ -371,7 +388,7 @@ export function useLogisticsPacking() {
     } finally {
       if (mutationCoordinator.finishRequest(mutationToken)) setSubmitting(false);
     }
-  }, [canPrepare, currentBranch, detail, mutationCoordinator, reload, service]);
+  }, [announceChange, canPrepare, currentBranch, detail, mutationCoordinator, reload, service]);
 
   const generateLabel = useCallback(async () => {
     const result = await executeMutation(
@@ -444,6 +461,8 @@ export function useLogisticsPacking() {
     const mutationToken = mutationCoordinator.beginRequest();
     if (mutationToken === null) return false;
     const sequence = ++mutationSequenceRef.current;
+    detailSequenceRef.current += 1;
+    setDetailLoading(false);
     const branchId = currentBranch.id;
     const packingId = detail.packingId;
     const operationKey = createPackingOperationFingerprint({
@@ -458,6 +477,7 @@ export function useLogisticsPacking() {
     try {
       const result = await service.confirmStorePickupDelivery(branchId, { packingId, operationId });
       mutationCoordinator.markOperationDefinitive(operationKey);
+      announceChange(branchId, packingId, { orderId: detail.orderId, orderChanged: true });
       if (
         sequence !== mutationSequenceRef.current ||
         activeBranchIdRef.current !== branchId ||
@@ -488,16 +508,18 @@ export function useLogisticsPacking() {
     } finally {
       if (mutationCoordinator.finishRequest(mutationToken)) setSubmitting(false);
     }
-  }, [apiPacking, canFinalize, currentBranch, detail, mutationCoordinator, reload, service]);
+  }, [announceChange, apiPacking, canFinalize, currentBranch, detail, mutationCoordinator, reload, service]);
 
   const handleEvent = useCallback((payload: DataEventPayload) => {
     if (!currentBranch || payload.tenantId !== currentBranch.tenantId || payload.branchId !== currentBranch.id) return;
+    // Aviso publicado por este mismo hook: ya aplico el detalle autoritativo de su respuesta.
+    if (payload.metadata?.origin === instanceId) return;
     void reload();
     const packingId = selectedPackingIdRef.current;
     if (packingId && !mutationCoordinator.isRequestInFlight()) {
-      void loadDetail(currentBranch.id, packingId);
+      void loadDetail(currentBranch.id, packingId, { quiet: true });
     }
-  }, [currentBranch, loadDetail, mutationCoordinator, reload]);
+  }, [currentBranch, instanceId, loadDetail, mutationCoordinator, reload]);
   useDataEvent("packing.changed", handleEvent);
   useDataEvent("order.changed", handleEvent);
 

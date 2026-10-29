@@ -21,16 +21,11 @@ export function DispatchReadPanel() {
 
   return (
     <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-white p-3.5 shadow-sm sm:p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-bold text-[var(--color-title)]">Salidas listas</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            Pedidos y traslados preparados en {dispatch.currentBranchName}.
-          </p>
-        </div>
-        <Button disabled={dispatch.loading} onClick={() => void dispatch.reload()} variant="secondary">
-          Actualizar
-        </Button>
+      <div>
+        <h2 className="text-lg font-bold text-[var(--color-title)]">Salidas listas</h2>
+        <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+          Pedidos y traslados preparados en {dispatch.currentBranchName}. La lista se actualiza sola.
+        </p>
       </div>
 
       {dispatch.error ? <InlineAlert description={dispatch.error} title="No se pudo consultar Dispatch" /> : null}
@@ -45,23 +40,60 @@ export function DispatchReadPanel() {
       {dispatch.orders.length > 0 ? (
         <div className="space-y-2">
           <h3 className="font-semibold text-[var(--color-title)]">Pedidos preparados</h3>
-          {dispatch.orders.map((item) => (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] px-3 py-2.5" key={item.sourceId}>
-              <div>
-                <p className="font-semibold text-[var(--color-title)]">{item.sourceReference}</p>
-                <p className="text-sm text-[var(--color-text-muted)]">
-                  {transportLabel(item.transportMode)} · Packing finalizado {formatDateTime(item.packingFinalizedAt)}
-                </p>
-              </div>
-              <Button
-                disabled={dispatch.detailLoading || dispatch.mutationInFlight}
-                onClick={() => item.orderId && void dispatch.selectOrder(item.orderId)}
-                variant="secondary"
+          {dispatch.orders.map((item) => {
+            const expanded = Boolean(item.orderId && dispatch.selectedOrderId === item.orderId);
+            const detailId = `dispatch-detail-${item.sourceId}`;
+            return (
+              <div
+                className={`rounded-lg border ${expanded ? "border-[var(--color-primary)]" : "border-[var(--color-border)]"}`}
+                key={item.sourceId}
               >
-                Ver detalle
-              </Button>
-            </div>
-          ))}
+                <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5">
+                  <div>
+                    <p className="font-semibold text-[var(--color-title)]">{item.sourceReference}</p>
+                    <p className="text-sm text-[var(--color-text-muted)]">
+                      {transportLabel(item.transportMode)} · Packing finalizado {formatDateTime(item.packingFinalizedAt)}
+                    </p>
+                  </div>
+                  <Button
+                    aria-controls={detailId}
+                    aria-expanded={expanded}
+                    disabled={dispatch.mutationInFlight || (!expanded && dispatch.detailLoading)}
+                    onClick={() => {
+                      if (expanded) dispatch.clearSelection();
+                      else if (item.orderId) void dispatch.selectOrder(item.orderId);
+                    }}
+                    variant="secondary"
+                  >
+                    {expanded ? "Ocultar detalle" : "Ver detalle"}
+                  </Button>
+                </div>
+                {expanded ? (
+                  <div
+                    aria-label={`Detalle del pedido ${item.sourceReference}`}
+                    className="border-t border-[var(--color-border)] bg-slate-50 p-4"
+                    id={detailId}
+                    role="region"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <h3 className="font-semibold text-[var(--color-title)]">Detalle del pedido preparado</h3>
+                      <Button disabled={dispatch.mutationInFlight} onClick={dispatch.clearSelection} variant="ghost">Cerrar</Button>
+                    </div>
+                    {dispatch.detailLoading && !dispatch.detail ? <p className="mt-2 text-sm">Consultando detalle...</p> : null}
+                    {dispatch.detail && dispatch.detail.orderId === item.orderId ? (
+                      <PreparedDetail
+                        canConfirm={dispatch.canConfirm}
+                        detail={dispatch.detail}
+                        key={dispatch.detail.orderId}
+                        onConfirm={dispatch.confirmOrder}
+                        submitting={dispatch.submittingSourceId === dispatch.detail.orderId}
+                      />
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       ) : null}
 
@@ -88,23 +120,6 @@ export function DispatchReadPanel() {
         </div>
       ) : null}
 
-      {dispatch.selectedOrderId ? (
-        <div className="rounded-lg border border-[var(--color-border)] bg-slate-50 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <h3 className="font-semibold text-[var(--color-title)]">Detalle del pedido preparado</h3>
-            <Button disabled={dispatch.mutationInFlight} onClick={dispatch.clearSelection} variant="ghost">Cerrar</Button>
-          </div>
-          {dispatch.detailLoading ? <p className="mt-2 text-sm">Consultando detalle...</p> : null}
-          {dispatch.detail ? (
-            <PreparedDetail
-              canConfirm={dispatch.canConfirm}
-              detail={dispatch.detail}
-              onConfirm={dispatch.confirmOrder}
-              submitting={dispatch.submittingSourceId === dispatch.detail.orderId}
-            />
-          ) : null}
-        </div>
-      ) : null}
     </section>
   );
 }

@@ -6,8 +6,8 @@ import {
   parseCloseCashShiftCommand,
   parseConfirmSaleCommand,
   parseOpenCashShiftCommand,
-  parsePosCashMovement,
   parsePosCashMovements,
+  parsePosCreatedCashMovement,
   parsePosCashShift,
   parsePosCashShiftSummary,
   parsePosReturnEligibility,
@@ -80,9 +80,26 @@ export class ApiPosRepository implements PosApiRepository {
 
   async registerCashMovement(input: Parameters<PosApiRepository["registerCashMovement"]>[0]) {
     const body = parseCashMovementCommand(input);
-    const movement = parsePosCashMovement(
+    // El POST de un movimiento manual NO es idempotente (no hay clave de operacion): una respuesta 2xx
+    // ya implica que el movimiento existe. Se valida lo que lo confirma (ver `parsePosCreatedCashMovement`)
+    // sin exigir datos accesorios que solo trae la lista autoritativa.
+    const movement = parsePosCreatedCashMovement(
       await backendFetch<unknown>("/pos/cash-movements", { method: "POST", body }),
+      { reason: body.reason },
     );
+    if (
+      movement.cashShiftId !== body.cashShiftId ||
+      movement.type !== body.type ||
+      Math.abs(movement.amount - body.amount) >= 0.005
+    ) {
+      // Existe un movimiento, pero no el que se pidio: no se presenta como exito ni como fallo seguro.
+      console.error("[POS API] El movimiento devuelto no coincide con la solicitud.");
+      throw new BackendRequestError(
+        "El backend devolvio un movimiento de caja que no coincide con la solicitud.",
+        502,
+        "INVALID_BACKEND_RESPONSE",
+      );
+    }
     this.emitSafely("cash-shift.changed", { entityId: movement.cashShiftId, action: "updated" });
     return movement;
   }
