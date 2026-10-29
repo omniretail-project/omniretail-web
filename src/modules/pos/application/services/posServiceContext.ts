@@ -110,6 +110,15 @@ export async function ensureTenantCanUsePos(
  */
 export type PosRetrySafety = "read" | "idempotent" | "non_idempotent";
 
+/**
+ * true cuando el backend pudo haber procesado la operacion aunque no la haya confirmado de forma
+ * utilizable: sin conexion (0), error del servidor (5xx) o respuesta 2xx con un cuerpo invalido (502
+ * `INVALID_BACKEND_RESPONSE`). Es el mismo criterio con el que `cleanPosError` pide verificar antes de repetir.
+ */
+export function isUncertainPosOutcome(error: unknown): boolean {
+  return error instanceof BackendRequestError && (error.status === 0 || error.status >= 500);
+}
+
 export function cleanPosError(
   error: unknown,
   fallback: string,

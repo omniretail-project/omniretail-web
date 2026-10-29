@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CashMovementType } from "@/core/enums";
 import type { CashMovementFormInput } from "@/modules/pos/hooks/usePosCashShift";
 import {
@@ -19,21 +19,34 @@ interface CashMovementModalProps {
   error?: string | null;
   loading: boolean;
   open: boolean;
+  /**
+   * Resultado incierto de un envio anterior: mientras exista NO se puede registrar de nuevo (el movimiento
+   * pudo haberse guardado). El formulario conserva lo escrito y solo permite verificar o cancelar.
+   */
+  verification?: { message: string } | null;
+  verifying?: boolean;
   onClose: () => void;
   onSubmit: (input: CashMovementFormInput) => Promise<boolean>;
+  onVerify?: () => Promise<boolean>;
 }
 
 export function CashMovementModal({
   error,
   loading,
   open,
+  verification = null,
+  verifying = false,
   onClose,
   onSubmit,
+  onVerify,
 }: CashMovementModalProps) {
   const [type, setType] = useState<CashMovementType>(CashMovementType.in);
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [errors, setErrors] = useState<CashShiftFormErrors>({});
+  // Barrera sincrona contra doble clic / Enter repetido: `loading` llega con el siguiente render.
+  const submittingRef = useRef(false);
+  const blocked = loading || verifying || verification !== null;
 
   const resetForm = () => {
     setType(CashMovementType.in);
@@ -77,12 +90,30 @@ export function CashMovementModal({
     <Modal
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button disabled={loading} onClick={closeModal} type="button" variant="secondary">
+          <Button disabled={loading || verifying} onClick={closeModal} type="button" variant="secondary">
             Cancelar
           </Button>
-          <Button disabled={loading} form="cash-movement-form" type="submit">
-            {loading ? "Registrando..." : "Registrar movimiento"}
-          </Button>
+          {verification ? (
+            <Button
+              disabled={verifying}
+              onClick={async () => {
+                if (submittingRef.current || !onVerify) return;
+                submittingRef.current = true;
+                try {
+                  if (await onVerify()) closeModal();
+                } finally {
+                  submittingRef.current = false;
+                }
+              }}
+              type="button"
+            >
+              {verifying ? "Verificando..." : "Verificar de nuevo"}
+            </Button>
+          ) : (
+            <Button disabled={loading} form="cash-movement-form" type="submit">
+              {loading ? "Registrando..." : "Registrar movimiento"}
+            </Button>
+          )}
         </div>
       }
       onClose={closeModal}
@@ -96,14 +127,24 @@ export function CashMovementModal({
         id="cash-movement-form"
         onSubmit={async (event) => {
           event.preventDefault();
+          if (submittingRef.current || blocked) return;
           const numericAmount = Number(amount);
           const nextErrors = validateCashMovement(type, numericAmount, reason);
           setErrors(nextErrors);
           if (hasCashShiftFormErrors(nextErrors)) return;
-          if (await onSubmit({ type, amount: numericAmount, reason: reason.trim() })) closeModal();
+          submittingRef.current = true;
+          try {
+            if (await onSubmit({ type, amount: numericAmount, reason: reason.trim() })) closeModal();
+          } finally {
+            submittingRef.current = false;
+          }
         }}
       >
-        {error ? <InlineAlert description={error} title="No se pudo registrar el movimiento" /> : null}
+        {verification ? (
+          <InlineAlert description={verification.message} title="Resultado no confirmado" tone="warning" />
+        ) : error ? (
+          <InlineAlert description={error} title="No se pudo registrar el movimiento" />
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <FormField id="cash-movement-type" label="Tipo de movimiento">
             <Select

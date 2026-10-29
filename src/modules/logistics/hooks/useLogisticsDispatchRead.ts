@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { DataEventPayload } from "@/core/types/events.types";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type {
@@ -24,7 +25,12 @@ import {
   shouldRetainDispatchOperationIdentity,
 } from "@/modules/logistics/hooks/dispatchRequestIdentity";
 import { useDispatchMutationCoordinator } from "@/modules/logistics/providers/DispatchMutationCoordinatorProvider";
+import { useDataEvent } from "@/shared/hooks/useDataEvent";
+import { useVisiblePolling } from "@/shared/hooks/useVisiblePolling";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
+
+/** Respaldo ante cambios hechos desde otra sesion (no hay canal push): solo con la pestana visible. */
+export const DISPATCH_POLL_INTERVAL_MS = 30_000;
 
 export interface ConfirmOrderShipmentInput {
   carrierName?: string;
@@ -62,6 +68,12 @@ export function useLogisticsDispatchRead() {
   const detailSequenceRef = useRef(0);
   const mutationSequenceRef = useRef(0);
   const selectedOrderIdRef = useRef<string | null>(null);
+  // Tras la primera lectura de un contexto, las lecturas siguientes son en segundo plano: no activan
+  // `loading` y conservan la cola visible. Se coalescen para no tener dos consultas simultaneas.
+  const queueLoadedRef = useRef(false);
+  const refreshInFlightRef = useRef(false);
+  const refreshQueuedRef = useRef(false);
+  const reloadRef = useRef<(() => Promise<void>) | null>(null);
   const [queueState, setQueueState] = useState<DispatchContextualValue<DispatchQueueItemDto[]> | null>(null);
   const [detailState, setDetailState] = useState<DispatchContextualValue<PreparedDispatchDetailDto> | null>(null);
   const [selectionState, setSelectionState] = useState<DispatchContextualValue<string> | null>(null);
@@ -77,9 +89,17 @@ export function useLogisticsDispatchRead() {
     detailSequenceRef.current += 1;
     mutationSequenceRef.current += 1;
     selectedOrderIdRef.current = null;
+    queueLoadedRef.current = false;
+    refreshInFlightRef.current = false;
+    refreshQueuedRef.current = false;
   }, [currentContext]);
 
   const reload = useCallback(async () => {
+    const background = queueLoadedRef.current;
+    if (background && refreshInFlightRef.current) {
+      refreshQueuedRef.current = true;
+      return;
+    }
     const sequence = ++queueSequenceRef.current;
     if (branchLoading || sessionLoading) return;
     if (!contextKey || !branchId || !hasBranchAccess || !canRead) {
@@ -88,15 +108,36 @@ export function useLogisticsDispatchRead() {
     }
     const requestContext = captureDispatchReadContext(contextStateRef.current, contextKey);
     if (!requestContext) return;
-    setLoading(true);
-    setErrorState(null);
+    refreshInFlightRef.current = true;
+    if (!background) {
+      setLoading(true);
+      setErrorState(null);
+    }
     try {
       const queue = await service.getApiQueue(branchId);
       if (isCurrentRequest(sequence, queueSequenceRef.current, requestContext, contextStateRef.current)) {
+        queueLoadedRef.current = true;
         setQueueState({ ...requestContext, value: queue });
+        const selectedId = selectedOrderIdRef.current;
+        const selectionStillQueued = !selectedId || queue.some(
+          (item) => item.sourceType === "order" && item.orderId === selectedId,
+        );
+        if (!selectionStillQueued && !mutationCoordinator.isRequestInFlight()) {
+          // El pedido salio de la cola (otra sesion lo despacho): se cierra su detalle y se avisa.
+          detailSequenceRef.current += 1;
+          selectedOrderIdRef.current = null;
+          setSelectionState(null);
+          setDetailState(null);
+          setDetailLoadingState(null);
+          setErrorState({
+            ...requestContext,
+            value: "El pedido seleccionado ya no está listo para salida. La lista se actualizó.",
+          });
+        }
       }
     } catch (cause) {
-      if (isCurrentRequest(sequence, queueSequenceRef.current, requestContext, contextStateRef.current)) {
+      // Una lectura en segundo plano que falla conserva lo visible y no interrumpe con alertas.
+      if (!background && isCurrentRequest(sequence, queueSequenceRef.current, requestContext, contextStateRef.current)) {
         setErrorState({
           ...requestContext,
           value: toMessage(cause, sessionError ?? "No se pudo cargar la cola de despachos."),
@@ -105,15 +146,45 @@ export function useLogisticsDispatchRead() {
     } finally {
       if (isCurrentRequest(sequence, queueSequenceRef.current, requestContext, contextStateRef.current)) {
         setLoading(false);
+        refreshInFlightRef.current = false;
+        if (refreshQueuedRef.current) {
+          refreshQueuedRef.current = false;
+          void reloadRef.current?.();
+        }
       }
     }
-  }, [branchId, branchLoading, canRead, contextKey, hasBranchAccess, service, sessionError, sessionLoading]);
+  }, [branchId, branchLoading, canRead, contextKey, hasBranchAccess, mutationCoordinator, service, sessionError, sessionLoading]);
+
+  useEffect(() => {
+    reloadRef.current = reload;
+  }, [reload]);
 
   useEffect(() => {
     let active = true;
     window.queueMicrotask(() => { if (active) void reload(); });
     return () => { active = false; };
   }, [reload]);
+
+  const handleLogisticsEvent = useCallback((payload: DataEventPayload) => {
+    if (!branchId || !user || payload.tenantId !== user.tenantId || payload.branchId !== branchId) return;
+    // Durante una confirmacion la propia mutacion recarga la cola al terminar.
+    if (mutationCoordinator.isRequestInFlight()) return;
+    void reload();
+  }, [branchId, mutationCoordinator, reload, user]);
+  useDataEvent("packing.changed", handleLogisticsEvent);
+  useDataEvent("dispatch.changed", handleLogisticsEvent);
+  useDataEvent("order.changed", handleLogisticsEvent);
+
+  useVisiblePolling(
+    async () => {
+      if (mutationCoordinator.isRequestInFlight()) return;
+      await reload();
+    },
+    {
+      intervalMs: DISPATCH_POLL_INTERVAL_MS,
+      enabled: Boolean(contextKey && branchId && hasBranchAccess && canRead),
+    },
+  );
 
   const selectOrder = useCallback(async (orderId: string) => {
     if (

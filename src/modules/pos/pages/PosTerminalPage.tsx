@@ -66,21 +66,32 @@ export function PosTerminalPage() {
         </div>
       ) : null}
 
-      <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(23rem,27rem)] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
-        <div className="min-w-0 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
-          <div className="rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm sm:flex sm:items-end sm:justify-between sm:gap-4">
+      {/*
+        Escritorio (xl): zona de trabajo con la altura de la ventana y dos columnas con scroll propio
+        (catalogo a la izquierda, ticket a la derecha). Movil y tablet: una columna en el flujo normal de la
+        pagina, sin scrolls anidados que atrapen al usuario.
+      */}
+      <section className="grid items-start gap-4 xl:h-[calc(100dvh-14rem)] xl:min-h-[30rem] xl:grid-cols-[minmax(0,1fr)_minmax(23rem,27rem)] xl:grid-rows-[minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[minmax(0,1fr)_28rem]">
+        <div className="flex min-h-0 min-w-0 flex-col rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5 xl:overflow-hidden">
+          <div className="shrink-0 rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm sm:flex sm:items-end sm:justify-between sm:gap-4">
             <div>
               <h2 className="text-lg font-bold text-[var(--color-title)]">Productos disponibles</h2>
               <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
                 Selecciona productos para agregarlos al ticket actual.
               </p>
+              <a
+                className="mt-1 inline-block text-sm font-semibold text-[var(--color-structure)] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] xl:hidden"
+                href="#pos-ticket"
+              >
+                Ir al ticket ({terminal.ticketItems.length}) · {formatCurrency(terminal.total)}
+              </a>
             </div>
             <div className="mt-3 w-full sm:mt-0 sm:max-w-md">
               <ProductSearch value={terminal.search} onChange={terminal.setSearch} />
             </div>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 min-h-0 flex-1 xl:overflow-y-auto xl:overscroll-contain xl:pr-1" data-testid="catalog-scroll">
             <QuickProductList
               error={terminal.error}
               hasProducts={terminal.products.length > 0}

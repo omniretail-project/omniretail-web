@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { PickingIncidentStatus } from "@/core/enums";
 import type {
   PickingDetailLineDto,
@@ -44,7 +44,53 @@ interface PickingLineListProps {
   ) => Promise<boolean>;
 }
 
+/**
+ * Cola de trabajo: primero lo pendiente (incluye lo parcial) y al final lo completado. Un producto esta
+ * completado cuando su cantidad restante es cero, dato que solo cambia con la respuesta confirmada del
+ * backend; por eso una tarjeta no se mueve mientras se edita. El orden es solo de presentacion: dentro
+ * de cada grupo se conserva el orden original de la lista (filter es estable).
+ */
+export function groupPickingLines(lines: PickingDetailLineDto[]) {
+  return {
+    pending: lines.filter((line) => line.remainingQuantity > 0),
+    completed: lines.filter((line) => line.remainingQuantity <= 0),
+  };
+}
+
 export function PickingLineList({ autoFefoEnabled, pickingOrderId, disabled, editable, incidents, lines, onUpdate }: PickingLineListProps) {
+  const { pending, completed } = groupPickingLines(lines);
+  const renderCard = (line: PickingDetailLineDto) => (
+    <PickingLineCard
+      autoFefoEnabled={autoFefoEnabled}
+      disabled={disabled}
+      editable={editable}
+      incidents={incidents.filter((incident) => incident.pickingLineId === line.pickingLineId)}
+      key={`${pickingOrderId ?? line.inventory.pickingOrderId}-${line.pickingLineId}`}
+      line={line}
+      onUpdate={onUpdate}
+      pickingOrderId={pickingOrderId ?? line.inventory.pickingOrderId}
+    />
+  );
+  // Lista plana con claves: una linea que cambia de grupo se MUEVE dentro del mismo padre en vez de
+  // desmontarse, asi conserva su estado local y no hay saltos al completarla o reabrirla.
+  const items: ReactNode[] = [];
+  if (pending.length > 0) {
+    items.push(
+      <h3 className="pt-1 text-sm font-bold uppercase tracking-wide text-[var(--color-title)]" key="group-pending">
+        Pendientes de preparar ({pending.length})
+      </h3>,
+    );
+    pending.forEach((line) => items.push(renderCard(line)));
+  }
+  if (completed.length > 0) {
+    items.push(
+      <h3 className="pt-2 text-sm font-bold uppercase tracking-wide text-[var(--color-title)]" key="group-completed">
+        Productos completados ({completed.length})
+      </h3>,
+    );
+    completed.forEach((line) => items.push(renderCard(line)));
+  }
+
   return (
     <section className="space-y-2.5">
       <div>
@@ -53,23 +99,7 @@ export function PickingLineList({ autoFefoEnabled, pickingOrderId, disabled, edi
           Las ubicaciones, lotes y vencimientos corresponden a las existencias reservadas para este pedido.
         </p>
       </div>
-      {lines.map((line) => {
-        const autoFefo = autoFefoEnabled && isPickingAutoFefoEligible(line);
-        return (
-        <PickingLineCard
-          autoFefoEnabled={autoFefoEnabled}
-          disabled={disabled}
-          editable={editable}
-          incidents={incidents.filter((incident) => incident.pickingLineId === line.pickingLineId)}
-          key={autoFefo
-            ? `${pickingOrderId ?? line.inventory.pickingOrderId}-${line.pickingLineId}`
-            : `${line.pickingLineId}-${line.pickedQuantity}-${line.serialNumbers.join(",")}`}
-          line={line}
-          onUpdate={onUpdate}
-          pickingOrderId={pickingOrderId ?? line.inventory.pickingOrderId}
-        />
-        );
-      })}
+      {items}
     </section>
   );
 }
@@ -114,6 +144,21 @@ function PickingLineCard({ autoFefoEnabled, disabled, editable, incidents, line,
     error: null,
   });
   const [submittedPreview, setSubmittedPreview] = useState<PickingFefoPreviewDto | null>(null);
+  // La tarjeta ya no se remonta cuando el servidor confirma un avance (clave estable). Lo que dependia de
+  // ese remonte se reinicia aqui, solo para ESTA linea y solo cuando su avance confirmado cambia.
+  const serverSignature = `${line.pickedQuantity}|${line.serialNumbers.join(",")}`;
+  const [syncedSignature, setSyncedSignature] = useState(serverSignature);
+  if (syncedSignature !== serverSignature) {
+    setSyncedSignature(serverSignature);
+    setSelectedSerials([]);
+    setReplacementSerials(line.serialNumbers);
+    setSerialEntry("");
+    setError(null);
+    if (!(autoFefoEnabled && isPickingAutoFefoEligible(line))) {
+      setSelectedLocationId(line.location?.id ?? line.trackingSelections[0]?.locationId ?? null);
+      setSelectedLotId(line.trackingSelections[0]?.lotId ?? null);
+    }
+  }
   const targetText = targetDraft.pickedQuantity === line.pickedQuantity
     ? targetDraft.text
     : String(line.pickedQuantity);
