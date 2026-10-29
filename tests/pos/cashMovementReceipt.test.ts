@@ -106,12 +106,13 @@ describe("registro de un movimiento manual: respuesta inmediata del POST", () =>
   ])("una respuesta con %s distinto al solicitado se rechaza como inconsistente", async (_label, body) => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     stubFetch(() => jsonResponse(body, 201));
-    const { repository } = repositoryWithEvents();
+    const { repository, events } = repositoryWithEvents();
 
     await expect(repository.registerCashMovement(command)).rejects.toMatchObject({
       status: 502,
       code: "INVALID_BACKEND_RESPONSE",
     });
+    expect(events).toEqual([]);
   });
 
   it("un rechazo del backend (400) se propaga como error y no emite eventos", async () => {

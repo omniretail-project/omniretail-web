@@ -64,6 +64,12 @@ describe("findRegisteredMovementCandidates", () => {
     expect(candidates([movement({ amount: 5.0004, reason: "  Bolsas " })])).toHaveLength(1);
   });
 
+  it("tolera movimientos con motivo nulo o indefinido sin lanzar excepcion", () => {
+    const withNullReason = movement({ reason: null as unknown as string });
+    const withUndefinedReason = movement({ reason: undefined as unknown as string });
+    expect(candidates([withNullReason, withUndefinedReason])).toEqual([]);
+  });
+
   it("devuelve varios candidatos cuando hay mas de un movimiento nuevo igual (ambiguo)", () => {
     expect(candidates([movement({ id: id(502) }), movement({ id: id(503) })])).toHaveLength(2);
   });

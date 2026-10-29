@@ -36,7 +36,7 @@ export function findRegisteredMovementCandidates(input: {
       movement.cashShiftId === input.cashShiftId &&
       movement.type === input.request.type &&
       Math.abs(movement.amount - input.request.amount) < AMOUNT_TOLERANCE &&
-      movement.reason.trim() === reason &&
+      (movement.reason?.trim() ?? "") === reason &&
       movement.createdByUserId === input.actorUserId &&
       !movement.referenceType,
   );

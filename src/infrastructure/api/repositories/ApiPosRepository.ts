@@ -87,7 +87,6 @@ export class ApiPosRepository implements PosApiRepository {
       await backendFetch<unknown>("/pos/cash-movements", { method: "POST", body }),
       { reason: body.reason },
     );
-    this.emitSafely("cash-shift.changed", { entityId: movement.cashShiftId, action: "updated" });
     if (
       movement.cashShiftId !== body.cashShiftId ||
       movement.type !== body.type ||
@@ -101,6 +100,7 @@ export class ApiPosRepository implements PosApiRepository {
         "INVALID_BACKEND_RESPONSE",
       );
     }
+    this.emitSafely("cash-shift.changed", { entityId: movement.cashShiftId, action: "updated" });
     return movement;
   }
 
