@@ -77,20 +77,24 @@ export function useStorefrontOffers(quantityOverride?: { productId: string; quan
   // se derivan de el sin otra descarga y sin recalcular por cambios del carrito.
   const apiOffers = useMemo<StorefrontOfferItem[]>(
     () =>
-      catalog.products
-        .filter((product) => (product.discountAmount ?? 0) > 0)
-        .map((product) => ({
-          productId: product.id,
-          name: product.name,
-          sku: product.sku,
-          description: product.description,
-          imageSource: product.imageSource,
-          imageAlt: product.imageAlt,
-          basePrice: product.basePrice ?? product.salePrice,
-          effectivePrice: product.effectivePrice ?? product.salePrice,
-          discount: product.discountAmount ?? 0,
-          promotionName: "Oferta especial",
-        })),
+      catalog.products.flatMap((product) => {
+        const discount = product.discountAmount ?? 0;
+        if (discount <= 0) return [];
+        return [
+          {
+            productId: product.id,
+            name: product.name,
+            sku: product.sku,
+            description: product.description,
+            imageSource: product.imageSource,
+            imageAlt: product.imageAlt,
+            basePrice: product.basePrice ?? product.salePrice,
+            effectivePrice: product.effectivePrice ?? product.salePrice,
+            discount,
+            promotionName: "Oferta especial",
+          },
+        ];
+      }),
     [catalog.products],
   );
 
