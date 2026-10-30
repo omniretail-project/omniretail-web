@@ -25,6 +25,7 @@ export default defineConfig({
         "src/modules/logistics/application/mappers/DispatchApiMapper.ts",
         "src/modules/logistics/application/services/DispatchApplicationService.ts",
         "src/modules/logistics/components/DispatchReadPanel.tsx",
+        "src/modules/logistics/components/LogisticsHistoryDispatchModal.tsx",
         "src/modules/logistics/hooks/dispatchReadIdentity.ts",
         "src/modules/logistics/hooks/dispatchRequestIdentity.ts",
         "src/modules/logistics/hooks/useLogisticsDispatchRead.ts",

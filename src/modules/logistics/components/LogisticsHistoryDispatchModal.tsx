@@ -29,9 +29,6 @@ const emptyValues: DispatchShipmentFormValues = {
   trackingNumber: "",
 };
 
-const POS_ORDER_REFERENCE_PATTERN = /^POS-\d+$/;
-const REQUIRED_SHIPMENT_MESSAGE = "El transporte y el número de guía son obligatorios.";
-
 export function LogisticsHistoryDispatchModal({
   open,
   detail,
@@ -44,14 +41,10 @@ export function LogisticsHistoryDispatchModal({
   const [values, setValues] = useState(emptyValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const thirdParty = detail?.transportMode === TransportMode.third_party;
-  const posHomeDeliveryPresentation = POS_ORDER_REFERENCE_PATTERN.test(
-    detail?.orderReference.trim() ?? "",
-  );
   const shipmentMessage =
-    thirdParty || posHomeDeliveryPresentation
-      ? REQUIRED_SHIPMENT_MESSAGE
+    thirdParty
+      ? "El transporte y el número de guía son obligatorios."
       : "Para flota propia, el transporte y la guía son opcionales.";
-  const showRequiredFieldIndicators = thirdParty || posHomeDeliveryPresentation;
   const sendsNotificationEmail = detail?.notificationContact.emailMode === "send";
 
   const confirm = async () => {
@@ -102,7 +95,7 @@ export function LogisticsHistoryDispatchModal({
               <div>
                 <dt className="text-xs text-[var(--color-text-muted)]">Modalidad de transporte</dt>
                 <dd className="mt-1 font-medium">
-                  {thirdParty || posHomeDeliveryPresentation ? "Transporte externo" : "Flota propia"}
+                  {thirdParty ? "Transporte externo" : "Flota propia"}
                 </dd>
               </div>
             </dl>
@@ -116,7 +109,7 @@ export function LogisticsHistoryDispatchModal({
                 error={errors.carrierName}
                 hint={thirdParty ? undefined : "Opcional para flota propia"}
                 id="history-dispatch-carrier"
-                label={`Transporte${showRequiredFieldIndicators ? " *" : ""}`}
+                label={`Transporte${thirdParty ? " *" : ""}`}
               >
                 <Input
                   disabled={submitting}
@@ -131,7 +124,7 @@ export function LogisticsHistoryDispatchModal({
                 error={errors.trackingNumber}
                 hint={thirdParty ? undefined : "Opcional para flota propia"}
                 id="history-dispatch-tracking"
-                label={`Guía / tracking${showRequiredFieldIndicators ? " *" : ""}`}
+                label={`Guía / tracking${thirdParty ? " *" : ""}`}
               >
                 <Input
                   disabled={submitting}

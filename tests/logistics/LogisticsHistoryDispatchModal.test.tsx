@@ -46,13 +46,13 @@ function renderModal(
 }
 
 describe("LogisticsHistoryDispatchModal", () => {
-  it("presenta el pedido POS domiciliario como transporte externo sin cambiar su validacion own_fleet", async () => {
+  it("respeta own_fleet aunque la referencia del pedido sea POS", async () => {
     const onConfirm = renderModal(detail("POS-017", TransportMode.own_fleet));
 
-    expect(screen.getByText("Transporte externo")).toBeInTheDocument();
-    expect(screen.getByText("El transporte y el número de guía son obligatorios.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Transporte *")).toBeInTheDocument();
-    expect(screen.getByLabelText("Guía / tracking *")).toBeInTheDocument();
+    expect(screen.getByText("Flota propia")).toBeInTheDocument();
+    expect(screen.getByText("Para flota propia, el transporte y la guía son opcionales.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Transporte")).toBeInTheDocument();
+    expect(screen.getByLabelText("Guía / tracking")).toBeInTheDocument();
     expect(screen.getAllByText("Opcional para flota propia")).toHaveLength(2);
 
     fireEvent.click(screen.getByRole("button", { name: "Confirmar despacho" }));
@@ -63,6 +63,21 @@ describe("LogisticsHistoryDispatchModal", () => {
       carrierName: undefined,
       trackingNumber: undefined,
     }));
+  });
+
+  it("exige los datos de salida cuando el pedido POS usa transporte externo", async () => {
+    const onConfirm = renderModal(detail("POS-017", TransportMode.third_party));
+
+    expect(screen.getByText("Transporte externo")).toBeInTheDocument();
+    expect(screen.getByText("El transporte y el número de guía son obligatorios.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Transporte *")).toBeInTheDocument();
+    expect(screen.getByLabelText("Guía / tracking *")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar despacho" }));
+
+    expect(await screen.findByText("El transporte es obligatorio.")).toBeInTheDocument();
+    expect(screen.getByText("El número de guía es obligatorio.")).toBeInTheDocument();
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 
   it("conserva la presentacion existente para ecommerce con flota propia", () => {

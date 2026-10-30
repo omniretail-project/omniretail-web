@@ -172,7 +172,7 @@ function PreparedDetail({
       </div>
       {detail.transportMode === TransportMode.third_party ? (
         <div className="grid gap-3 sm:grid-cols-2">
-          <FormField error={errors.carrierName} id={`dispatch-carrier-${detail.orderId}`} label="Transportista">
+          <FormField error={errors.carrierName} id={`dispatch-carrier-${detail.orderId}`} label="Transportista *">
             <Input
               aria-describedby={errors.carrierName ? `dispatch-carrier-${detail.orderId}-error` : undefined}
               disabled={!canConfirm || submitting}
@@ -182,7 +182,7 @@ function PreparedDetail({
               value={carrierName}
             />
           </FormField>
-          <FormField error={errors.trackingNumber} id={`dispatch-tracking-${detail.orderId}`} label="Número de guía">
+          <FormField error={errors.trackingNumber} id={`dispatch-tracking-${detail.orderId}`} label="Número de guía *">
             <Input
               aria-describedby={errors.trackingNumber ? `dispatch-tracking-${detail.orderId}-error` : undefined}
               disabled={!canConfirm || submitting}
@@ -217,7 +217,7 @@ function Detail({ label, value }: { label: string; value: string }) {
 }
 
 function transportLabel(mode: TransportMode) {
-  return mode === TransportMode.third_party ? "Transportista externo" : "Flota propia";
+  return mode === TransportMode.third_party ? "Transporte externo" : "Flota propia";
 }
 
 function formatDateTime(value: string) {
