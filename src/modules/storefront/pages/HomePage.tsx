@@ -59,8 +59,11 @@ export function HomePage() {
                 alt={slide.title}
                 className="absolute inset-0 z-0 h-full w-full object-cover object-center"
                 fetchPriority="high"
+                height={900}
                 loading="eager"
+                sizes="(min-width: 1440px) 1440px, 100vw"
                 source={slide.imageSource}
+                width={1600}
               />
               <div
                 aria-hidden="true"
@@ -187,9 +190,10 @@ export function HomePage() {
                 <StorefrontCatalogImage
                   alt={category.name}
                   className="aspect-square w-full rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] object-cover p-3 shadow-sm transition duration-300 group-hover:-translate-y-1 group-hover:border-[var(--color-primary)] group-hover:shadow-md"
-                  decoding="async"
+                  height={160}
                   loading="lazy"
                   source={category.imageSource}
+                  width={160}
                 />
                 <p className="mt-3 font-bold text-[var(--color-text)]">{category.name}</p>
               </Link>

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { PublicDemoBanner } from "@/modules/auth/components/PublicDemoBanner";
 import { CurrentSessionProvider } from "@/modules/auth/providers/CurrentSessionProvider";
 import { PublicStorefrontShell } from "@/modules/storefront/components/PublicStorefrontShell";
+import { StorefrontCatalogProvider } from "@/modules/storefront/providers/StorefrontCatalogProvider";
 import { StorefrontCartProvider } from "@/modules/storefront/providers/StorefrontCartProvider";
 import { StorefrontCheckoutConfirmationProvider } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
 import { PublicTenantProvider } from "@/modules/storefront/providers/PublicTenantProvider";
@@ -38,11 +39,13 @@ export default function PublicLayout({ children }: Readonly<{ children: ReactNod
     <CurrentSessionProvider>
       <PublicDemoBanner />
       <PublicTenantProvider tenantSlug={publicStorefrontSlug}>
-        <StorefrontCartProvider>
-          <StorefrontCheckoutConfirmationProvider>
-            <PublicStorefrontShell>{children}</PublicStorefrontShell>
-          </StorefrontCheckoutConfirmationProvider>
-        </StorefrontCartProvider>
+        <StorefrontCatalogProvider>
+          <StorefrontCartProvider>
+            <StorefrontCheckoutConfirmationProvider>
+              <PublicStorefrontShell>{children}</PublicStorefrontShell>
+            </StorefrontCheckoutConfirmationProvider>
+          </StorefrontCartProvider>
+        </StorefrontCatalogProvider>
       </PublicTenantProvider>
     </CurrentSessionProvider>
   );

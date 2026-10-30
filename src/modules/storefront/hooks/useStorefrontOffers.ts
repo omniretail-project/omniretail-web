@@ -8,8 +8,8 @@ import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
 import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import { isApiMode } from "@/config/api-mode";
 import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
-import { ApiStorefrontCatalogService } from "@/modules/storefront/application/services/ApiStorefrontCatalogService";
 import { ensurePublicStorefrontTenant } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
+import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 
@@ -65,7 +65,7 @@ export function useStorefrontOffers(quantityOverride?: { productId: string; quan
   const repositories = useRepositories();
   const eventBus = useDataEventBus();
   const { tenantId, tenantSlug, loading: tenantLoading, error: tenantError } = usePublicTenant();
-  const apiCatalogService = useMemo(() => new ApiStorefrontCatalogService(), []);
+  const catalog = useStorefrontDiscovery();
   const { items: cartItems } = useStorefrontCart();
   const overrideProductId = quantityOverride?.productId;
   const overrideQuantity = quantityOverride?.quantity;
@@ -73,7 +73,29 @@ export function useStorefrontOffers(quantityOverride?: { productId: string; quan
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Modo api: el backend ya entrega precio final y descuento en el catalogo compartido; las ofertas
+  // se derivan de el sin otra descarga y sin recalcular por cambios del carrito.
+  const apiOffers = useMemo<StorefrontOfferItem[]>(
+    () =>
+      catalog.products
+        .filter((product) => (product.discountAmount ?? 0) > 0)
+        .map((product) => ({
+          productId: product.id,
+          name: product.name,
+          sku: product.sku,
+          description: product.description,
+          imageSource: product.imageSource,
+          imageAlt: product.imageAlt,
+          basePrice: product.basePrice ?? product.salePrice,
+          effectivePrice: product.effectivePrice ?? product.salePrice,
+          discount: product.discountAmount ?? 0,
+          promotionName: "Oferta especial",
+        })),
+    [catalog.products],
+  );
+
   useEffect(() => {
+    if (isApiMode()) return;
     let active = true;
     const load = async () => {
       if (!tenantId) {
@@ -87,25 +109,6 @@ export function useStorefrontOffers(quantityOverride?: { productId: string; quan
       setLoading(true);
       setError(null);
       try {
-        if (isApiMode()) {
-          const discovery = await apiCatalogService.list(tenantSlug);
-          const offers = discovery.products
-            .filter((product) => (product.discountAmount ?? 0) > 0)
-            .map((product) => ({
-              productId: product.id,
-              name: product.name,
-              sku: product.sku,
-              description: product.description,
-              imageSource: product.imageSource,
-              imageAlt: product.imageAlt,
-              basePrice: product.basePrice ?? product.salePrice,
-              effectivePrice: product.effectivePrice ?? product.salePrice,
-              discount: product.discountAmount ?? 0,
-              promotionName: "Oferta especial",
-            }));
-          if (active) setItems(offers);
-          return;
-        }
         // Auditoría §15/§30 (BLOCKER): esta lectura pública lee productos/precios directo del
         // repositorio (sin pasar por Discovery/ProductDetail) -- mismo bypass, mismo guard.
         await ensurePublicStorefrontTenant(repositories, tenantSlug, tenantId);
@@ -199,7 +202,6 @@ export function useStorefrontOffers(quantityOverride?: { productId: string; quan
       unsubscribe();
     };
   }, [
-    apiCatalogService,
     cartItems,
     eventBus,
     overrideProductId,
@@ -211,8 +213,14 @@ export function useStorefrontOffers(quantityOverride?: { productId: string; quan
     tenantSlug,
   ]);
 
-  return useMemo(
-    () => ({ items, loading: tenantLoading || loading, error }),
-    [error, items, loading, tenantLoading],
-  );
+  return useMemo(() => {
+    if (isApiMode()) {
+      return {
+        items: apiOffers,
+        loading: catalog.loading,
+        error: catalog.error ? "No se pudieron cargar las ofertas." : null,
+      };
+    }
+    return { items, loading: tenantLoading || loading, error };
+  }, [apiOffers, catalog.error, catalog.loading, error, items, loading, tenantLoading]);
 }
