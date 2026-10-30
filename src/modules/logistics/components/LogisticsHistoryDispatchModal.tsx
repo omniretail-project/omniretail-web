@@ -29,6 +29,8 @@ const emptyValues: DispatchShipmentFormValues = {
   trackingNumber: "",
 };
 
+const POS_ORDER_REFERENCE_PATTERN = /^POS-\d+$/;
+
 export function LogisticsHistoryDispatchModal({
   open,
   detail,
@@ -41,6 +43,9 @@ export function LogisticsHistoryDispatchModal({
   const [values, setValues] = useState(emptyValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const thirdParty = detail?.transportMode === TransportMode.third_party;
+  const posHomeDeliveryPresentation = POS_ORDER_REFERENCE_PATTERN.test(
+    detail?.orderReference.trim() ?? "",
+  );
   const sendsNotificationEmail = detail?.notificationContact.emailMode === "send";
 
   const confirm = async () => {
@@ -91,7 +96,7 @@ export function LogisticsHistoryDispatchModal({
               <div>
                 <dt className="text-xs text-[var(--color-text-muted)]">Modalidad de transporte</dt>
                 <dd className="mt-1 font-medium">
-                  {thirdParty ? "Transporte externo" : "Flota propia"}
+                  {thirdParty || posHomeDeliveryPresentation ? "Transporte externo" : "Flota propia"}
                 </dd>
               </div>
             </dl>
@@ -102,7 +107,9 @@ export function LogisticsHistoryDispatchModal({
             <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
               {thirdParty
                 ? "El transporte y el número de guía son obligatorios."
-                : "Para flota propia, el transporte y la guía son opcionales."}
+                : posHomeDeliveryPresentation
+                  ? "El transporte y número de guía son obligatorios."
+                  : "Para flota propia, el transporte y la guía son opcionales."}
             </p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <FormField
