@@ -60,7 +60,7 @@ export function HomePage() {
                 className="absolute inset-0 z-0 h-full w-full object-cover object-center"
                 fetchPriority="high"
                 height={900}
-                loading="eager"
+                preload
                 sizes="(min-width: 1440px) 1440px, 100vw"
                 source={slide.imageSource}
                 width={1600}

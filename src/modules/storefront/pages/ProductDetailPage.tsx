@@ -160,7 +160,7 @@ export function ProductDetailPage({ productId }: { productId: string }) {
             className="h-72 w-full rounded-xl bg-slate-50 object-contain object-center p-5 md:h-[29rem]"
             fetchPriority="high"
             height={800}
-            loading="eager"
+            preload
             sizes="(min-width: 1024px) 50vw, 100vw"
             source={media[0]?.source}
             width={800}

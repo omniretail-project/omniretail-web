@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   cartItems: [] as Array<{ productId: string; quantity: number }>,
+  tenant: { tenantId: "tenant-1" as string | null, tenantSlug: "demo", loading: false, error: null as string | null },
 }));
 
 vi.mock("@/config/api-mode", () => ({ isApiMode: () => true }));
@@ -12,7 +13,7 @@ vi.mock("@/infrastructure/providers/RepositoryProvider", () => {
   return { useRepositories: () => repositories, useDataEventBus: () => eventBus };
 });
 vi.mock("@/modules/storefront/providers/PublicTenantProvider", () => ({
-  usePublicTenant: () => ({ tenantId: "tenant-1", tenantSlug: "demo", loading: false, error: null }),
+  usePublicTenant: () => state.tenant,
 }));
 vi.mock("@/modules/storefront/providers/StorefrontCartProvider", () => ({
   useStorefrontCart: () => ({ items: state.cartItems }),
@@ -35,9 +36,19 @@ function HeaderConsumer() {
 }
 
 function PageConsumer() {
-  const { products, loading } = useStorefrontDiscovery();
-  const { items: offers } = useStorefrontOffers();
-  return <p>{loading ? "cargando" : `page:${products.length} offers:${offers.map((offer) => offer.productId).join(",")}`}</p>;
+  const { products, loading, error, reload } = useStorefrontDiscovery();
+  const { items: offers, error: offersError } = useStorefrontOffers();
+  if (loading) return <p>cargando</p>;
+  if (error) {
+    return (
+      <>
+        <p>{error}</p>
+        <p>{offersError}</p>
+        <button onClick={reload} type="button">reintentar</button>
+      </>
+    );
+  }
+  return <p>{`page:${products.length} offers:${offers.map((offer) => offer.productId).join(",")}`}</p>;
 }
 
 function Storefront() {
@@ -54,6 +65,7 @@ beforeEach(() => {
   fetchSpy.mockImplementation(async () => new Response(JSON.stringify(backendProducts), { status: 200 }));
   vi.stubGlobal("fetch", fetchSpy);
   state.cartItems = [];
+  state.tenant = { tenantId: "tenant-1", tenantSlug: "demo", loading: false, error: null };
 });
 
 afterEach(() => {
@@ -79,5 +91,32 @@ describe("StorefrontCatalogProvider", () => {
 
     await waitFor(() => expect(screen.getByText("page:2 offers:p-1")).toBeTruthy());
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("reporta el error de la tienda sin descargar cuando no hay tenant", async () => {
+    state.tenant = { tenantId: null, tenantSlug: "demo", loading: false, error: "La tienda publica no esta disponible." };
+    render(<Storefront />);
+
+    expect(await screen.findByText("La tienda publica no esta disponible.")).toBeTruthy();
+    expect(screen.getByText("No se pudieron cargar las ofertas.")).toBeTruthy();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("muestra el error de carga y permite reintentar", async () => {
+    fetchSpy.mockResolvedValueOnce(new Response("{}", { status: 500 }));
+    render(<Storefront />);
+
+    expect(await screen.findByText("No se pudo cargar la tienda. Intenta nuevamente.")).toBeTruthy();
+    fireEvent.click(screen.getByText("reintentar"));
+
+    expect(await screen.findByText("page:2 offers:p-1")).toBeTruthy();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("exige montar el provider", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(() => render(<HeaderConsumer />)).toThrow(
+      "useStorefrontCatalogContext must be used inside StorefrontCatalogProvider",
+    );
   });
 });

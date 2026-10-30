@@ -31,7 +31,7 @@ const StorefrontCatalogContext = createContext<StorefrontCatalogContextValue | n
  * header, las paginas y las ofertas. Antes cada consumidor descargaba el catalogo completo por su
  * cuenta (3-4 veces por pagina).
  */
-export function StorefrontCatalogProvider({ children }: { children: ReactNode }) {
+export function StorefrontCatalogProvider({ children }: Readonly<{ children: ReactNode }>) {
   const repositories = useRepositories();
   const eventBus = useDataEventBus();
   const { tenantId, tenantSlug, loading: tenantLoading, error: tenantError } = usePublicTenant();
