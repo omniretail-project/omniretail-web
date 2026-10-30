@@ -106,15 +106,16 @@ describe("DispatchReadPanel", () => {
     render(<DispatchReadPanel />);
 
     expect(screen.getAllByText("No disponible")).toHaveLength(2);
+    expect(screen.getAllByText(/Transporte externo/)).toHaveLength(2);
 
     fireEvent.click(screen.getByRole("button", { name: "Confirmar despacho" }));
     expect(confirmOrder).not.toHaveBeenCalled();
     expect(screen.getAllByText(/obligatorio/i)).toHaveLength(2);
 
-    fireEvent.change(screen.getByLabelText("Transportista"), {
+    fireEvent.change(screen.getByLabelText("Transportista *"), {
       target: { value: " Carrier " },
     });
-    fireEvent.change(screen.getByLabelText(/mero de gu/i), {
+    fireEvent.change(screen.getByLabelText("Número de guía *"), {
       target: { value: " TRACK-1 " },
     });
     fireEvent.click(screen.getByRole("button", { name: "Confirmar despacho" }));
@@ -218,7 +219,7 @@ describe("DispatchReadPanel", () => {
       render(<DispatchReadPanel />);
 
       expect(screen.getAllByRole("button", { name: "Confirmar despacho" })).toHaveLength(1);
-      expect(screen.getAllByLabelText("Transportista")).toHaveLength(1);
+      expect(screen.getAllByLabelText("Transportista *")).toHaveLength(1);
     });
 
     it("se puede cerrar con el boton del pedido o con «Cerrar»", () => {

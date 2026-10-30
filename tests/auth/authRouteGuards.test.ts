@@ -183,6 +183,38 @@ describe("validaciones especificas", () => {
     expect(backendFetch).not.toHaveBeenCalled();
   });
 
+  it.each(["<script>alert(1)</script>", "Ana\u0000Pérez", "Ana\nPérez", "Ana​Pérez", "A".repeat(101)])(
+    "registro rechaza el nombre %j sin llamar al backend",
+    async (name) => {
+      const response = await register(
+        buildRequest("/api/auth/register", {
+          body: JSON.stringify({ tenantSlug: "tienda", name, email: "a@b.co", password: "y" }),
+        }),
+      );
+      expect(response.status).toBe(400);
+      expect((await response.json()).code).toBe("VALIDATION_ERROR");
+      expect(backendFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("registro reenvia al backend el nombre en NFC y el correo en minusculas", async () => {
+    const response = await register(
+      buildRequest("/api/auth/register", {
+        body: JSON.stringify({
+          tenantSlug: "tienda",
+          name: "  José   Pérez ",
+          email: " Ana@Tienda.TEST ",
+          password: "y",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(204);
+    const [url, init] = backendFetch.mock.calls[0];
+    expect(String(url)).toBe(`${BACKEND}/public/tienda/auth/register`);
+    expect(JSON.parse(String(init.body))).toEqual({ name: "José Pérez", email: "ana@tienda.test", password: "y" });
+  });
+
   it("Content-Type application/json con charset se acepta", async () => {
     const response = await verifyEmail(
       buildRequest("/api/auth/verify-email", { contentType: "application/json; charset=utf-8", body: JSON.stringify({ token: "t" }) }),

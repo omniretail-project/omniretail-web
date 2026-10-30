@@ -26,6 +26,39 @@ const newCustomer = {
   passwordMock: "ClienteNuevo1!",
 };
 
+describe("MockAuthRepository.registerCustomer: sanitizacion del nombre", () => {
+  it.each(["<script>alert(1)</script>", "Ana\u0000Pérez", "Ana‮Pérez"])(
+    "rechaza el nombre %j sin crear nada",
+    async (name) => {
+      const { auth, store, events } = createHarness();
+      const before = store.getSnapshot().users.length;
+
+      await expect(auth.registerCustomer({ ...newCustomer, name })).rejects.toThrow(
+        "El nombre solo puede contener letras, espacios, apóstrofos y guiones.",
+      );
+      expect(store.getSnapshot().users).toHaveLength(before);
+      expect(events).toEqual([]);
+    },
+  );
+
+  it("guarda el nombre en NFC y el correo en minusculas", async () => {
+    const { auth, store } = createHarness();
+
+    const result = await auth.registerCustomer({
+      ...newCustomer,
+      name: "  José   Pérez ",
+      email: " Jose.Perez@Tienda.TEST ",
+    });
+
+    expect(result.user).toMatchObject({ name: "José Pérez", email: "jose.perez@tienda.test" });
+    const snapshot = store.getSnapshot();
+    const user = snapshot.users.find((item) => item.email === "jose.perez@tienda.test");
+    expect(user?.name).toBe("José Pérez");
+    expect(snapshot.customers.find((item) => item.id === user?.customerId)?.name).toBe("José Pérez");
+    expect(snapshot.authAccounts.find((item) => item.userId === user?.id)?.email).toBe("jose.perez@tienda.test");
+  });
+});
+
 describe("MockAuthRepository.registerCustomer: misma respuesta para correo nuevo o repetido", () => {
   it("un correo nuevo crea la cuenta pendiente y devuelve el token demo", async () => {
     const { auth, store, events } = createHarness();

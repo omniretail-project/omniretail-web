@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type {
+  ReportExportFormat,
   ReportFilter,
   ReportKind,
   ReportsDataDto,
@@ -34,8 +35,13 @@ export interface ReportsExportModalProps {
   data: ReportsDataDto;
   initialKind: ReportKind;
   initialFilter: ReportFilter;
-  onExport: (configs: { kind: ReportKind; filter: ReportFilter }[]) => Promise<void>;
+  onExport: (configs: { kind: ReportKind; filter: ReportFilter }[], format: ReportExportFormat) => Promise<void>;
 }
+
+const EXPORT_FORMATS: { value: ReportExportFormat; label: string; hint: string }[] = [
+  { value: "xlsx", label: "Excel (.xlsx)", hint: "Un libro con una hoja por reporte" },
+  { value: "csv", label: "CSV (.csv)", hint: "Un archivo por reporte" },
+];
 
 export function ReportsExportModal({
   open,
@@ -60,8 +66,10 @@ export function ReportsExportModal({
   });
 
   const [isExporting, setIsExporting] = useState(false);
+  const [format, setFormat] = useState<ReportExportFormat>("xlsx");
 
   const canExport = Object.values(selectedReports).some(Boolean);
+  const formatLabel = format === "csv" ? "CSV" : "Excel";
 
   const handleExport = async () => {
     if (!canExport) return;
@@ -70,7 +78,7 @@ export function ReportsExportModal({
       const configs = (["sales", "purchases", "movements", "payments"] as ReportKind[])
         .filter((k) => selectedReports[k])
         .map((k) => ({ kind: k, filter: filters[k] }));
-      await onExport(configs);
+      await onExport(configs, format);
       onClose();
     } finally {
       setIsExporting(false);
@@ -89,7 +97,7 @@ export function ReportsExportModal({
       open={open}
       onClose={onClose}
       title="Exportar Reportes"
-      subtitle="Configurá los reportes a exportar en Excel"
+      subtitle="Configurá los reportes a exportar en Excel o CSV"
       size="lg"
       footer={
         <div className="flex justify-end gap-3">
@@ -97,12 +105,38 @@ export function ReportsExportModal({
             Cancelar
           </Button>
           <Button type="button" onClick={handleExport} disabled={!canExport || isExporting}>
-            {isExporting ? "Generando..." : "Generar Excel"}
+            {isExporting ? "Generando..." : `Generar ${formatLabel}`}
           </Button>
         </div>
       }
     >
       <div className="space-y-6">
+        <fieldset>
+          <legend className="mb-3 text-sm font-bold text-[var(--color-text)]">Formato</legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {EXPORT_FORMATS.map((option) => (
+              <label
+                className="flex cursor-pointer items-start gap-2 rounded-lg border border-[var(--color-border)] p-3"
+                htmlFor={`export-format-${option.value}`}
+                key={option.value}
+              >
+                <input
+                  checked={format === option.value}
+                  className="mt-0.5 h-4 w-4 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                  id={`export-format-${option.value}`}
+                  name="export-format"
+                  onChange={() => setFormat(option.value)}
+                  type="radio"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-[var(--color-text)]">{option.label}</span>
+                  <span className="block text-xs text-[var(--color-text-muted)]">{option.hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
         <section>
           <h3 className="mb-3 text-sm font-bold text-[var(--color-text)]">Reportes a incluir</h3>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

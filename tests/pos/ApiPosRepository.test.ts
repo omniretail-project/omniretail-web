@@ -165,6 +165,36 @@ describe("ApiPosRepository - ventas", () => {
     ]);
   });
 
+  it("envía third_party dentro de deferredOrder para una venta POS a domicilio", async () => {
+    const calls = stubFetch(() => jsonResponse(saleConfirmationJson, 201));
+    const { repository } = recordEvents();
+
+    await repository.confirmSale({
+      ...confirmSaleCommand,
+      deferredOrder: {
+        idempotencyKey: "order-home-delivery",
+        deliveryMethod: DeliveryMethod.home_delivery,
+        transportMode: TransportMode.third_party,
+        deliveryAddress: {
+          recipientName: "Ana López",
+          recipientPhone: "55550101",
+          line1: "6a avenida 1-23",
+          city: "Guatemala",
+          country: "Guatemala",
+        },
+        notificationContact: { emailMode: "not_applicable" },
+      },
+    });
+
+    expect(calls[0]?.body).toMatchObject({
+      deferredOrder: {
+        idempotencyKey: "order-home-delivery",
+        deliveryMethod: DeliveryMethod.home_delivery,
+        transportMode: TransportMode.third_party,
+      },
+    });
+  });
+
   it("cotiza el envío a domicilio con el subtotal y normaliza el umbral nulo", async () => {
     const calls = stubFetch(() =>
       jsonResponse({ subtotal: "40.00", shippingTotal: "15.00", total: "55.00", freeShippingThreshold: null }),

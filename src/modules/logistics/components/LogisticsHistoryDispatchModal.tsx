@@ -41,6 +41,10 @@ export function LogisticsHistoryDispatchModal({
   const [values, setValues] = useState(emptyValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const thirdParty = detail?.transportMode === TransportMode.third_party;
+  const shipmentMessage =
+    thirdParty
+      ? "El transporte y el número de guía son obligatorios."
+      : "Para flota propia, el transporte y la guía son opcionales.";
   const sendsNotificationEmail = detail?.notificationContact.emailMode === "send";
 
   const confirm = async () => {
@@ -99,11 +103,7 @@ export function LogisticsHistoryDispatchModal({
 
           <section className="rounded-lg border border-t-4 border-[var(--color-border)] border-t-[var(--color-structure)] bg-white p-3.5">
             <h3 className="text-sm font-bold text-[var(--color-title)]">Datos de salida</h3>
-            <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
-              {thirdParty
-                ? "El transporte y el número de guía son obligatorios."
-                : "Para flota propia, el transporte y la guía son opcionales."}
-            </p>
+            <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">{shipmentMessage}</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <FormField
                 error={errors.carrierName}

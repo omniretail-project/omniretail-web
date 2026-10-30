@@ -1,6 +1,7 @@
 import type { Workbook } from "exceljs";
 import type { ReportTotals } from "@/modules/administration/application/dto/ReportDto";
 import { getMovementTypeLabel, getPaymentMethodLabel, getReportStatusLabel } from "@/modules/administration/application/reportLabels";
+import { downloadBlob } from "@/modules/administration/application/reportDownload";
 
 export interface ReportXlsxData {
   headers: string[];
@@ -493,14 +494,7 @@ async function saveWorkbook(workbook: Workbook, filename: string) {
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, filename);
 }
 
 function getColumnWidth(
