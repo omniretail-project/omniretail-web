@@ -4,8 +4,10 @@ import { useCallback, useState } from "react";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useOptionalPublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import type { RegisterFormDto } from "@/modules/auth/application/dto/RegisterFormDto";
+import { normalizePersonName } from "@/config/person-name-policy";
 import {
   hasRegisterValidationErrors,
+  normalizeRegisterEmail,
   validateRegisterForm,
   type RegisterFormValidationErrors,
 } from "@/modules/auth/validation/register.validation";
@@ -98,8 +100,9 @@ export function useRegister() {
       const { user: createdUser, emailVerificationToken } =
         await repositories.auth.registerCustomer({
           tenantSlug: tenantSlug ?? "",
-          name: dto.name.trim(),
-          email: dto.email.trim(),
+          // Se envia la forma canonica que se valido (NFC, minusculas), no el texto tal como se tecleo.
+          name: normalizePersonName(dto.name),
+          email: normalizeRegisterEmail(dto.email),
           phone: dto.phone.trim() || undefined,
           passwordMock: dto.password,
         });

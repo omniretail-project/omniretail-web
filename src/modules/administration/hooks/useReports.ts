@@ -7,6 +7,7 @@ import type {
   MovementReportRow,
   PaymentReportRow,
   PurchasesReportRow,
+  ReportExportFormat,
   ReportFilter,
   ReportKind,
   ReportRow,
@@ -15,6 +16,7 @@ import type {
   SalesReportRow,
 } from "@/modules/administration/application/dto/ReportDto";
 import { downloadMultipleReportsXlsx, type ReportExportConfig } from "@/modules/administration/application/reportXlsx";
+import { downloadReportCsv } from "@/modules/administration/application/reportCsv";
 import { getOptions, getFilterSummary } from "@/modules/administration/application/reportHelpers";
 import { GetReportsService } from "@/modules/administration/application/services/GetReportsService";
 import {
@@ -123,7 +125,10 @@ export function useReports() {
     setKindState(nextKind);
     setFilter({});
   }, []);
-  const exportConfigs = useCallback(async (configs: { kind: ReportKind; filter: ReportFilter }[]) => {
+  const exportConfigs = useCallback(async (
+    configs: { kind: ReportKind; filter: ReportFilter }[],
+    format: ReportExportFormat = "xlsx",
+  ) => {
     setError(null);
     try {
       const exportTenantId = await service.authorizeExport();
@@ -151,6 +156,13 @@ export function useReports() {
       });
 
       const dateKey = getLocalDateKey(new Date());
+      if (format === "csv") {
+        // Un CSV solo admite una tabla: un archivo por reporte, con los mismos datos y columnas del Excel.
+        reports.forEach((report) =>
+          downloadReportCsv(`Reporte_${report.sheetName}_${dateKey}.csv`, report.data),
+        );
+        return;
+      }
       const filename = reports.length > 1
         ? `Reportes_Administrativos_${dateKey}.xlsx`
         : `Reporte_${reports[0].sheetName}_${dateKey}.xlsx`;

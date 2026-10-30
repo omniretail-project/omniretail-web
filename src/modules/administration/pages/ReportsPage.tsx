@@ -86,11 +86,11 @@ export function ReportsPage() {
               className="gap-2"
               disabled={!canExport || loading}
               onClick={() => setIsExportModalOpen(true)}
-              title={canExport ? undefined : "Exportar Excel requiere Reportes avanzados y el permiso admin.reports.export"}
+              title={canExport ? undefined : "Exportar reportes requiere Reportes avanzados y el permiso admin.reports.export"}
               type="button"
             >
               <DownloadIcon className="h-4 w-4" />
-              Exportar Excel
+              Exportar reportes
             </Button>
             {!canExport ? (
               <p className="text-xs text-[var(--color-text-muted)]">
