@@ -27,7 +27,7 @@ export function BranchesPage() {
             <p className="text-center text-[var(--color-text-muted)]">Cargando sucursales...</p>
           ) : branches.length === 0 ? (
             <p className="rounded-xl border border-dashed border-[var(--color-border)] p-8 text-center text-[var(--color-text-muted)]">
-              No hay sucursales tipo tienda activas disponibles.
+              No hay sucursales activas disponibles.
             </p>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
