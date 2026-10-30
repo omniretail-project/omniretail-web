@@ -50,9 +50,9 @@ describe("LogisticsHistoryDispatchModal", () => {
     const onConfirm = renderModal(detail("POS-017", TransportMode.own_fleet));
 
     expect(screen.getByText("Transporte externo")).toBeInTheDocument();
-    expect(screen.getByText("El transporte y número de guía son obligatorios.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Transporte")).toBeInTheDocument();
-    expect(screen.getByLabelText("Guía / tracking")).toBeInTheDocument();
+    expect(screen.getByText("El transporte y el número de guía son obligatorios.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Transporte *")).toBeInTheDocument();
+    expect(screen.getByLabelText("Guía / tracking *")).toBeInTheDocument();
     expect(screen.getAllByText("Opcional para flota propia")).toHaveLength(2);
 
     fireEvent.click(screen.getByRole("button", { name: "Confirmar despacho" }));
@@ -70,6 +70,8 @@ describe("LogisticsHistoryDispatchModal", () => {
 
     expect(screen.getByText("Flota propia")).toBeInTheDocument();
     expect(screen.getByText("Para flota propia, el transporte y la guía son opcionales.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Transporte")).toBeInTheDocument();
+    expect(screen.getByLabelText("Guía / tracking")).toBeInTheDocument();
   });
 
   it("conserva la presentacion y obligatoriedad existentes para third_party", () => {
