@@ -17,6 +17,11 @@ const nextConfig: NextConfig = {
   productionBrowserSourceMaps: false,
   // Sin la cabecera `X-Powered-By: Next.js`: no se anuncia el framework a quien escanea el sitio.
   poweredByHeader: false,
+  // Optimizador de next/image solo para medios propios: /api/media (proxy del backend) y estaticos.
+  images: {
+    formats: ["image/avif", "image/webp"],
+    localPatterns: [{ pathname: "/api/media/**" }, { pathname: "/images/**" }],
+  },
   // `noindex` por cabecera, solo en el build del sitio comercial oficial (ver arriba).
   async headers() {
     return buildNoIndexHeaders({

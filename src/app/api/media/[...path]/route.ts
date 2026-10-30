@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBackendBaseUrl, serviceUnavailable } from "@/app/api/_lib/backend";
+import { isBackendManagedMediaUrl } from "@/infrastructure/api/mediaUrl";
+
+/**
+ * El backend publica cada imagen con un UUID nuevo (nunca sobrescribe el archivo): la URL identifica
+ * un contenido fijo y el navegador puede conservarla sin revalidar.
+ */
+const IMMUTABLE_MEDIA_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
@@ -56,6 +63,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
   for (const name of ["Content-Type", "Last-Modified", "ETag", "Cache-Control"] as const) {
     const value = response.headers.get(name);
     if (value) headers.set(name, value);
+  }
+  // Spring solo envia Last-Modified: sin politica propia, cada visita volvia a pedir la imagen.
+  if (response.status === 200 && !headers.has("Cache-Control") && isBackendManagedMediaUrl(path)) {
+    headers.set("Cache-Control", IMMUTABLE_MEDIA_CACHE_CONTROL);
   }
   headers.set("X-Content-Type-Options", "nosniff");
   const responseBody =

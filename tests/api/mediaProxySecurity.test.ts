@@ -79,6 +79,43 @@ describe("WEB-02: proxy publico de medios", () => {
     expect(response.headers.get("Content-Type")).toBe("image/webp");
   });
 
+  describe("cache de imagenes administradas", () => {
+    const uuid = "11111111-2222-4333-8444-555555555555";
+    const managedPath = [uuid, "products", uuid, `${uuid}.webp`];
+
+    it("marca como immutable una imagen administrada cuando el backend no envia Cache-Control", async () => {
+      fetchSpy.mockResolvedValueOnce(
+        new Response(Uint8Array.of(1), { headers: { "Content-Type": "image/webp" } }),
+      );
+
+      const response = await GET(request(), context(managedPath));
+      expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+    });
+
+    it("respeta la politica del backend si la envia", async () => {
+      fetchSpy.mockResolvedValueOnce(
+        new Response(Uint8Array.of(1), {
+          headers: { "Content-Type": "image/webp", "Cache-Control": "no-cache" },
+        }),
+      );
+
+      const response = await GET(request(), context(managedPath));
+      expect(response.headers.get("Cache-Control")).toBe("no-cache");
+    });
+
+    it("no cachea rutas fuera del patron administrado ni respuestas de error", async () => {
+      fetchSpy.mockResolvedValueOnce(
+        new Response(Uint8Array.of(1), { headers: { "Content-Type": "image/png" } }),
+      );
+      const unmanaged = await GET(request(), context());
+      expect(unmanaged.headers.get("Cache-Control")).toBeNull();
+
+      fetchSpy.mockResolvedValueOnce(new Response("{}", { status: 404 }));
+      const missing = await GET(request(), context(managedPath));
+      expect(missing.headers.get("Cache-Control")).toBeNull();
+    });
+  });
+
   it("mantiene el 404 y el cuerpo devueltos por el backend", async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response('{"code":"MEDIA_NOT_FOUND"}', {

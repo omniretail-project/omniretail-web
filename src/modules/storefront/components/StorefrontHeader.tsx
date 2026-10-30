@@ -70,7 +70,9 @@ export function StorefrontHeader() {
             <StorefrontCatalogImage
               alt={config.storeName}
               className="h-9 w-9 shrink-0 rounded-xl border border-white/10 bg-white object-contain p-1"
+              height={36}
               source={config.logoImageSource}
+              width={36}
             />
           ) : (
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--color-primary)] text-xs text-[var(--color-topbar)] shadow-sm">
@@ -162,9 +164,10 @@ export function StorefrontHeader() {
                         <StorefrontCatalogImage
                           alt={product.imageAlt ?? product.name}
                           className="h-11 w-11 shrink-0 rounded-md border border-[var(--color-border)] bg-slate-50 object-contain p-1"
-                          decoding="async"
+                          height={44}
                           loading="lazy"
                           source={product.imageSource}
+                          width={44}
                         />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-bold text-[var(--color-text)]">

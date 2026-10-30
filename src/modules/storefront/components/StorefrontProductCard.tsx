@@ -53,9 +53,11 @@ export function StorefrontProductCard({
           <StorefrontCatalogImage
             alt={product.imageAlt ?? product.name}
             className={`${compact ? "h-40" : "h-48"} w-full bg-slate-50 object-contain object-center p-3 transition duration-500 group-hover:scale-[1.03]`}
-            decoding="async"
+            height={300}
             loading="lazy"
+            sizes="(min-width: 1280px) 400px, (min-width: 640px) 50vw, 100vw"
             source={product.imageSource}
+            width={400}
           />
           {offer ? (
             <span className="absolute left-3 top-3 rounded-md bg-[var(--color-danger)] px-2.5 py-1 text-xs font-black uppercase tracking-wider text-white">

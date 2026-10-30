@@ -244,6 +244,11 @@ export default defineConfig({
         "src/modules/storefront/pages/ProductDetailPage.tsx",
         "src/modules/storefront/components/StorefrontHeader.tsx",
         "src/modules/storefront/providers/StorefrontCartProvider.tsx",
+        // Catalogo compartido e imagenes optimizadas del storefront (PR de performance).
+        "src/modules/storefront/providers/StorefrontCatalogProvider.tsx",
+        "src/modules/storefront/components/StorefrontCatalogImage.tsx",
+        "src/modules/storefront/hooks/useStorefrontOffers.ts",
+        "src/modules/storefront/hooks/useStorefrontDiscovery.ts",
         "src/modules/storefront/pages/OrderConfirmationPage.tsx",
         "src/modules/customer/pages/PedidoDetallePage.tsx",
         // Lote 1 PR #191: archivos con pruebas existentes que no estaban instrumentados.
