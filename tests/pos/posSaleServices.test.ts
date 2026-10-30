@@ -388,6 +388,44 @@ describe("ConfirmSaleService en modo API", () => {
     });
   });
 
+  it("envía la modalidad de transporte elegida para una entrega a domicilio", async () => {
+    const { repositories, posApi } = createPosRepositories();
+
+    await new ConfirmSaleService(repositories).execute(
+      confirmInput({
+        orderIdempotencyKey: "order-home-delivery",
+        checkout: checkout({
+          deliveryMethod: DeliveryMethod.home_delivery,
+          transportMode: TransportMode.third_party,
+          deliveryAddress: {
+            recipientName: "Ana López",
+            recipientPhone: "55550101",
+            line1: "6a avenida 1-23",
+            city: "Guatemala",
+            country: "Guatemala",
+          },
+          notificationContact: { emailMode: "not_applicable" },
+        }),
+      }),
+    );
+
+    expect(posApi.confirmSale.mock.calls[0]?.[0].deferredOrder).toEqual({
+      idempotencyKey: "order-home-delivery",
+      deliveryMethod: DeliveryMethod.home_delivery,
+      transportMode: TransportMode.third_party,
+      notificationContact: { emailMode: "not_applicable" },
+      deliveryAddress: {
+        recipientName: "Ana López",
+        recipientPhone: "55550101",
+        line1: "6a avenida 1-23",
+        city: "Guatemala",
+        country: "Guatemala",
+        references: undefined,
+      },
+      storePickupContact: undefined,
+    });
+  });
+
   it("valida la cuenta bancaria y envía la verificación externa de la transferencia", async () => {
     const { repositories, posApi, raw } = createPosRepositories();
 

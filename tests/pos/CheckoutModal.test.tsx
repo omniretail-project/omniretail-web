@@ -63,7 +63,7 @@ function checkoutWithPhone(
     transportMode:
       deliveryMethod === DeliveryMethod.store_pickup
         ? TransportMode.customer
-        : TransportMode.third_party,
+        : TransportMode.own_fleet,
     storePickupContact:
       deliveryMethod === DeliveryMethod.store_pickup
         ? { recipientName: "Ana", recipientPhone }
@@ -86,6 +86,7 @@ function renderPhoneField(
 ) {
   const onDeliveryAddressChange = vi.fn();
   const onStorePickupContactChange = vi.fn();
+  const onCheckoutChange = vi.fn();
   render(
     <CheckoutModal
       appliedAmount={50}
@@ -116,7 +117,7 @@ function renderPhoneField(
       subtotal={50}
       total={50}
       validated={false}
-      onCheckoutChange={vi.fn()}
+      onCheckoutChange={onCheckoutChange}
       onClose={vi.fn()}
       onConfirm={vi.fn()}
       onDeliveryAddressChange={onDeliveryAddressChange}
@@ -129,7 +130,7 @@ function renderPhoneField(
       onValidate={vi.fn()}
     />,
   );
-  return { onDeliveryAddressChange, onStorePickupContactChange };
+  return { onCheckoutChange, onDeliveryAddressChange, onStorePickupContactChange };
 }
 
 describe("CheckoutModal modalidad de entrega", () => {
@@ -234,6 +235,34 @@ describe("CheckoutModal modalidad de entrega", () => {
       deliveryMethod: DeliveryMethod.immediate,
       transportMode: TransportMode.none,
     });
+
+    fireEvent.change(deliveryMethod, { target: { value: DeliveryMethod.home_delivery } });
+    expect(onCheckoutChange).toHaveBeenLastCalledWith({
+      deliveryMethod: DeliveryMethod.home_delivery,
+      transportMode: TransportMode.own_fleet,
+    });
+  });
+
+  it("permite elegir el transporte únicamente para entrega a domicilio", () => {
+    const { onCheckoutChange } = renderPhoneField(DeliveryMethod.home_delivery);
+    const transportMode = screen.getByRole("combobox", { name: "Modalidad de transporte" });
+
+    expect(transportMode).toHaveValue(TransportMode.own_fleet);
+    expect(screen.getByRole("option", { name: "Flota propia" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Transporte externo" })).toBeInTheDocument();
+
+    fireEvent.change(transportMode, { target: { value: TransportMode.third_party } });
+    expect(onCheckoutChange).toHaveBeenLastCalledWith({
+      transportMode: TransportMode.third_party,
+    });
+  });
+
+  it("mantiene retiro en tienda sin selector de transporte", () => {
+    renderPhoneField(DeliveryMethod.store_pickup);
+
+    expect(
+      screen.queryByRole("combobox", { name: "Modalidad de transporte" }),
+    ).not.toBeInTheDocument();
   });
 
   it("solicita inventario solo para líneas trazables de entrega inmediata", () => {

@@ -326,6 +326,22 @@ export function CheckoutModal({
           <InlineAlert tone="info" title={getDeliveryMethodMessage(checkout.deliveryMethod)} />
             {checkout.deliveryMethod === DeliveryMethod.home_delivery ? (
               <div className="grid gap-3 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <FormField id="checkout-transport-mode" label="Modalidad de transporte">
+                  <Select
+                    id="checkout-transport-mode"
+                    onChange={(event) =>
+                      onCheckoutChange({
+                        transportMode: event.target.value as CheckoutDto["transportMode"],
+                      })
+                    }
+                    value={checkout.transportMode}
+                  >
+                    <option value={TransportMode.own_fleet}>Flota propia</option>
+                    <option value={TransportMode.third_party}>Transporte externo</option>
+                  </Select>
+                </FormField>
+              </div>
               <FormField
                 id="delivery-recipient"
                 label="Nombre de contacto *"
