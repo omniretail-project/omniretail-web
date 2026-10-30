@@ -41,6 +41,7 @@ import {
   MFA_CODE_DIGITS,
   RECOVERY_CODES_COUNT,
 } from "@/config/mfa-policy";
+import { normalizePersonName, validateCustomerName } from "@/config/person-name-policy";
 import { sessionPolicy } from "@/config/session-policy";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
@@ -663,6 +664,13 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     if (passwordError) {
       throw new PasswordPolicyError(passwordError);
     }
+    // Mismo limite que el backend: una llamada directa tampoco guarda HTML, caracteres de control ni
+    // formas Unicode distintas del mismo nombre.
+    const normalizedName = normalizePersonName(input.name);
+    const nameError = validateCustomerName(normalizedName);
+    if (nameError) {
+      throw new Error(nameError);
+    }
     const result = this.store.mutate((db) => {
       const now = this.now();
       const normalizedEmail = input.email.trim().toLowerCase();
@@ -704,8 +712,8 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         id: this.id("customer"),
         tenantId,
         code: `CLI-${db.customers.length + 1}`,
-        name: input.name,
-        email: input.email,
+        name: normalizedName,
+        email: normalizedEmail,
         phone: input.phone,
         status: CustomerStatus.active,
         createdAt: now,
@@ -729,8 +737,8 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         id: this.id("user"),
         tenantId,
         customerId: customer.id,
-        name: input.name,
-        email: input.email,
+        name: normalizedName,
+        email: normalizedEmail,
         phone: input.phone,
         type: UserType.customer,
         status: UserStatus.active,
@@ -744,7 +752,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       db.authAccounts.push({
         id: this.id("auth"),
         userId: createdUser.id,
-        email: input.email,
+        email: normalizedEmail,
         passwordHashMock: buildPasswordHashMock(input.passwordMock),
         status: AccountStatus.pending_verification,
         failedLoginAttempts: 0,

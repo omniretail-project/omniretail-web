@@ -1,3 +1,9 @@
+import {
+  PERSON_NAME_PATTERN,
+  TYPOGRAPHIC_APOSTROPHES,
+  TYPOGRAPHIC_DASHES,
+} from "@/config/person-name-policy";
+
 /**
  * Límites y caracteres permitidos para direcciones de entrega. Se usan tanto
  * en los formularios como en los límites autoritativos, para que una petición
@@ -12,9 +18,6 @@ export const DELIVERY_ADDRESS_LIMITS = {
 } as const;
 
 const PERSON_NAME_CHARACTERS = /[^\p{L}\p{M} '-]/gu;
-const TYPOGRAPHIC_APOSTROPHES = /[’‘´`]/gu;
-const TYPOGRAPHIC_DASHES = /[‐‑‒–—]/gu;
-const PERSON_NAME_PATTERN = /^\p{L}[\p{L}\p{M}]*(?:[ '-][\p{L}\p{M}]+)*$/u;
 const ADDRESS_LINE_CHARACTERS = /[^\p{L}\p{N} .,#'/-]/gu;
 const ADDRESS_COMPLEMENT_CHARACTERS = /[^\p{L}\p{N} .,#'/-]/gu;
 const ADDRESS_REFERENCE_CHARACTERS = /[^\p{L}\p{N} .,#'/-]/gu;

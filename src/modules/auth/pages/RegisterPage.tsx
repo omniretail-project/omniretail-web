@@ -8,6 +8,8 @@ import {
 } from "@/config/auth-policy";
 import { ResendVerificationPrompt } from "@/modules/auth/components/ResendVerificationPrompt";
 import { useRegister } from "@/modules/auth/hooks/useRegister";
+import { EMAIL_MAX_LENGTH } from "@/modules/auth/validation/register.validation";
+import { TEXT_FIELD_POLICY } from "@/config/text-field-policy";
 import { BrandMark } from "@/shared/components/BrandMark";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
@@ -122,6 +124,7 @@ export function RegisterPage() {
               autoComplete="name"
               disabled={isSubmitting}
               id="register-name"
+              maxLength={TEXT_FIELD_POLICY.NAME_MAX_LENGTH}
               onChange={(event) => setName(event.target.value)}
               value={name}
             />
@@ -132,6 +135,7 @@ export function RegisterPage() {
               autoComplete="email"
               disabled={isSubmitting}
               id="register-email"
+              maxLength={EMAIL_MAX_LENGTH}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="tu@correo.com"
               type="email"

@@ -8,6 +8,9 @@ import type {
 
 export type ReportKind = "sales" | "purchases" | "movements" | "payments";
 
+/** Excel: un libro con una hoja por reporte. CSV: un archivo por reporte. */
+export type ReportExportFormat = "xlsx" | "csv";
+
 export interface ReportFilter {
   from?: string;
   to?: string;

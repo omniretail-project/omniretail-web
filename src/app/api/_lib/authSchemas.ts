@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizePersonName, validateCustomerName } from "@/config/person-name-policy";
 
 /**
  * Esquemas de entrada de los Route Handlers de `/api/auth/**` (SOLO servidor). Cada uno replica
@@ -52,10 +53,19 @@ export const mfaEnrollmentVerifySchema = z.strictObject({ code: otpCode });
 
 export const mfaDisableSchema = z.strictObject({ currentPassword });
 
+/**
+ * Nombre del registro: se normaliza y se valida con la misma regla del formulario y del backend
+ * (person-name-policy). Al backend se reenvia la forma normalizada, nunca el texto original.
+ */
+const customerName = z
+  .string()
+  .transform(normalizePersonName)
+  .refine((value) => validateCustomerName(value) === null);
+
 export const registerSchema = z.strictObject({
   tenantSlug,
-  name: z.string().trim().min(1).max(200),
-  email,
+  name: customerName,
+  email: email.toLowerCase(),
   phone: z.string().max(30).optional(),
   password: newPassword,
 });

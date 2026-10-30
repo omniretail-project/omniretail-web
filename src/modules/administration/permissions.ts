@@ -145,7 +145,7 @@ export const administrationPermissions = [
     key: REPORTS_EXPORT_PERMISSION,
     module: "administration",
     name: "Exportar reportes",
-    description: "Permite exportar reportes a CSV.",
+    description: "Permite exportar reportes a Excel o CSV.",
   },
   {
     key: PLANS_READ_PERMISSION,

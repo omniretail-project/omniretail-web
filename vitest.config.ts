@@ -249,6 +249,18 @@ export default defineConfig({
         "src/modules/storefront/components/StorefrontCatalogImage.tsx",
         "src/modules/storefront/hooks/useStorefrontOffers.ts",
         "src/modules/storefront/hooks/useStorefrontDiscovery.ts",
+        // Exportacion CSV de reportes y sanitizacion del registro de clientes.
+        "src/modules/administration/application/reportCsv.ts",
+        "src/modules/administration/application/reportDownload.ts",
+        "src/modules/administration/application/reportXlsx.ts",
+        "src/modules/administration/hooks/useReports.ts",
+        "src/modules/administration/components/ReportsExportModal.tsx",
+        "src/modules/administration/pages/ReportsPage.tsx",
+        "src/modules/administration/permissions.ts",
+        "src/config/person-name-policy.ts",
+        "src/config/delivery-address-policy.ts",
+        "src/modules/auth/validation/register.validation.ts",
+        "src/modules/auth/hooks/useRegister.ts",
         "src/modules/storefront/pages/OrderConfirmationPage.tsx",
         "src/modules/customer/pages/PedidoDetallePage.tsx",
         // Lote 1 PR #191: archivos con pruebas existentes que no estaban instrumentados.

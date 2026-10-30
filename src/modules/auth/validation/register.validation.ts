@@ -1,5 +1,6 @@
 import { validateCustomerPassword } from "@/config/auth-policy";
 import { validatePhoneNumber } from "@/config/contact-policy";
+import { normalizePersonName, validateCustomerName } from "@/config/person-name-policy";
 import type { RegisterFormDto } from "@/modules/auth/application/dto/RegisterFormDto";
 
 export type RegisterFormValidationErrors = Partial<
@@ -7,6 +8,12 @@ export type RegisterFormValidationErrors = Partial<
 >;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const EMAIL_MAX_LENGTH = 254;
+
+/** Igual que el backend: el correo se guarda sin espacios y en minusculas. */
+export function normalizeRegisterEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
 
 /**
  * Validacion de cliente (formato/longitud/campos requeridos). NO
@@ -18,13 +25,17 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export function validateRegisterForm(dto: RegisterFormDto): RegisterFormValidationErrors {
   const errors: RegisterFormValidationErrors = {};
 
-  if (!dto.name.trim()) {
-    errors.name = "El nombre es obligatorio.";
+  const nameError = validateCustomerName(normalizePersonName(dto.name));
+  if (nameError) {
+    errors.name = nameError;
   }
 
-  if (!dto.email.trim()) {
+  const email = normalizeRegisterEmail(dto.email);
+  if (!email) {
     errors.email = "El correo es obligatorio.";
-  } else if (!EMAIL_PATTERN.test(dto.email.trim())) {
+  } else if (email.length > EMAIL_MAX_LENGTH) {
+    errors.email = `El correo no puede superar ${EMAIL_MAX_LENGTH} caracteres.`;
+  } else if (!EMAIL_PATTERN.test(email)) {
     errors.email = "Ingrese un correo con formato válido.";
   }
 
