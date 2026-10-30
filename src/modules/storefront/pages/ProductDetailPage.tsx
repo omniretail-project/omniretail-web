@@ -159,8 +159,11 @@ export function ProductDetailPage({ productId }: { productId: string }) {
             alt={media[0]?.alt ?? product.name}
             className="h-72 w-full rounded-xl bg-slate-50 object-contain object-center p-5 md:h-[29rem]"
             fetchPriority="high"
-            loading="eager"
+            height={800}
+            preload
+            sizes="(min-width: 1024px) 50vw, 100vw"
             source={media[0]?.source}
+            width={800}
           />
         </div>
         <div className="flex flex-col rounded-xl border border-[var(--color-border)] p-5">

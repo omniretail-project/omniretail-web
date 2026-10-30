@@ -5,8 +5,9 @@ import { PublicStorefrontShell } from "@/modules/storefront/components/PublicSto
 import { StorefrontCartProvider } from "@/modules/storefront/providers/StorefrontCartProvider";
 import { StorefrontCheckoutConfirmationProvider } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
 import { PublicTenantProvider } from "@/modules/storefront/providers/PublicTenantProvider";
+import { StorefrontCatalogProvider } from "@/modules/storefront/providers/StorefrontCatalogProvider";
 
 export default async function TenantStorefrontLayout({ children, params }: { children: ReactNode; params: Promise<{ tenantSlug: string }> }) {
   const { tenantSlug } = await params;
-  return <CurrentSessionProvider><PublicDemoBanner /><PublicTenantProvider tenantSlug={tenantSlug}><StorefrontCartProvider><StorefrontCheckoutConfirmationProvider><PublicStorefrontShell>{children}</PublicStorefrontShell></StorefrontCheckoutConfirmationProvider></StorefrontCartProvider></PublicTenantProvider></CurrentSessionProvider>;
+  return <CurrentSessionProvider><PublicDemoBanner /><PublicTenantProvider tenantSlug={tenantSlug}><StorefrontCatalogProvider><StorefrontCartProvider><StorefrontCheckoutConfirmationProvider><PublicStorefrontShell>{children}</PublicStorefrontShell></StorefrontCheckoutConfirmationProvider></StorefrontCartProvider></StorefrontCatalogProvider></PublicTenantProvider></CurrentSessionProvider>;
 }
