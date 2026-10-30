@@ -23,9 +23,8 @@ export class GetPublicStorefrontConfigService {
       tenantSlug,
       allowDisabled: true,
     });
-    const branches = await this.repositories.branches.getActiveByTenantAndType(
-      tenantId,
-      BranchType.store,
+    const branches = (await this.repositories.branches.getActiveByTenant(tenantId)).filter(
+      (branch) => branch.type !== BranchType.warehouse,
     );
     // El read model publico puede mostrar "tienda no disponible" sin perder el tenantId
     // que necesitan las rutas historicas de tracking. Las operaciones comerciales siguen
@@ -49,7 +48,14 @@ export class GetPublicStorefrontConfigService {
       contactPhone: ecommerceConfig.contactPhone,
       contactEmail: ecommerceConfig.contactEmail,
       logoImageSource: ecommerceConfig.logo,
-      branches: branches.map(({ id, name, address }) => ({ id, name, address })),
+      branches: branches.map(({ id, code, name, address, phone, email }) => ({
+        id,
+        code,
+        name,
+        address,
+        phone,
+        email,
+      })),
       heroBanner: {
         slides: (heroBanner?.slides ?? [])
           .filter((slide) => slide.title.trim().length > 0)

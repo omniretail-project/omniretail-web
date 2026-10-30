@@ -201,13 +201,13 @@ async function main() {
   );
   assert.deepEqual(
     Object.keys(publicDto.branches[0] ?? {}).sort(),
-    ["address", "id", "name"].sort(),
-    "C: las branches publicas no deben filtrar campos internos",
+    ["address", "code", "email", "id", "name", "phone"].sort(),
+    "C: las branches publicas deben exponer datos de contacto y no filtrar campos internos",
   );
   assert.deepEqual(
     publicDto.branches.map((branch) => branch.id),
-    ["branch-norte"],
-    "D-H: solo debe aparecer la tienda activa del tenant publico",
+    ["branch-centro", "branch-norte"],
+    "D-H: deben aparecer las sucursales fisicas activas del tenant publico (main y store)",
   );
   assert.equal(GetPublicStorefrontConfigService.prototype.execute.length, 1, "I: execute recibe tenantSlug");
 
